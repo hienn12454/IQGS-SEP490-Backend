@@ -1,0 +1,83 @@
+# CI/CD: .NET 8 WebAPI — build, test (nếu có), EF migrate PostgreSQL, deploy Azure App Service.
+#
+# Secrets (Settings → Secrets and variables → Actions):
+#   AZURE_WEBAPP_PUBLISH_PROFILE — toàn bộ XML publish profile từ Azure Portal
+#   DB_CONNECTION_STRING — chuỗi Npgsql/PostgreSQL đầy đủ (không commit vào repo)
+
+name: Deploy WebAPI
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-webapi-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  AZURE_WEBAPP_NAME: IQGS-BE
+  DOTNET_VERSION: "8.0.x"
+  PACKAGE_PATH: ${{ github.workspace }}/publish
+
+jobs:
+  build-test-migrate-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Restore solution
+        run: dotnet restore IQGS-BE.sln
+
+      - name: Build solution (Release)
+        run: dotnet build IQGS-BE.sln --configuration Release --no-restore
+
+      - name: Test solution
+        run: |
+          if grep -R --include='*.csproj' --exclude-dir='.git' --exclude-dir='bin' --exclude-dir='obj' -l 'Microsoft.NET.Test.Sdk' . 2>/dev/null | grep -q .; then
+            dotnet test IQGS-BE.sln --configuration Release --no-build --no-restore --verbosity minimal
+          else
+            echo "No test projects detected (no Microsoft.NET.Test.Sdk); skipping dotnet test."
+          fi
+
+      - name: Install dotnet-ef
+        run: |
+          dotnet tool install --global dotnet-ef --version 8.0.22
+          echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
+
+      - name: EF Core database update (PostgreSQL)
+        env:
+          ConnectionStrings__DefaultConnection: ${{ secrets.DB_CONNECTION_STRING }}
+        run: >-
+          dotnet ef database update
+          --project WebAPI/WebAPI.csproj
+          --startup-project WebAPI/WebAPI.csproj
+          --configuration Release
+
+      - name: Publish WebAPI
+        run: dotnet publish WebAPI/WebAPI.csproj --configuration Release --no-build --output "${{ env.PACKAGE_PATH }}"
+
+      - name: Deploy to Azure Web App
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ env.AZURE_WEBAPP_NAME }}
+          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+          package: ${{ env.PACKAGE_PATH }}
