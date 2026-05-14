@@ -1,0 +1,56 @@
+## .NET
+bin/
+obj/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+## Visual Studio
+.vs/
+*.rsuser
+.idea/
+
+## Build results
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+
+## NuGet
+*.nupkg
+*.snupkg
+.nuget/
+packages/
+!**/packages/repositories.config
+*.nuspec
+
+## User-specific files
+*.rsuser
+*.user
+*.userosscache
+*.sln.docstates
+
+## Publish
+publish/
+**/publish/
+
+## Docker
+.dockerignore
+
+## Environment / secrets — KHÔNG commit thông tin nhạy cảm
+appsettings.Development.json
+appsettings.Production.json
+.env
+*.env
+
+## OS
+.DS_Store
+Thumbs.db
