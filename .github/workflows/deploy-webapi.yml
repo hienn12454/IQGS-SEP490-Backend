@@ -24,6 +24,9 @@ env:
 jobs:
   build-test-migrate-deploy:
     runs-on: ubuntu-latest
+    environment:
+      name: production
+
     permissions:
       contents: read
 
