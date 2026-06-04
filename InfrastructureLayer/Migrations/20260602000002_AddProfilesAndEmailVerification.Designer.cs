@@ -3,6 +3,7 @@ using System;
 using InfrastructureLayer.Database;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace InfrastructureLayer.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260602000002_AddProfilesAndEmailVerification")]
+    partial class AddProfilesAndEmailVerification
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -22,70 +25,34 @@ namespace InfrastructureLayer.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
-            modelBuilder.Entity("DomainLayer.Entities.Role", b =>
-                {
-                    b.Property<int>("Id").HasColumnType("integer");
-                    b.Property<string>("Name").IsRequired().HasMaxLength(50).HasColumnType("character varying(50)");
-                    b.HasKey("Id");
-                    b.HasIndex("Name").IsUnique();
-                    b.ToTable("Roles");
-                    b.HasData(
-                        new { Id = 1, Name = "Admin" },
-                        new { Id = 2, Name = "HR" },
-                        new { Id = 3, Name = "Candidate" });
-                });
-
-            modelBuilder.Entity("DomainLayer.Entities.Company", b =>
-                {
-                    b.Property<Guid>("Id").ValueGeneratedOnAdd().HasColumnType("uuid");
-                    b.Property<DateTime>("CreatedAt").HasColumnType("timestamp with time zone");
-                    b.Property<string>("Description").HasColumnType("text");
-                    b.Property<bool>("IsActive").HasColumnType("boolean");
-                    b.Property<string>("LogoUrl").HasMaxLength(500).HasColumnType("character varying(500)");
-                    b.Property<string>("Name").IsRequired().HasMaxLength(255).HasColumnType("character varying(255)");
-                    b.Property<DateTime?>("UpdatedAt").HasColumnType("timestamp with time zone");
-                    b.Property<string>("WebsiteUrl").HasMaxLength(500).HasColumnType("character varying(500)");
-                    b.HasKey("Id");
-                    b.HasIndex("Name");
-                    b.ToTable("Companies");
-                });
-
             modelBuilder.Entity("DomainLayer.Entities.HRProfile", b =>
                 {
                     b.Property<Guid>("Id").ValueGeneratedOnAdd().HasColumnType("uuid");
-                    b.Property<string>("Bio").HasColumnType("text");
-                    b.Property<Guid>("CompanyId").HasColumnType("uuid");
                     b.Property<DateTime>("CreatedAt").HasColumnType("timestamp with time zone");
+                    b.Property<string>("CompanyName").IsRequired().HasMaxLength(255).HasColumnType("character varying(255)");
                     b.Property<bool>("IsActive").HasColumnType("boolean");
                     b.Property<bool>("IsCompanyVerified").ValueGeneratedOnAdd().HasColumnType("boolean").HasDefaultValue(false);
-                    b.Property<string>("JobTitle").HasMaxLength(150).HasColumnType("character varying(150)");
-                    b.Property<string>("LinkedInUrl").HasMaxLength(500).HasColumnType("character varying(500)");
-                    b.Property<string>("PhoneNumber").HasMaxLength(20).HasColumnType("character varying(20)");
+                    b.Property<string>("Title").HasMaxLength(255).HasColumnType("character varying(255)");
                     b.Property<DateTime?>("UpdatedAt").HasColumnType("timestamp with time zone");
                     b.Property<Guid>("UserId").HasColumnType("uuid");
                     b.HasKey("Id");
-                    b.HasIndex("CompanyId");
                     b.HasIndex("UserId").IsUnique();
                     b.ToTable("HRProfiles");
                 });
 
-            modelBuilder.Entity("DomainLayer.Entities.CandidateProfile", b =>
+            modelBuilder.Entity("DomainLayer.Entities.JobSeekerProfile", b =>
                 {
                     b.Property<Guid>("Id").ValueGeneratedOnAdd().HasColumnType("uuid");
-                    b.Property<string>("Bio").HasColumnType("text");
                     b.Property<DateTime>("CreatedAt").HasColumnType("timestamp with time zone");
-                    b.Property<string>("GithubUrl").HasMaxLength(500).HasColumnType("character varying(500)");
+                    b.Property<string>("ExperienceLevel").IsRequired().HasMaxLength(50).HasColumnType("character varying(50)");
                     b.Property<bool>("IsActive").HasColumnType("boolean");
-                    b.Property<string>("LinkedInUrl").HasMaxLength(500).HasColumnType("character varying(500)");
-                    b.Property<string>("PhoneNumber").HasMaxLength(20).HasColumnType("character varying(20)");
-                    b.Property<string>("SeniorityLevel").HasMaxLength(50).HasColumnType("character varying(50)");
-                    b.Property<string>("TargetRole").HasMaxLength(150).HasColumnType("character varying(150)");
+                    b.Property<string>("TargetPosition").IsRequired().HasMaxLength(255).HasColumnType("character varying(255)");
                     b.Property<string[]>("TechStack").IsRequired().HasColumnType("text[]");
                     b.Property<DateTime?>("UpdatedAt").HasColumnType("timestamp with time zone");
                     b.Property<Guid>("UserId").HasColumnType("uuid");
                     b.HasKey("Id");
                     b.HasIndex("UserId").IsUnique();
-                    b.ToTable("CandidateProfiles");
+                    b.ToTable("JobSeekerProfiles");
                 });
 
             modelBuilder.Entity("DomainLayer.Entities.User", b =>
@@ -110,59 +77,32 @@ namespace InfrastructureLayer.Migrations
                     b.Property<string>("Provider").IsRequired().ValueGeneratedOnAdd().HasMaxLength(20).HasColumnType("character varying(20)").HasDefaultValue("local");
                     b.Property<string>("RefreshToken").HasMaxLength(512).HasColumnType("character varying(512)");
                     b.Property<DateTime?>("RefreshTokenExpiresAt").HasColumnType("timestamp with time zone");
-                    b.Property<int>("RoleId").HasColumnType("integer");
+                    b.Property<string>("Role").IsRequired().HasMaxLength(50).HasColumnType("character varying(50)");
                     b.Property<DateTime?>("UpdatedAt").HasColumnType("timestamp with time zone");
                     b.HasKey("Id");
                     b.HasIndex("Email").IsUnique();
                     b.HasIndex("RefreshToken");
-                    b.HasIndex("RoleId");
                     b.ToTable("Users");
                 });
 
             modelBuilder.Entity("DomainLayer.Entities.HRProfile", b =>
                 {
-                    b.HasOne("DomainLayer.Entities.Company", "Company")
-                        .WithMany("HRProfiles")
-                        .HasForeignKey("CompanyId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
                     b.HasOne("DomainLayer.Entities.User", "User")
                         .WithOne()
                         .HasForeignKey("DomainLayer.Entities.HRProfile", "UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
-                    b.Navigation("Company");
                     b.Navigation("User");
                 });
 
-            modelBuilder.Entity("DomainLayer.Entities.CandidateProfile", b =>
+            modelBuilder.Entity("DomainLayer.Entities.JobSeekerProfile", b =>
                 {
                     b.HasOne("DomainLayer.Entities.User", "User")
                         .WithOne()
-                        .HasForeignKey("DomainLayer.Entities.CandidateProfile", "UserId")
+                        .HasForeignKey("DomainLayer.Entities.JobSeekerProfile", "UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                     b.Navigation("User");
-                });
-
-            modelBuilder.Entity("DomainLayer.Entities.User", b =>
-                {
-                    b.HasOne("DomainLayer.Entities.Role", "Role")
-                        .WithMany("Users")
-                        .HasForeignKey("RoleId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-                    b.Navigation("Role");
-                });
-
-            modelBuilder.Entity("DomainLayer.Entities.Company", b =>
-                {
-                    b.Navigation("HRProfiles");
-                });
-
-            modelBuilder.Entity("DomainLayer.Entities.Role", b =>
-                {
-                    b.Navigation("Users");
                 });
 #pragma warning restore 612, 618
         }

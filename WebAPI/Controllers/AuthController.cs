@@ -1,0 +1,153 @@
+using ApplicationLayer.DTOs.Auth;
+using ApplicationLayer.Interfaces.Services;
+using ApplicationLayer.ResponseCode;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+
+namespace WebAPI.Controllers;
+
+/// <summary>
+/// SCRUM-154: Đăng nhập + cấp JWT (email/password &amp; Google OAuth)
+/// SCRUM-155: Refresh token + giới hạn đăng nhập thất bại + logout
+/// SCRUM-157: Quên mật khẩu + đặt lại mật khẩu qua email
+/// </summary>
+[ApiController]
+[Route("api/auth")]
+public class AuthController : ControllerBase
+{
+    private readonly IAuthService _authService;
+
+    public AuthController(IAuthService authService)
+    {
+        _authService = authService;
+    }
+
+    // ────────────────────────────────────────────────────────────────
+    // POST api/auth/login
+    // AC-01..06 từ SCRUM-154
+    // ────────────────────────────────────────────────────────────────
+    /// <summary>Đăng nhập bằng email và mật khẩu, nhận JWT + refresh token.</summary>
+    [AllowAnonymous]
+    [HttpPost("login")]
+    public async Task<IActionResult> Login([FromBody] LoginRequestDto request)
+    {
+        var result = await _authService.LoginAsync(request);
+        return SuccessResp.Ok(result);
+    }
+
+    // ────────────────────────────────────────────────────────────────
+    // POST api/auth/oauth/google
+    // AC-06: OAuth login
+    // ────────────────────────────────────────────────────────────────
+    /// <summary>Đăng nhập / đăng ký bằng Google OAuth (gửi Google ID Token từ frontend).</summary>
+    [AllowAnonymous]
+    [HttpPost("oauth/google")]
+    public async Task<IActionResult> GoogleLogin([FromBody] OAuthLoginRequestDto request)
+    {
+        var result = await _authService.OAuthLoginAsync(request);
+        return SuccessResp.Ok(result);
+    }
+
+    // ────────────────────────────────────────────────────────────────
+    // POST api/auth/refresh-token   (SCRUM-155)
+    // ────────────────────────────────────────────────────────────────
+    /// <summary>Cấp access token mới bằng refresh token (xoay vòng).</summary>
+    [AllowAnonymous]
+    [HttpPost("refresh-token")]
+    public async Task<IActionResult> RefreshToken([FromBody] RefreshTokenRequestDto request)
+    {
+        var result = await _authService.RefreshTokenAsync(request);
+        return SuccessResp.Ok(result);
+    }
+
+    // ────────────────────────────────────────────────────────────────
+    // POST api/auth/logout   (SCRUM-155)
+    // ────────────────────────────────────────────────────────────────
+    /// <summary>Đăng xuất — thu hồi refresh token.</summary>
+    [AllowAnonymous]
+    [HttpPost("logout")]
+    public async Task<IActionResult> Logout([FromBody] RefreshTokenRequestDto request)
+    {
+        await _authService.LogoutAsync(request.RefreshToken);
+        return SuccessResp.NoContent();
+    }
+
+    // ────────────────────────────────────────────────────────────────
+    // POST api/auth/register/hr   (SCRUM-147 + 148)
+    // ────────────────────────────────────────────────────────────────
+    /// <summary>Đăng ký tài khoản HR Manager. Gửi email xác minh, chưa cấp JWT.</summary>
+    [AllowAnonymous]
+    [HttpPost("register/hr")]
+    public async Task<IActionResult> RegisterHR([FromBody] RegisterHRRequestDto request)
+    {
+        await _authService.RegisterHRAsync(request);
+        return SuccessResp.Created(
+            "Đăng ký thành công! Vui lòng kiểm tra email để xác minh tài khoản.");
+    }
+
+    // ────────────────────────────────────────────────────────────────
+    // POST api/auth/register/candidate   (SCRUM-150)
+    // ────────────────────────────────────────────────────────────────
+    /// <summary>Đăng ký Candidate — auto-verified, trả JWT ngay (AC-05).</summary>
+    [AllowAnonymous]
+    [HttpPost("register/candidate")]
+    public async Task<IActionResult> RegisterCandidate([FromBody] RegisterCandidateRequestDto request)
+    {
+        var result = await _authService.RegisterCandidateAsync(request);
+        return SuccessResp.Created(result);
+    }
+
+    // ────────────────────────────────────────────────────────────────
+    // GET api/auth/verify-email   (SCRUM-151)
+    // ────────────────────────────────────────────────────────────────
+    /// <summary>Xác minh email qua token từ link (AC-01..03).</summary>
+    [AllowAnonymous]
+    [HttpGet("verify-email")]
+    public async Task<IActionResult> VerifyEmail([FromQuery] string token)
+    {
+        await _authService.VerifyEmailAsync(new VerifyEmailDto { Token = token });
+        return SuccessResp.Ok("Email đã được xác minh thành công. Bạn có thể đăng nhập ngay bây giờ.");
+    }
+
+    // ────────────────────────────────────────────────────────────────
+    // POST api/auth/resend-verification   (SCRUM-151 AC-04)
+    // ────────────────────────────────────────────────────────────────
+    /// <summary>Gửi lại email xác minh. Luôn trả success.</summary>
+    [AllowAnonymous]
+    [HttpPost("resend-verification")]
+    public async Task<IActionResult> ResendVerification([FromBody] ResendVerificationDto request)
+    {
+        await _authService.ResendVerificationEmailAsync(request);
+        return SuccessResp.Ok(
+            "Nếu email của bạn chưa được xác minh, chúng tôi đã gửi đường dẫn mới. Vui lòng kiểm tra hộp thư.");
+    }
+
+    // ────────────────────────────────────────────────────────────────
+    // POST api/auth/forgot-password   (SCRUM-157)
+    // AC-01..02
+    // ────────────────────────────────────────────────────────────────
+    /// <summary>
+    /// Gửi email đặt lại mật khẩu. Luôn trả success bất kể email có tồn tại hay không (AC-02).
+    /// </summary>
+    [AllowAnonymous]
+    [HttpPost("forgot-password")]
+    public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordRequestDto request)
+    {
+        await _authService.ForgotPasswordAsync(request);
+        return SuccessResp.Ok(
+            "Nếu email của bạn tồn tại trong hệ thống, chúng tôi đã gửi đường dẫn đặt lại mật khẩu. Vui lòng kiểm tra hộp thư.");
+    }
+
+    // ────────────────────────────────────────────────────────────────
+    // POST api/auth/reset-password   (SCRUM-157)
+    // AC-03..05
+    // ────────────────────────────────────────────────────────────────
+    /// <summary>Đặt lại mật khẩu bằng token nhận được qua email.</summary>
+    [AllowAnonymous]
+    [HttpPost("reset-password")]
+    public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordRequestDto request)
+    {
+        await _authService.ResetPasswordAsync(request);
+        return SuccessResp.Ok("Mật khẩu đã được đặt lại thành công. Vui lòng đăng nhập lại.");
+    }
+}
