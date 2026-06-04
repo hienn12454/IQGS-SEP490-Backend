@@ -1,6 +1,6 @@
 using ApplicationLayer.DTOs.Company;
 
-namespace ApplicationLayer.Interfaces;
+namespace ApplicationLayer.Interfaces.Services;
 
 public interface ICompanyService
 {

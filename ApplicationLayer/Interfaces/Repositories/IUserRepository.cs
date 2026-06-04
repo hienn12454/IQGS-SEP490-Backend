@@ -1,7 +1,7 @@
 using ApplicationLayer.DTOs.Admin;
 using DomainLayer.Entities;
 
-namespace ApplicationLayer.Interfaces;
+namespace ApplicationLayer.Interfaces.Repositories;
 
 public interface IUserRepository : IBaseRepository<User>
 {
