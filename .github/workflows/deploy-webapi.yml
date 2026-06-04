@@ -2,7 +2,13 @@
 #
 # Secrets (Settings → Secrets and variables → Actions):
 #   AZURE_WEBAPP_PUBLISH_PROFILE — toàn bộ XML publish profile từ Azure Portal
-#   DB_CONNECTION_STRING — chuỗi Npgsql/PostgreSQL đầy đủ (không commit vào repo)
+#   DB_CONNECTION_STRING         — chuỗi Npgsql/PostgreSQL đầy đủ
+#   JWT_SECRET_KEY               — JWT secret key
+#   EMAIL_USERNAME               — SMTP username
+#   EMAIL_PASSWORD               — SMTP app password
+#   GOOGLE_CLIENT_ID             — Google OAuth Client ID
+#
+# Azure App Service → Configuration → Application Settings phải có các biến tương ứng.
 
 name: Deploy WebAPI
 
@@ -76,7 +82,7 @@ jobs:
           --configuration Release
 
       - name: Publish WebAPI
-        run: dotnet publish WebAPI/WebAPI.csproj --configuration Release --no-build --output "${{ env.PACKAGE_PATH }}"
+        run: dotnet publish WebAPI/WebAPI.csproj --configuration Release --no-build --output "${{ env.PACKAGE_PATH }}" -r linux-x64 --self-contained false
 
       - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
