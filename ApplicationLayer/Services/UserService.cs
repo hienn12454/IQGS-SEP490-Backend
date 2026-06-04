@@ -1,20 +1,21 @@
+using ApplicationLayer.DTOs.Admin;
 using ApplicationLayer.DTOs.Profile;
-using ApplicationLayer.Interfaces;
+using ApplicationLayer.Interfaces.Repositories;
+using ApplicationLayer.Interfaces.Services;
 using DomainLayer.Constants;
 using DomainLayer.Entities;
 using DomainLayer.Exceptions;
 
 namespace ApplicationLayer.Services;
 
-/// <summary>SCRUM-161: Xem và cập nhật hồ sơ cá nhân.</summary>
-public class ProfileService : IProfileService
+public class UserService : IUserService
 {
     private readonly IUserRepository _userRepo;
     private readonly IHRProfileRepository _hrProfileRepo;
     private readonly ICandidateProfileRepository _candidateProfileRepo;
     private readonly ICompanyRepository _companyRepo;
 
-    public ProfileService(
+    public UserService(
         IUserRepository userRepo,
         IHRProfileRepository hrProfileRepo,
         ICandidateProfileRepository candidateProfileRepo,
@@ -26,14 +27,96 @@ public class ProfileService : IProfileService
         _companyRepo = companyRepo;
     }
 
+    // ── Admin: danh sách phân trang ───────────────────────────────────
+
+    public async Task<PagedResultDto<UserListItemDto>> GetUsersAsync(UserQueryDto query)
+    {
+        query.Page = Math.Max(1, query.Page);
+        query.PageSize = Math.Clamp(query.PageSize, 1, 100);
+
+        var (users, total) = await _userRepo.GetPagedAsync(query);
+
+        var items = users.Select(u => new UserListItemDto
+        {
+            Id = u.Id,
+            FullName = u.FullName,
+            Email = u.Email,
+            Role = u.Role?.Name ?? UserRole.GetNameById(u.RoleId),
+            IsActive = u.IsActive,
+            IsEmailVerified = u.IsEmailVerified,
+            IsProfileComplete = u.IsProfileComplete,
+            Provider = u.Provider,
+            CreatedAt = u.CreatedAt
+        }).ToList();
+
+        return new PagedResultDto<UserListItemDto>
+        {
+            Items = items,
+            TotalCount = total,
+            Page = query.Page,
+            PageSize = query.PageSize
+        };
+    }
+
+    // ── Admin: chi tiết user (bất kể IsActive) ───────────────────────
+
+    public async Task<UserDetailDto> GetUserDetailAsync(Guid userId)
+    {
+        var user = await _userRepo.GetByIdAnyStatusAsync(userId)
+            ?? throw new NotFoundException("Không tìm thấy người dùng.");
+
+        var roleName = user.Role?.Name ?? UserRole.GetNameById(user.RoleId);
+
+        var dto = new UserDetailDto
+        {
+            Id = user.Id,
+            FullName = user.FullName,
+            Email = user.Email,
+            Role = roleName,
+            PhoneNumber = user.PhoneNumber,
+            AvatarUrl = user.AvatarUrl,
+            IsActive = user.IsActive,
+            IsEmailVerified = user.IsEmailVerified,
+            IsProfileComplete = user.IsProfileComplete,
+            Provider = user.Provider,
+            CreatedAt = user.CreatedAt,
+            UpdatedAt = user.UpdatedAt
+        };
+
+        await FillRoleSpecificProfileAsync(dto, user.Id, roleName);
+        return dto;
+    }
+
+    // ── Admin: enable / disable ───────────────────────────────────────
+
+    public async Task UpdateUserStatusAsync(Guid userId, bool isActive)
+    {
+        var user = await _userRepo.GetByIdAnyStatusAsync(userId)
+            ?? throw new NotFoundException("Không tìm thấy người dùng.");
+
+        user.IsActive = isActive;
+
+        if (!isActive)
+        {
+            user.RefreshToken = null;
+            user.RefreshTokenExpiresAt = null;
+        }
+
+        await _userRepo.UpdateAsync(user);
+    }
+
+    // ── Me: xem profile ───────────────────────────────────────────────
+
     public async Task<ProfileResponseDto> GetProfileAsync(Guid userId)
     {
         var user = await _userRepo.GetByIdAsync(userId)
             ?? throw new NotFoundException("Người dùng không tồn tại.");
 
         await _userRepo.LoadRoleAsync(user);
-        return await MapToProfileResponseAsync(user);
+        return await BuildProfileResponseAsync(user);
     }
+
+    // ── Me: cập nhật HR profile ───────────────────────────────────────
 
     public async Task<ProfileResponseDto> UpdateHRProfileAsync(Guid userId, UpdateHRProfileDto dto)
     {
@@ -44,27 +127,13 @@ public class ProfileService : IProfileService
         if (user.Role.Name != UserRole.HR)
             throw new ForbiddenException("Chỉ HR mới có thể cập nhật hồ sơ này.");
 
-        // Resolve company: CompanyId hoặc CompanyName
-        Guid? companyId = dto.CompanyId;
-        if (companyId == null && !string.IsNullOrWhiteSpace(dto.CompanyName))
-        {
-            var existing = await _companyRepo.GetByNameAsync(dto.CompanyName.Trim());
-            if (existing != null) companyId = existing.Id;
-            else
-            {
-                var newCompany = new Company { Name = dto.CompanyName.Trim() };
-                await _companyRepo.AddAsync(newCompany);
-                companyId = newCompany.Id;
-            }
-        }
+        var companyId = await ResolveCompanyIdAsync(dto.CompanyId, dto.CompanyName);
 
-        // Update User fields
         user.FullName = dto.FullName;
         user.PhoneNumber = dto.PhoneNumber;
         user.AvatarUrl = dto.AvatarUrl;
         if (!user.IsProfileComplete) user.IsProfileComplete = true;
 
-        // Upsert HRProfile
         var profile = await _hrProfileRepo.GetByUserIdAsync(userId);
         if (profile == null)
         {
@@ -92,8 +161,10 @@ public class ProfileService : IProfileService
         }
 
         await _userRepo.UpdateAsync(user);
-        return await MapToProfileResponseAsync(user);
+        return await BuildProfileResponseAsync(user);
     }
+
+    // ── Me: cập nhật Candidate profile ───────────────────────────────
 
     public async Task<ProfileResponseDto> UpdateCandidateProfileAsync(Guid userId, UpdateCandidateProfileDto dto)
     {
@@ -137,8 +208,10 @@ public class ProfileService : IProfileService
         }
 
         await _userRepo.UpdateAsync(user);
-        return await MapToProfileResponseAsync(user);
+        return await BuildProfileResponseAsync(user);
     }
+
+    // ── Me: đổi mật khẩu ─────────────────────────────────────────────
 
     public async Task ChangePasswordAsync(Guid userId, ChangePasswordDto dto)
     {
@@ -158,8 +231,9 @@ public class ProfileService : IProfileService
         await _userRepo.UpdateAsync(user);
     }
 
-    // ────────────────────────────────────────────────────────────────
-    private async Task<ProfileResponseDto> MapToProfileResponseAsync(User user)
+    // ── Private helpers ───────────────────────────────────────────────
+
+    private async Task<ProfileResponseDto> BuildProfileResponseAsync(User user)
     {
         var roleName = user.Role?.Name ?? UserRole.GetNameById(user.RoleId);
 
@@ -177,9 +251,16 @@ public class ProfileService : IProfileService
             CreatedAt = user.CreatedAt
         };
 
+        await FillRoleSpecificProfileAsync(dto, user.Id, roleName);
+        return dto;
+    }
+
+    /// <summary>Điền HRProfile hoặc CandidateProfile vào dto (dùng chung cho cả admin detail và me profile).</summary>
+    private async Task FillRoleSpecificProfileAsync(dynamic dto, Guid userId, string roleName)
+    {
         if (roleName == UserRole.HR)
         {
-            var hr = await _hrProfileRepo.GetByUserIdAsync(user.Id);
+            var hr = await _hrProfileRepo.GetByUserIdAsync(userId);
             if (hr != null)
             {
                 var company = await _companyRepo.GetByIdAsync(hr.CompanyId);
@@ -197,7 +278,7 @@ public class ProfileService : IProfileService
         }
         else if (roleName == UserRole.Candidate)
         {
-            var c = await _candidateProfileRepo.GetByUserIdAsync(user.Id);
+            var c = await _candidateProfileRepo.GetByUserIdAsync(userId);
             if (c != null)
                 dto.CandidateProfile = new CandidateProfileDto
                 {
@@ -210,7 +291,18 @@ public class ProfileService : IProfileService
                     Bio = c.Bio
                 };
         }
+    }
 
-        return dto;
+    private async Task<Guid?> ResolveCompanyIdAsync(Guid? companyId, string? companyName)
+    {
+        if (companyId.HasValue) return companyId;
+        if (string.IsNullOrWhiteSpace(companyName)) return null;
+
+        var existing = await _companyRepo.GetByNameAsync(companyName.Trim());
+        if (existing != null) return existing.Id;
+
+        var newCompany = new Company { Name = companyName.Trim() };
+        await _companyRepo.AddAsync(newCompany);
+        return newCompany.Id;
     }
 }

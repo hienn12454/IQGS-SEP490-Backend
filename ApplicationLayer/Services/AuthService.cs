@@ -1,5 +1,6 @@
 using ApplicationLayer.DTOs.Auth;
-using ApplicationLayer.Interfaces;
+using ApplicationLayer.Interfaces.Services;
+using ApplicationLayer.Interfaces.Repositories;
 using DomainLayer.Constants;
 using DomainLayer.Entities;
 using DomainLayer.Exceptions;

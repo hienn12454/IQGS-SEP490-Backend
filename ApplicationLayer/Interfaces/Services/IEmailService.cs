@@ -1,4 +1,4 @@
-namespace ApplicationLayer.Interfaces;
+namespace ApplicationLayer.Interfaces.Services;
 
 public interface IEmailService
 {

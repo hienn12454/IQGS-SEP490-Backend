@@ -1,4 +1,4 @@
-using ApplicationLayer.Interfaces;
+using ApplicationLayer.Interfaces.Services;
 using MailKit.Net.Smtp;
 using MailKit.Security;
 using Microsoft.Extensions.Configuration;
