@@ -82,7 +82,7 @@ jobs:
           --configuration Release
 
       - name: Publish WebAPI
-        run: dotnet publish WebAPI/WebAPI.csproj --configuration Release --output "${{ env.PACKAGE_PATH }}" -r linux-x64 --self-contained false
+        run: dotnet publish WebAPI/WebAPI.csproj --configuration Release --output "${{ env.PACKAGE_PATH }}" -r win-x64 --self-contained false
 
       - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
