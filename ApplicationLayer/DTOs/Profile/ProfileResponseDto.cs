@@ -1,0 +1,41 @@
+namespace ApplicationLayer.DTOs.Profile;
+
+public class ProfileResponseDto
+{
+    public Guid Id { get; set; }
+    public string FullName { get; set; } = string.Empty;
+    public string Email { get; set; } = string.Empty;
+    public string Role { get; set; } = string.Empty;       // "Admin" | "HR" | "Candidate"
+    public string? PhoneNumber { get; set; }
+    public string? AvatarUrl { get; set; }
+    public bool IsEmailVerified { get; set; }
+    public bool IsProfileComplete { get; set; }
+    public string Provider { get; set; } = string.Empty;
+    public DateTime CreatedAt { get; set; }
+
+    // Role-specific (null nếu không phải role đó)
+    public HRProfileDto? HRProfile { get; set; }
+    public CandidateProfileDto? CandidateProfile { get; set; }
+}
+
+public class HRProfileDto
+{
+    public Guid CompanyId { get; set; }
+    public string CompanyName { get; set; } = string.Empty;  // đọc từ Company navigation
+    public string? JobTitle { get; set; }
+    public string? PhoneNumber { get; set; }
+    public string? LinkedInUrl { get; set; }
+    public string? Bio { get; set; }
+    public bool IsCompanyVerified { get; set; }
+}
+
+public class CandidateProfileDto
+{
+    public string? TargetRole { get; set; }
+    public string? SeniorityLevel { get; set; }
+    public List<string> TechStack { get; set; } = new();
+    public string? PhoneNumber { get; set; }
+    public string? LinkedInUrl { get; set; }
+    public string? GithubUrl { get; set; }
+    public string? Bio { get; set; }
+}

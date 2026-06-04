@@ -1,6 +1,6 @@
 using DomainLayer.Entities;
 
-namespace InfrastructureLayer.Repository.Interface;
+namespace ApplicationLayer.Interfaces.Repositories;
 
 public interface IBaseRepository<T> where T : BaseEntity
 {
