@@ -29,7 +29,8 @@ public static class SuccessResp
 
   public static IActionResult NoContent()
   {
-    return new JsonResult(new { }) { StatusCode = RespCode.NO_CONTENT };
+    // 204 không được phép có body — dùng NoContentResult thay vì JsonResult
+    return new NoContentResult();
   }
 
   public static IActionResult Redirect(string url)

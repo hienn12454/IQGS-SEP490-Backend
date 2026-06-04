@@ -1,6 +1,6 @@
 using DomainLayer.Entities;
 using InfrastructureLayer.Database;
-using InfrastructureLayer.Repository.Interface;
+using ApplicationLayer.Interfaces;
 using Microsoft.EntityFrameworkCore;
 
 namespace InfrastructureLayer.Repository;
