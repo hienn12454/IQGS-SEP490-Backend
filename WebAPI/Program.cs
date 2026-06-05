@@ -181,6 +181,17 @@ public class Program
 
         builder.Services.AddAuthorization();
 
+        // ── CORS ──────────────────────────────────────────────────────
+        builder.Services.AddCors(options =>
+        {
+            options.AddDefaultPolicy(policy =>
+            {
+                policy.AllowAnyOrigin()
+                      .AllowAnyMethod()
+                      .AllowAnyHeader();
+            });
+        });
+
         // ── Dependency Injection ──────────────────────────────────────
         // Repositories
         builder.Services.AddScoped<IUserRepository, UserRepository>();
@@ -204,6 +215,7 @@ public class Program
 
         // Global exception handler — phải đứng đầu pipeline
         app.UseGlobalExceptionHandler();
+        app.UseCors();
 
         app.UseSwagger();
         app.UseSwaggerUI(options =>
