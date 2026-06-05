@@ -1,15 +1,3 @@
-# CI/CD: .NET 8 WebAPI — build, test (nếu có), EF migrate PostgreSQL, deploy Azure App Service.
-#
-# Secrets (Settings → Secrets and variables → Actions):
-#   AZURE_WEBAPP_PUBLISH_PROFILE — toàn bộ XML publish profile từ Azure Portal
-#   DB_CONNECTION_STRING         — chuỗi Npgsql/PostgreSQL đầy đủ
-#   JWT_SECRET_KEY               — JWT secret key
-#   EMAIL_USERNAME               — SMTP username
-#   EMAIL_PASSWORD               — SMTP app password
-#   GOOGLE_CLIENT_ID             — Google OAuth Client ID
-#
-# Azure App Service → Configuration → Application Settings phải có các biến tương ứng.
-
 name: Deploy WebAPI
 
 on:
@@ -72,17 +60,36 @@ jobs:
           dotnet tool install --global dotnet-ef --version 8.0.22
           echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
 
-      - name: EF Core database update (PostgreSQL)
+      - name: Scan and apply pending migrations
         env:
           ConnectionStrings__DefaultConnection: ${{ secrets.DB_CONNECTION_STRING }}
-        run: >-
-          dotnet ef database update
-          --project WebAPI/WebAPI.csproj
-          --startup-project WebAPI/WebAPI.csproj
-          --configuration Release
+        run: |
+          MIGS=$(dotnet ef migrations list \
+            --project WebAPI/WebAPI.csproj \
+            --startup-project WebAPI/WebAPI.csproj \
+            --configuration Release \
+            --no-build 2>&1)
+          echo "$MIGS"
+
+          PENDING=$(echo "$MIGS" | grep -c "(Pending)" || true)
+          if [ "$PENDING" -gt 0 ]; then
+            dotnet ef database update \
+              --project WebAPI/WebAPI.csproj \
+              --startup-project WebAPI/WebAPI.csproj \
+              --configuration Release \
+              --no-build
+          fi
 
       - name: Publish WebAPI
-        run: dotnet publish WebAPI/WebAPI.csproj --configuration Release --output "${{ env.PACKAGE_PATH }}" -r win-x64 --self-contained false
+        run: dotnet publish WebAPI/WebAPI.csproj --configuration Release --no-restore --output "${{ env.PACKAGE_PATH }}"
+
+      - name: Validate publish profile secret
+        env:
+          AZURE_WEBAPP_PUBLISH_PROFILE: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+        run: |
+          if [ -z "$AZURE_WEBAPP_PUBLISH_PROFILE" ]; then
+            exit 1
+          fi
 
       - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
