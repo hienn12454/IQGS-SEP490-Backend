@@ -289,7 +289,7 @@ public class AuthService : IAuthService
     // ────────────────────────────────────────────────────────────────
     // SCRUM-150 │ Đăng ký Candidate
     // ────────────────────────────────────────────────────────────────
-    public async Task<LoginResponseDto> RegisterCandidateAsync(RegisterCandidateRequestDto request)
+    public async Task RegisterCandidateAsync(RegisterCandidateRequestDto request)
     {
         if (await _userRepo.GetByEmailAsync(request.Email) != null)
             throw new ConflictException("Email đã được sử dụng.");
@@ -301,7 +301,7 @@ public class AuthService : IAuthService
             PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password, workFactor: 12),
             RoleId = UserRole.CandidateId,
             Provider = AuthProvider.Local,
-            IsEmailVerified = true,
+            IsEmailVerified = false,
             IsProfileComplete = true
         };
         await _userRepo.AddAsync(user);
@@ -314,7 +314,7 @@ public class AuthService : IAuthService
             TechStack = request.TechStack.ToArray()
         });
 
-        return await IssueTokensAsync(user);
+        await SendEmailVerificationAsync(user);
     }
 
     // ────────────────────────────────────────────────────────────────
