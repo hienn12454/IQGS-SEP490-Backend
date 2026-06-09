@@ -6,6 +6,10 @@ public interface IAuthService
 {
     // ── Login ─────────────────────────────────────────────────────────
     Task<LoginResponseDto> LoginAsync(LoginRequestDto request);
+
+    /// <summary>Verify-only: kiểm tra Google ID Token + tra user, KHÔNG tạo user, KHÔNG cấp JWT.</summary>
+    Task<OAuthVerifyResponseDto> VerifyGoogleTokenAsync(OAuthVerifyRequestDto request);
+
     Task<LoginResponseDto> OAuthLoginAsync(OAuthLoginRequestDto request);
     Task<LoginResponseDto> RefreshTokenAsync(RefreshTokenRequestDto request);
     Task LogoutAsync(string refreshToken);
