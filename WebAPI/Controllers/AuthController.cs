@@ -36,10 +36,30 @@ public class AuthController : ControllerBase
     }
 
     // ────────────────────────────────────────────────────────────────
-    // POST api/auth/oauth/google
-    // AC-06: OAuth login
+    // POST api/auth/oauth/google/verify
+    // Bước 1 OAuth flow: chỉ verify Google ID Token, KHÔNG tạo user, KHÔNG cấp JWT.
+    // FE dùng IsNewUser trong response để rẽ nhánh: returning → gọi /oauth/google luôn;
+    // new → hiện màn chọn role + hoàn tất hồ sơ, rồi mới gọi /oauth/google với đủ thông tin.
     // ────────────────────────────────────────────────────────────────
-    /// <summary>Đăng nhập / đăng ký bằng Google OAuth (gửi Google ID Token từ frontend).</summary>
+    /// <summary>Verify Google ID Token để biết user mới hay cũ trước khi tạo account.</summary>
+    [AllowAnonymous]
+    [HttpPost("oauth/google/verify")]
+    public async Task<IActionResult> GoogleVerify([FromBody] OAuthVerifyRequestDto request)
+    {
+        var result = await _authService.VerifyGoogleTokenAsync(request);
+        return SuccessResp.Ok(result);
+    }
+
+    // ────────────────────────────────────────────────────────────────
+    // POST api/auth/oauth/google
+    // Bước 2 OAuth flow: đăng nhập (returning user) hoặc tạo user + profile (new user).
+    // AC-06 SCRUM-154 + AC-00 SCRUM-147/150.
+    // ────────────────────────────────────────────────────────────────
+    /// <summary>
+    /// Đăng nhập / đăng ký bằng Google OAuth.
+    /// Với user mới phải kèm IntendedRole + các field profile (CompanyId/CompanyName/JobTitle cho HR;
+    /// TargetRole/SeniorityLevel/TechStack cho Candidate).
+    /// </summary>
     [AllowAnonymous]
     [HttpPost("oauth/google")]
     public async Task<IActionResult> GoogleLogin([FromBody] OAuthLoginRequestDto request)

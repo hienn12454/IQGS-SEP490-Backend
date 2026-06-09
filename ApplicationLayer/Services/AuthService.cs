@@ -4,7 +4,6 @@ using ApplicationLayer.Interfaces.Repositories;
 using DomainLayer.Constants;
 using DomainLayer.Entities;
 using DomainLayer.Exceptions;
-using Google.Apis.Auth;
 using Microsoft.Extensions.Configuration;
 using System.Security.Cryptography;
 using System.Text;
@@ -19,6 +18,7 @@ public class AuthService : IAuthService
     private readonly ICompanyRepository _companyRepo;
     private readonly IJwtService _jwtService;
     private readonly IEmailService _emailService;
+    private readonly IGoogleTokenValidator _googleValidator;
     private readonly IConfiguration _config;
 
     // ── Cấu hình ─────────────────────────────────────
@@ -35,6 +35,7 @@ public class AuthService : IAuthService
         ICompanyRepository companyRepo,
         IJwtService jwtService,
         IEmailService emailService,
+        IGoogleTokenValidator googleValidator,
         IConfiguration config)
     {
         _userRepo = userRepo;
@@ -43,6 +44,7 @@ public class AuthService : IAuthService
         _companyRepo = companyRepo;
         _jwtService = jwtService;
         _emailService = emailService;
+        _googleValidator = googleValidator;
         _config = config;
 
         _maxFailedAttempts = int.Parse(config["AuthSettings:MaxFailedAttempts"] ?? "5");
@@ -95,69 +97,160 @@ public class AuthService : IAuthService
     }
 
     // ────────────────────────────────────────────────────────────────
-    // SCRUM-154 │ Google OAuth
+    // SCRUM-154 │ Google OAuth — Verify-only (bước 1)
+    // ────────────────────────────────────────────────────────────────
+    public async Task<OAuthVerifyResponseDto> VerifyGoogleTokenAsync(OAuthVerifyRequestDto request)
+    {
+        var account = await _googleValidator.ValidateAsync(request.IdToken);
+
+        var user = await _userRepo.GetByGoogleIdAsync(account.Subject)
+                   ?? await _userRepo.GetByEmailAsync(account.Email);
+
+        var linkedToLocal = user != null && user.Provider == AuthProvider.Local;
+        var isNewUser = user == null;
+
+        return new OAuthVerifyResponseDto
+        {
+            IsNewUser = isNewUser,
+            Email = account.Email,
+            Name = account.Name ?? account.Email.Split('@')[0],
+            Picture = account.Picture,
+            EmailVerified = account.EmailVerified,
+            LinkedToLocalAccount = linkedToLocal
+        };
+    }
+
+    // ────────────────────────────────────────────────────────────────
+    // SCRUM-154 │ Google OAuth — Login / Register (bước 2)
     // ────────────────────────────────────────────────────────────────
     public async Task<LoginResponseDto> OAuthLoginAsync(OAuthLoginRequestDto request)
     {
-        GoogleJsonWebSignature.Payload payload;
-        try
-        {
-            var googleClientId = _config["GoogleOAuth:ClientId"]
-                ?? throw new InvalidOperationException("GoogleOAuth:ClientId chưa được cấu hình.");
+        var account = await _googleValidator.ValidateAsync(request.IdToken);
 
-            var settings = new GoogleJsonWebSignature.ValidationSettings
-            {
-                Audience = [googleClientId]
-            };
-            payload = await GoogleJsonWebSignature.ValidateAsync(request.IdToken, settings);
-        }
-        catch (InvalidJwtException)
-        {
-            throw new UnauthorizedException("Google ID Token không hợp lệ hoặc đã hết hạn.");
-        }
-
-        var user = await _userRepo.GetByGoogleIdAsync(payload.Subject);
+        var user = await _userRepo.GetByGoogleIdAsync(account.Subject);
+        var isNewUser = false;
 
         if (user == null)
         {
-            user = await _userRepo.GetByEmailAsync(payload.Email);
+            user = await _userRepo.GetByEmailAsync(account.Email);
 
             if (user != null)
             {
                 if (user.Provider != AuthProvider.Google)
                     throw new ConflictException(
-                        "Email này đã được đăng ký bằng mật khẩu. Vui lòng đăng nhập bằng email và mật khẩu.");
+                        "Email này đã được đăng ký bằng mật khẩu. " +
+                        "Vui lòng quay lại trang đăng nhập và sử dụng email & mật khẩu của bạn.");
 
-                user.GoogleId = payload.Subject;
+                user.GoogleId = account.Subject;
                 await _userRepo.UpdateAsync(user);
             }
             else
             {
-                // Tạo tài khoản mới từ Google (AC-00 SCRUM-147/150)
-                // Không cho phép tự đặt role Admin
-                var intendedRoleId = request.IntendedRole switch
-                {
-                    UserRole.HR => UserRole.HRId,
-                    UserRole.Candidate => UserRole.CandidateId,
-                    _ => UserRole.CandidateId
-                };
-
-                user = new User
-                {
-                    FullName = payload.Name ?? payload.Email.Split('@')[0],
-                    Email = payload.Email,
-                    RoleId = intendedRoleId,
-                    Provider = AuthProvider.Google,
-                    GoogleId = payload.Subject,
-                    IsEmailVerified = payload.EmailVerified,
-                    IsProfileComplete = false,    // phải hoàn thiện hồ sơ
-                    AvatarUrl = payload.Picture
-                };
-                await _userRepo.AddAsync(user);
+                user = await CreateOAuthUserAsync(account, request);
+                isNewUser = true;
             }
         }
 
-        return await IssueTokensAsync(user);
+        var response = await IssueTokensAsync(user);
+        response.IsNewUser = isNewUser;
+        return response;
+    }
+
+    // ────────────────────────────────────────────────────────────────
+    // OAuth helpers
+    // ────────────────────────────────────────────────────────────────
+    private async Task<User> CreateOAuthUserAsync(
+        GoogleAccountInfo account,
+        OAuthLoginRequestDto request)
+    {
+        // Không cho phép tự đặt role Admin. Case-insensitive — báo lỗi nếu role lạ.
+        var roleId = ParseIntendedRole(request.IntendedRole);
+
+        // Validate input TRƯỚC khi insert User (AddAsync = SaveChanges ngay) để tránh
+        // tạo User mồ côi nếu profile-required field thiếu.
+        if (roleId == UserRole.CandidateId)
+        {
+            if (string.IsNullOrWhiteSpace(request.TargetRole))
+                throw new BadRequestException("Vui lòng chọn vị trí mục tiêu mà bạn muốn ứng tuyển.");
+            if (string.IsNullOrWhiteSpace(request.SeniorityLevel))
+                throw new BadRequestException("Vui lòng chọn cấp độ kinh nghiệm của bạn.");
+        }
+
+        // HR: resolve/create Company trước. Nếu thất bại, không có User mồ côi.
+        Guid? hrCompanyId = null;
+        if (roleId == UserRole.HRId)
+            hrCompanyId = await ResolveOrCreateCompanyAsync(request.CompanyId, request.CompanyName);
+
+        var user = new User
+        {
+            FullName = account.Name ?? account.Email.Split('@')[0],
+            Email = account.Email,
+            RoleId = roleId,
+            Provider = AuthProvider.Google,
+            GoogleId = account.Subject,
+            IsEmailVerified = account.EmailVerified,
+            IsProfileComplete = true,
+            AvatarUrl = account.Picture
+        };
+        await _userRepo.AddAsync(user);
+
+        if (roleId == UserRole.HRId)
+        {
+            await _hrProfileRepo.AddAsync(new HRProfile
+            {
+                UserId = user.Id,
+                CompanyId = hrCompanyId!.Value,
+                JobTitle = request.JobTitle
+            });
+        }
+        else // Candidate
+        {
+            await _candidateProfileRepo.AddAsync(new CandidateProfile
+            {
+                UserId = user.Id,
+                TargetRole = request.TargetRole,
+                SeniorityLevel = request.SeniorityLevel,
+                TechStack = (request.TechStack ?? new List<string>()).ToArray()
+            });
+        }
+
+        return user;
+    }
+
+    private static int ParseIntendedRole(string? intendedRole)
+    {
+        if (string.IsNullOrWhiteSpace(intendedRole))
+            return UserRole.CandidateId;
+
+        if (string.Equals(intendedRole, UserRole.HR, StringComparison.OrdinalIgnoreCase))
+            return UserRole.HRId;
+        if (string.Equals(intendedRole, UserRole.Candidate, StringComparison.OrdinalIgnoreCase))
+            return UserRole.CandidateId;
+
+        throw new BadRequestException(
+            "Vai trò không hợp lệ. Vui lòng chọn 'HR Manager' hoặc 'Ứng viên'.");
+    }
+
+    private async Task<Guid> ResolveOrCreateCompanyAsync(Guid? companyId, string? companyName)
+    {
+        if (companyId.HasValue)
+        {
+            var existing = await _companyRepo.GetByIdAsync(companyId.Value)
+                ?? throw new BadRequestException("Không tìm thấy công ty bạn đã chọn. Vui lòng thử lại.");
+            return existing.Id;
+        }
+
+        if (!string.IsNullOrWhiteSpace(companyName))
+        {
+            var existing = await _companyRepo.GetByNameAsync(companyName.Trim());
+            if (existing != null) return existing.Id;
+
+            var newCompany = new Company { Name = companyName.Trim() };
+            await _companyRepo.AddAsync(newCompany);
+            return newCompany.Id;
+        }
+
+        throw new BadRequestException("Vui lòng chọn công ty từ danh sách hoặc nhập tên công ty mới.");
     }
 
     // ────────────────────────────────────────────────────────────────
@@ -168,32 +261,7 @@ public class AuthService : IAuthService
         if (await _userRepo.GetByEmailAsync(request.Email) != null)
             throw new ConflictException("Email đã được sử dụng.");
 
-        // Resolve company: dùng CompanyId nếu có, hoặc tạo Company mới từ CompanyName
-        Guid companyId;
-        if (request.CompanyId.HasValue)
-        {
-            var existing = await _companyRepo.GetByIdAsync(request.CompanyId.Value)
-                ?? throw new BadRequestException("Công ty không tồn tại.");
-            companyId = existing.Id;
-        }
-        else if (!string.IsNullOrWhiteSpace(request.CompanyName))
-        {
-            var existing = await _companyRepo.GetByNameAsync(request.CompanyName.Trim());
-            if (existing != null)
-            {
-                companyId = existing.Id;
-            }
-            else
-            {
-                var newCompany = new Company { Name = request.CompanyName.Trim() };
-                await _companyRepo.AddAsync(newCompany);
-                companyId = newCompany.Id;
-            }
-        }
-        else
-        {
-            throw new BadRequestException("Phải cung cấp CompanyId hoặc CompanyName.");
-        }
+        var companyId = await ResolveOrCreateCompanyAsync(request.CompanyId, request.CompanyName);
 
         var user = new User
         {

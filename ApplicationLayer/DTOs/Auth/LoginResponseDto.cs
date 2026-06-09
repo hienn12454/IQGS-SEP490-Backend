@@ -14,4 +14,10 @@ public class LoginResponseDto
     /// false → frontend redirect đến trang hoàn thiện hồ sơ (OAuth flow, AC-00 SCRUM-147/150).
     /// </summary>
     public bool IsProfileComplete { get; set; }
+
+    /// <summary>
+    /// true → user vừa được tạo trong request này (OAuth flow).
+    /// FE có thể dùng để hiện màn welcome / hoàn tất hồ sơ.
+    /// </summary>
+    public bool IsNewUser { get; set; }
 }

@@ -202,6 +202,7 @@ public class Program
         // Services
         builder.Services.AddScoped<IJwtService, JwtService>();
         builder.Services.AddScoped<IEmailService, EmailService>();
+        builder.Services.AddScoped<IGoogleTokenValidator, GoogleTokenValidator>();
         builder.Services.AddScoped<IAuthService, AuthService>();
         builder.Services.AddScoped<IUserService, UserService>();
         builder.Services.AddScoped<ICompanyService, CompanyService>();
