@@ -113,8 +113,9 @@ public class AuthController : ControllerBase
     [HttpPost("register/candidate")]
     public async Task<IActionResult> RegisterCandidate([FromBody] RegisterCandidateRequestDto request)
     {
-        var result = await _authService.RegisterCandidateAsync(request);
-        return SuccessResp.Created(result);
+        await _authService.RegisterCandidateAsync(request);
+        return SuccessResp.Created(
+            "Đăng ký thành công! Vui lòng kiểm tra email để xác minh tài khoản.");
     }
 
     // ────────────────────────────────────────────────────────────────
@@ -123,8 +124,11 @@ public class AuthController : ControllerBase
     /// <summary>Xác minh email qua token từ link (AC-01..03).</summary>
     [AllowAnonymous]
     [HttpGet("verify-email")]
-    public async Task<IActionResult> VerifyEmail([FromQuery] string token)
+    public async Task<IActionResult> VerifyEmail([FromQuery] string? token)
     {
+        if (string.IsNullOrWhiteSpace(token))
+            return new JsonResult(new { Code = 400, Error = "Token xác minh là bắt buộc." }) { StatusCode = 400 };
+
         await _authService.VerifyEmailAsync(new VerifyEmailDto { Token = token });
         return SuccessResp.Ok("Email đã được xác minh thành công. Bạn có thể đăng nhập ngay bây giờ.");
     }

@@ -16,7 +16,7 @@ public interface IAuthService
 
     // ── Registration ──────────────────────────────────────────────────
     Task RegisterHRAsync(RegisterHRRequestDto request);
-    Task<LoginResponseDto> RegisterCandidateAsync(RegisterCandidateRequestDto request);
+    Task RegisterCandidateAsync(RegisterCandidateRequestDto request);
 
     // ── Email Verification ────────────────────────────────────────────
     Task VerifyEmailAsync(VerifyEmailDto request);
