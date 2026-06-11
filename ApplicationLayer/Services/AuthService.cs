@@ -63,10 +63,13 @@ public class AuthService : IAuthService
     // ────────────────────────────────────────────────────────────────
     public async Task<LoginResponseDto> LoginAsync(LoginRequestDto request)
     {
-        var user = await _userRepo.GetByEmailAsync(request.Email);
+        var user = await _userRepo.GetByEmailAnyStatusAsync(request.Email);
 
         if (user == null)
             throw new UnauthorizedException("Email hoặc mật khẩu không đúng. Vui lòng thử lại.");
+
+        if (!user.IsActive)
+            throw new UnauthorizedException("Tài khoản của bạn đã bị vô hiệu hóa. Vui lòng liên hệ quản trị viên.");
 
         // Kiểm tra lockout
         if (user.LockoutUntil.HasValue && user.LockoutUntil > DateTime.UtcNow)
@@ -127,28 +130,27 @@ public class AuthService : IAuthService
     {
         var account = await _googleValidator.ValidateAsync(request.IdToken);
 
-        var user = await _userRepo.GetByGoogleIdAsync(account.Subject);
+        var user = await _userRepo.GetByGoogleIdAnyStatusAsync(account.Subject)
+                   ?? await _userRepo.GetByEmailAnyStatusAsync(account.Email);
         var isNewUser = false;
+
+        if (user != null && !user.IsActive)
+            throw new UnauthorizedException("Tài khoản của bạn đã bị vô hiệu hóa. Vui lòng liên hệ quản trị viên.");
 
         if (user == null)
         {
-            user = await _userRepo.GetByEmailAsync(account.Email);
+            user = await CreateOAuthUserAsync(account, request);
+            isNewUser = true;
+        }
+        else if (user.GoogleId != account.Subject)
+        {
+            if (user.Provider != AuthProvider.Google)
+                throw new ConflictException(
+                    "Email này đã được đăng ký bằng mật khẩu. " +
+                    "Vui lòng quay lại trang đăng nhập và sử dụng email & mật khẩu của bạn.");
 
-            if (user != null)
-            {
-                if (user.Provider != AuthProvider.Google)
-                    throw new ConflictException(
-                        "Email này đã được đăng ký bằng mật khẩu. " +
-                        "Vui lòng quay lại trang đăng nhập và sử dụng email & mật khẩu của bạn.");
-
-                user.GoogleId = account.Subject;
-                await _userRepo.UpdateAsync(user);
-            }
-            else
-            {
-                user = await CreateOAuthUserAsync(account, request);
-                isNewUser = true;
-            }
+            user.GoogleId = account.Subject;
+            await _userRepo.UpdateAsync(user);
         }
 
         var response = await IssueTokensAsync(user);

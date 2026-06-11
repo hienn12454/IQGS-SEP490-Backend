@@ -31,6 +31,14 @@ public class UserRepository : BaseRepository<User>, IUserRepository
     public async Task<User?> GetByIdAnyStatusAsync(Guid id)
         => await _dbSet.Include(u => u.Role).FirstOrDefaultAsync(u => u.Id == id);
 
+    public async Task<User?> GetByEmailAnyStatusAsync(string email)
+        => await _dbSet.Include(u => u.Role)
+            .FirstOrDefaultAsync(u => u.Email == email);
+
+    public async Task<User?> GetByGoogleIdAnyStatusAsync(string googleId)
+        => await _dbSet.Include(u => u.Role)
+            .FirstOrDefaultAsync(u => u.GoogleId == googleId);
+
     public async Task LoadRoleAsync(User user)
     {
         if (user.Role == null!)
