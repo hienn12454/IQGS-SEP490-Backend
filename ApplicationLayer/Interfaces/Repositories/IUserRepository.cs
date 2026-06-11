@@ -15,6 +15,12 @@ public interface IUserRepository : IBaseRepository<User>
     /// <summary>Tìm user bất kể IsActive — dùng cho Admin.</summary>
     Task<User?> GetByIdAnyStatusAsync(Guid id);
 
+    /// <summary>Tìm user theo email bất kể IsActive — dùng để phân biệt "không tồn tại" vs "bị disable".</summary>
+    Task<User?> GetByEmailAnyStatusAsync(string email);
+
+    /// <summary>Tìm user theo GoogleId bất kể IsActive.</summary>
+    Task<User?> GetByGoogleIdAnyStatusAsync(string googleId);
+
     /// <summary>Load Role navigation property.</summary>
     Task LoadRoleAsync(User user);
 }
