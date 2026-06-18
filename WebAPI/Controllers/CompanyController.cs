@@ -1,5 +1,5 @@
 using ApplicationLayer.DTOs.Company;
-using ApplicationLayer.Interfaces;
+using ApplicationLayer.Interfaces.Services;
 using ApplicationLayer.ResponseCode;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;

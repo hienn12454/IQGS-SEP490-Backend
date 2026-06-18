@@ -1,5 +1,6 @@
 using ApplicationLayer.DTOs.Company;
-using ApplicationLayer.Interfaces;
+using ApplicationLayer.Interfaces.Services;
+using ApplicationLayer.Interfaces.Repositories;
 using DomainLayer.Entities;
 
 namespace ApplicationLayer.Services;

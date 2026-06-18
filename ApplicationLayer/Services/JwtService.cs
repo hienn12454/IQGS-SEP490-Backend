@@ -1,4 +1,4 @@
-using ApplicationLayer.Interfaces;
+using ApplicationLayer.Interfaces.Services;
 using DomainLayer.Constants;
 using DomainLayer.Entities;
 using Microsoft.Extensions.Configuration;

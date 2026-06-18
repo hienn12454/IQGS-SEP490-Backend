@@ -1,6 +1,6 @@
 using DomainLayer.Entities;
 
-namespace ApplicationLayer.Interfaces;
+namespace ApplicationLayer.Interfaces.Repositories;
 
 public interface ICandidateProfileRepository : IBaseRepository<CandidateProfile>
 {

@@ -1,4 +1,5 @@
-using ApplicationLayer.Interfaces;
+using ApplicationLayer.Interfaces.Repositories;
+using ApplicationLayer.Interfaces.Services;
 using ApplicationLayer.Services;
 using InfrastructureLayer.Database;
 using InfrastructureLayer.Repository;
@@ -191,8 +192,7 @@ public class Program
         builder.Services.AddScoped<IJwtService, JwtService>();
         builder.Services.AddScoped<IEmailService, EmailService>();
         builder.Services.AddScoped<IAuthService, AuthService>();
-        builder.Services.AddScoped<IProfileService, ProfileService>();
-        builder.Services.AddScoped<IAdminService, AdminService>();
+        builder.Services.AddScoped<IUserService, UserService>();
         builder.Services.AddScoped<ICompanyService, CompanyService>();
 
         // ── App pipeline ──────────────────────────────────────────────
