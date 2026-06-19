@@ -50,6 +50,8 @@ appsettings.Development.json
 appsettings.Production.json
 .env
 *.env
+*.backup.*
+**/*.backup.*
 
 ## OS
 .DS_Store
