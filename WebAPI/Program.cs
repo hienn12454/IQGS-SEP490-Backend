@@ -209,8 +209,10 @@ public class Program
         app.UseSwaggerUI(options =>
         {
             options.SwaggerEndpoint("/swagger/v1/swagger.json", "IQGS API v1");
-            options.RoutePrefix = string.Empty;
+            options.RoutePrefix = "swagger";
         });
+
+        app.MapGet("/", () => Results.Redirect("/swagger"));
 
         app.UseHttpsRedirection();
         app.UseAuthentication();
