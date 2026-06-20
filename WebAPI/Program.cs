@@ -1,13 +1,21 @@
+using ApplicationLayer.Interfaces.Jobs;
 using ApplicationLayer.Interfaces.Repositories;
 using ApplicationLayer.Interfaces.Services;
 using ApplicationLayer.Services;
+using ApplicationLayer.Settings;
+using Hangfire;
+using Hangfire.PostgreSql;
 using InfrastructureLayer.Database;
+using InfrastructureLayer.External;
+using InfrastructureLayer.Jobs;
 using InfrastructureLayer.Repository;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using Npgsql;
+using Pgvector.EntityFrameworkCore;
 using System.Security.Claims;
 using System.Text;
 using System.Text.Encodings.Web;
@@ -87,8 +95,56 @@ public class Program
         });
 
         // ── Database ──────────────────────────────────────────────────
+        var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
+            ?? throw new InvalidOperationException("ConnectionStrings:DefaultConnection chưa được cấu hình.");
+
+        var dataSourceBuilder = new NpgsqlDataSourceBuilder(connectionString);
+        dataSourceBuilder.UseVector();
+        var npgsqlDataSource = dataSourceBuilder.Build();
+        builder.Services.AddSingleton(npgsqlDataSource);
         builder.Services.AddDbContext<AppDbContext>(options =>
-            options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
+            options.UseNpgsql(npgsqlDataSource, o => o.UseVector()));
+
+        // ── App settings ──────────────────────────────────────────────
+        builder.Services.Configure<InternalApiSettings>(
+            builder.Configuration.GetSection(InternalApiSettings.SectionName));
+        builder.Services.Configure<RagServiceSettings>(
+            builder.Configuration.GetSection(RagServiceSettings.SectionName));
+        builder.Services.Configure<BlobStorageSettings>(
+            builder.Configuration.GetSection(BlobStorageSettings.SectionName));
+        builder.Services.Configure<KnowledgeBaseSettings>(
+            builder.Configuration.GetSection(KnowledgeBaseSettings.SectionName));
+
+        var kbSettings = builder.Configuration
+            .GetSection(KnowledgeBaseSettings.SectionName)
+            .Get<KnowledgeBaseSettings>() ?? new KnowledgeBaseSettings();
+
+        // ── Hangfire ──────────────────────────────────────────────────
+        builder.Services.AddHangfire(config => config
+            .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
+            .UseSimpleAssemblyNameTypeSerializer()
+            .UseRecommendedSerializerSettings()
+            .UsePostgreSqlStorage(c => c.UseNpgsqlConnection(connectionString)));
+
+        builder.Services.AddHangfireServer(options =>
+        {
+            options.Queues = new[] { "knowledge-ingestion", "question-generation", "default" };
+            options.WorkerCount = Math.Max(kbSettings.MaxConcurrentIngestJobs, 2);
+        });
+
+        // ── RAG HttpClient ────────────────────────────────────────────
+        var ragSettings = builder.Configuration
+            .GetSection(RagServiceSettings.SectionName)
+            .Get<RagServiceSettings>() ?? new RagServiceSettings();
+        var internalApiKey = builder.Configuration[$"{InternalApiSettings.SectionName}:Key"] ?? string.Empty;
+
+        builder.Services.AddHttpClient<IRagService, RagService>(client =>
+        {
+            client.BaseAddress = new Uri(ragSettings.BaseUrl.TrimEnd('/') + "/");
+            client.Timeout = TimeSpan.FromSeconds(ragSettings.TimeoutSeconds);
+            if (!string.IsNullOrWhiteSpace(internalApiKey))
+                client.DefaultRequestHeaders.Add("X-Internal-Api-Key", internalApiKey);
+        });
 
         // ── JWT Authentication ────────────────────────────────────────
         var jwtKey = builder.Configuration["JwtSettings:SecretKey"]
@@ -198,6 +254,8 @@ public class Program
         builder.Services.AddScoped<IHRProfileRepository, HRProfileRepository>();
         builder.Services.AddScoped<ICandidateProfileRepository, CandidateProfileRepository>();
         builder.Services.AddScoped<ICompanyRepository, CompanyRepository>();
+        builder.Services.AddScoped<IKnowledgeDocumentRepository, KnowledgeDocumentRepository>();
+        builder.Services.AddScoped<IQuestionGenerationJobRepository, QuestionGenerationJobRepository>();
 
         // Services
         builder.Services.AddScoped<IJwtService, JwtService>();
@@ -206,6 +264,16 @@ public class Program
         builder.Services.AddScoped<IAuthService, AuthService>();
         builder.Services.AddScoped<IUserService, UserService>();
         builder.Services.AddScoped<ICompanyService, CompanyService>();
+        builder.Services.AddScoped<IBlobStorageService, AzureBlobStorageService>();
+        builder.Services.AddScoped<IKnowledgeDocumentService, KnowledgeDocumentService>();
+        builder.Services.AddScoped<IKnowledgeDocumentInternalService, KnowledgeDocumentInternalService>();
+        builder.Services.AddScoped<IQuestionGenerationJobService, QuestionGenerationJobService>();
+
+        // Hangfire jobs
+        builder.Services.AddScoped<IKnowledgeIngestJob, KnowledgeIngestJob>();
+        builder.Services.AddScoped<IGeneratePlanJob, GeneratePlanJob>();
+        builder.Services.AddScoped<IGenerateQuestionsFromPlanJob, GenerateQuestionsFromPlanJob>();
+        builder.Services.AddSingleton<IJobScheduler, JobScheduler>();
 
         // ── App pipeline ──────────────────────────────────────────────
         var app = builder.Build();
@@ -216,6 +284,12 @@ public class Program
 
         // Global exception handler — phải đứng đầu pipeline
         app.UseGlobalExceptionHandler();
+
+        // Internal API key — chỉ route /internal/*, không dùng JWT
+        app.UseWhen(
+            ctx => ctx.Request.Path.StartsWithSegments("/internal"),
+            branch => branch.UseMiddleware<InternalApiKeyMiddleware>());
+
         app.UseCors();
 
         app.UseSwagger();
@@ -230,6 +304,7 @@ public class Program
         app.UseHttpsRedirection();
         app.UseAuthentication();
         app.UseAuthorization();
+        app.UseHangfireDashboard("/hangfire");
         app.MapControllers();
         app.Run();
     }

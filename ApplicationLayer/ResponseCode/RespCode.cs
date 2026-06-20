@@ -5,6 +5,7 @@ public static class RespCode
   // default
   public const int OK = 200;
   public const int CREATED = 201;
+  public const int ACCEPTED = 202;
   public const int REDIRECT = 302;
   public const int NO_CONTENT = 204;
   public const int BAD_REQUEST = 400;
@@ -19,6 +20,7 @@ public static class RespMsg
 {
   public const string OK = "OK";
   public const string CREATED = "Created";
+  public const string ACCEPTED = "Accepted";
   public const string NO_CONTENT = "No Content";
   public const string BAD_REQUEST = "Bad Request";
   public const string UNAUTHORIZED = "Unauthorized";
