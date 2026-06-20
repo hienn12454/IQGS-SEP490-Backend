@@ -57,6 +57,10 @@ public class AppDbContext : DbContext
             entity.Property(u => u.FailedLoginAttempts).IsRequired().HasDefaultValue(0);
             entity.Property(u => u.Provider).IsRequired().HasMaxLength(20).HasDefaultValue("local");
             entity.Property(u => u.GoogleId).HasMaxLength(255);
+            // Unique trên GoogleId nhưng cho phép nhiều row NULL (Local users).
+            entity.HasIndex(u => u.GoogleId)
+                  .IsUnique()
+                  .HasFilter("\"GoogleId\" IS NOT NULL");
             entity.Property(u => u.RefreshToken).HasMaxLength(512);
             entity.HasIndex(u => u.RefreshToken);
 
