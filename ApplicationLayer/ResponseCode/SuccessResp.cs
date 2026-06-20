@@ -27,6 +27,13 @@ public static class SuccessResp
     return new JsonResult(resp) { StatusCode = RespCode.CREATED };
   }
 
+  public static IActionResult Accepted(object? data)
+  {
+    var resp = new GenericResp<object> { Data = data, Code = RespCode.ACCEPTED, Message = RespMsg.ACCEPTED };
+
+    return new JsonResult(resp) { StatusCode = RespCode.ACCEPTED };
+  }
+
   public static IActionResult NoContent()
   {
     // 204 không được phép có body — dùng NoContentResult thay vì JsonResult
