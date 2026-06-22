@@ -1,3 +1,5 @@
+using ApplicationLayer.DTOs.KnowledgeBase;
+using ApplicationLayer.DTOs.QuestionGeneration;
 using DomainLayer.Entities;
 
 namespace ApplicationLayer.Interfaces.Repositories;
@@ -12,4 +14,5 @@ public interface IQuestionGenerationJobRepository
     Task UpdatePlanAsync(QuestionGenerationPlan plan);
     Task AddQuestionsAsync(IEnumerable<GeneratedQuestion> questions);
     Task DeleteQuestionsByJobIdAsync(Guid jobId);
+    Task<PagedResultDto<QuestionGenerationJob>> GetPagedByOwnerAsync(Guid ownerId, QuestionGenerationListQueryDto query);
 }
