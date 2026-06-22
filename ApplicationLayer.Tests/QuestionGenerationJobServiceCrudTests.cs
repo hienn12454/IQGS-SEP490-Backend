@@ -16,14 +16,20 @@ namespace ApplicationLayer.Tests;
 public class QuestionGenerationJobServiceCrudTests
 {
     private readonly Mock<IQuestionGenerationJobRepository> _repository = new();
+    private readonly Mock<IQuestionSetRepository> _questionSetRepository = new();
     private readonly QuestionGenerationJobService _service;
 
     public QuestionGenerationJobServiceCrudTests()
     {
+        _questionSetRepository
+            .Setup(r => r.ExistsBySourceJobIdAsync(It.IsAny<Guid>()))
+            .ReturnsAsync(false);
+
         _service = new QuestionGenerationJobService(
             _repository.Object,
             new Mock<IJobScheduler>().Object,
             new Mock<IRagService>().Object,
+            _questionSetRepository.Object,
             Options.Create(new KnowledgeBaseSettings { AllowedExtensions = [".pdf"], MaxFileSizeMb = 50 }));
     }
 

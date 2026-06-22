@@ -24,6 +24,7 @@ public class QuestionGenerationJobService : IQuestionGenerationJobService
     private readonly IJobScheduler _jobScheduler;
     private readonly IRagService _ragService;
     private readonly KnowledgeBaseSettings _kbSettings;
+    private readonly IQuestionSetRepository _questionSetRepository;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -35,12 +36,14 @@ public class QuestionGenerationJobService : IQuestionGenerationJobService
         IQuestionGenerationJobRepository repository,
         IJobScheduler jobScheduler,
         IRagService ragService,
+        IQuestionSetRepository questionSetRepository,
         IOptions<KnowledgeBaseSettings> kbSettings)
     {
         _repository = repository;
         _jobScheduler = jobScheduler;
         _ragService = ragService;
         _kbSettings = kbSettings.Value;
+        _questionSetRepository = questionSetRepository;
     }
 
     public Task<CreatePlanJobResponseDto> CreatePlanJobAsync(
@@ -221,6 +224,7 @@ public class QuestionGenerationJobService : IQuestionGenerationJobService
         query.Page = Math.Max(1, query.Page);
         query.PageSize = Math.Clamp(query.PageSize, 1, 100);
         var paged = await _repository.GetPagedByOwnerAsync(ownerId, query);
+        var draftJobIds = await _questionSetRepository.GetSourceJobIdsWithDraftAsync(paged.Items.Select(j => j.Id));
         var items = paged.Items.Select(job => new QuestionGenerationJobListItemDto
         {
             JobId = job.Id,
@@ -232,7 +236,7 @@ public class QuestionGenerationJobService : IQuestionGenerationJobService
             CreatedAt = job.CreatedAt,
             CompletedAt = job.CompletedAt,
             QuestionCount = job.Questions.Count,
-            HasDraft = false
+            HasDraft = draftJobIds.Contains(job.Id)
         }).ToList();
         return new PagedResultDto<QuestionGenerationJobListItemDto>
         {
@@ -476,6 +480,8 @@ public class QuestionGenerationJobService : IQuestionGenerationJobService
         if (job.Status != QuestionGenerationJobStatus.Completed)
             throw new BadRequestException("Chỉ được sửa câu hỏi khi session ở trạng thái COMPLETED.");
 
+        if (await _questionSetRepository.ExistsBySourceJobIdAsync(job.Id))
+            throw new ConflictException("Session đã lưu draft, không thể sửa câu hỏi thêm.");
     }
 
     private static void ValidateQuestionInput(string question, string questionType, string difficulty)
