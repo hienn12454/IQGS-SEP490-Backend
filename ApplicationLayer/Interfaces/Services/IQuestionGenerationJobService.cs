@@ -23,6 +23,10 @@ public interface IQuestionGenerationJobService
     Task<object> UpdatePlanAsync(Guid jobId, Guid ownerId, UpdatePlanRequestDto dto);
     Task<JobStatusResponseDto> ApprovePlanAsync(Guid jobId, Guid ownerId);
     Task<JobQuestionsResponseDto> GetQuestionsAsync(Guid jobId, Guid ownerId);
+    Task<GeneratedQuestionResponseDto> UpdateQuestionAsync(Guid jobId, Guid questionId, Guid ownerId, UpdateQuestionRequestDto dto);
+    Task<GeneratedQuestionResponseDto> AddQuestionAsync(Guid jobId, Guid ownerId, CreateQuestionRequestDto dto);
+    Task DeleteQuestionAsync(Guid jobId, Guid questionId, Guid ownerId);
+    Task<IReadOnlyList<GeneratedQuestionResponseDto>> ReorderQuestionsAsync(Guid jobId, Guid ownerId, ReorderQuestionsRequestDto dto);
     Task<JobStatusResponseDto> RetryPlanAsync(Guid jobId, Guid ownerId);
     Task<JobStatusResponseDto> RetryQuestionsAsync(Guid jobId, Guid ownerId);
 }

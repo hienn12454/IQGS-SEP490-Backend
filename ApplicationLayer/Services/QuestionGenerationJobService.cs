@@ -360,6 +360,172 @@ public class QuestionGenerationJobService : IQuestionGenerationJobService
     }
 
 
+    public async Task<GeneratedQuestionResponseDto> UpdateQuestionAsync(
+        Guid jobId, Guid questionId, Guid ownerId, UpdateQuestionRequestDto dto)
+    {
+        var job = await GetOwnedJob(jobId, ownerId);
+        await EnsureJobAllowsQuestionEditAsync(job);
+
+        var question = await _repository.GetQuestionByIdAsync(questionId)
+            ?? throw new NotFoundException("Câu hỏi không tồn tại.");
+
+        if (question.JobId != jobId)
+            throw new NotFoundException("Câu hỏi không thuộc session này.");
+
+        ApplyQuestionFields(question, dto.Question, dto.QuestionType, dto.Difficulty,
+            dto.Skill, dto.FocusArea, dto.Rationale, dto.SampleAnswer,
+            dto.EvaluationCriteria, dto.Citations);
+
+        await _repository.UpdateQuestionAsync(question);
+        return MapGeneratedQuestion(question);
+    }
+
+    public async Task<GeneratedQuestionResponseDto> AddQuestionAsync(
+        Guid jobId, Guid ownerId, CreateQuestionRequestDto dto)
+    {
+        var job = await GetOwnedJob(jobId, ownerId);
+        await EnsureJobAllowsQuestionEditAsync(job);
+
+        ValidateQuestionInput(dto.Question, dto.QuestionType, dto.Difficulty);
+
+        var order = dto.Order ?? (await _repository.GetMaxOrderByJobIdAsync(jobId) + 1);
+        if (order <= 0)
+            throw new BadRequestException("order phải lớn hơn 0.");
+
+        var question = new GeneratedQuestion
+        {
+            JobId = jobId,
+            Order = order,
+            Question = dto.Question.Trim(),
+            QuestionType = QuestionTypeNormalizer.Normalize(new List<string> { dto.QuestionType }).First(),
+            Difficulty = dto.Difficulty.Trim(),
+            Skill = dto.Skill?.Trim(),
+            FocusArea = dto.FocusArea?.Trim(),
+            Rationale = dto.Rationale?.Trim(),
+            SampleAnswer = dto.SampleAnswer?.Trim(),
+            EvaluationCriteriaJson = JsonSerializer.Serialize(dto.EvaluationCriteria, JsonOptions),
+            CitationsJson = JsonSerializer.Serialize(dto.Citations, JsonOptions)
+        };
+
+        await _repository.AddQuestionsAsync(new[] { question });
+        return MapGeneratedQuestion(question);
+    }
+
+    public async Task DeleteQuestionAsync(Guid jobId, Guid questionId, Guid ownerId)
+    {
+        var job = await GetOwnedJob(jobId, ownerId);
+        await EnsureJobAllowsQuestionEditAsync(job);
+
+        var count = await _repository.GetQuestionCountByJobIdAsync(jobId);
+        if (count <= 1)
+            throw new BadRequestException("Không thể xóa câu hỏi cuối cùng.");
+
+        var question = await _repository.GetQuestionByIdAsync(questionId)
+            ?? throw new NotFoundException("Câu hỏi không tồn tại.");
+
+        if (question.JobId != jobId)
+            throw new NotFoundException("Câu hỏi không thuộc session này.");
+
+        await _repository.DeleteQuestionAsync(question);
+        await NormalizeQuestionOrdersAsync(jobId);
+    }
+
+    public async Task<IReadOnlyList<GeneratedQuestionResponseDto>> ReorderQuestionsAsync(
+        Guid jobId, Guid ownerId, ReorderQuestionsRequestDto dto)
+    {
+        var job = await GetOwnedJob(jobId, ownerId);
+        await EnsureJobAllowsQuestionEditAsync(job);
+
+        if (dto.Items is null || dto.Items.Count == 0)
+            throw new BadRequestException("items không được rỗng.");
+
+        var existing = await _repository.GetQuestionsByJobIdAsync(jobId);
+        if (dto.Items.Count != existing.Count)
+            throw new BadRequestException("Danh sách reorder phải chứa đủ tất cả câu hỏi.");
+
+        var existingIds = existing.Select(q => q.Id).ToHashSet();
+        foreach (var item in dto.Items)
+        {
+            if (!existingIds.Contains(item.QuestionId))
+                throw new BadRequestException("questionId không thuộc session này.");
+            if (item.Order <= 0)
+                throw new BadRequestException("order phải lớn hơn 0.");
+        }
+
+        var orders = dto.Items.Select(i => i.Order).ToList();
+        if (orders.Distinct().Count() != orders.Count)
+            throw new BadRequestException("order bị trùng.");
+
+        foreach (var item in dto.Items)
+        {
+            var question = existing.First(q => q.Id == item.QuestionId);
+            question.Order = item.Order;
+            await _repository.UpdateQuestionAsync(question);
+        }
+
+        var sorted = (await _repository.GetQuestionsByJobIdAsync(jobId))
+            .OrderBy(q => q.Order)
+            .Select(MapGeneratedQuestion)
+            .ToList();
+
+        return sorted;
+    }
+
+    private async Task EnsureJobAllowsQuestionEditAsync(QuestionGenerationJob job)
+    {
+        if (job.Status != QuestionGenerationJobStatus.Completed)
+            throw new BadRequestException("Chỉ được sửa câu hỏi khi session ở trạng thái COMPLETED.");
+
+    }
+
+    private static void ValidateQuestionInput(string question, string questionType, string difficulty)
+    {
+        if (string.IsNullOrWhiteSpace(question))
+            throw new BadRequestException("question không được để trống.");
+        if (string.IsNullOrWhiteSpace(questionType))
+            throw new BadRequestException("questionType không được để trống.");
+        if (string.IsNullOrWhiteSpace(difficulty))
+            throw new BadRequestException("difficulty không được để trống.");
+    }
+
+    private void ApplyQuestionFields(
+        GeneratedQuestion question,
+        string text,
+        string questionType,
+        string difficulty,
+        string? skill,
+        string? focusArea,
+        string? rationale,
+        string? sampleAnswer,
+        List<object> evaluationCriteria,
+        List<object> citations)
+    {
+        ValidateQuestionInput(text, questionType, difficulty);
+
+        question.Question = text.Trim();
+        question.QuestionType = QuestionTypeNormalizer.Normalize(new List<string> { questionType }).First();
+        question.Difficulty = difficulty.Trim();
+        question.Skill = skill?.Trim();
+        question.FocusArea = focusArea?.Trim();
+        question.Rationale = rationale?.Trim();
+        question.SampleAnswer = sampleAnswer?.Trim();
+        question.EvaluationCriteriaJson = JsonSerializer.Serialize(evaluationCriteria, JsonOptions);
+        question.CitationsJson = JsonSerializer.Serialize(citations, JsonOptions);
+    }
+
+    private async Task NormalizeQuestionOrdersAsync(Guid jobId)
+    {
+        var questions = await _repository.GetQuestionsByJobIdAsync(jobId);
+        var ordered = questions.OrderBy(q => q.Order).ToList();
+        for (var i = 0; i < ordered.Count; i++)
+        {
+            var expected = i + 1;
+            if (ordered[i].Order == expected)
+                continue;
+            ordered[i].Order = expected;
+            await _repository.UpdateQuestionAsync(ordered[i]);
+        }
+    }
     private async Task<QuestionGenerationJob> GetOwnedJob(Guid jobId, Guid ownerId)
     {
         var job = await _repository.GetByIdWithPlanAndQuestionsAsync(jobId)

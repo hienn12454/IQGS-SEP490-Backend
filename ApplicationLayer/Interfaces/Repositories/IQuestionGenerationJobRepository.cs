@@ -15,4 +15,10 @@ public interface IQuestionGenerationJobRepository
     Task AddQuestionsAsync(IEnumerable<GeneratedQuestion> questions);
     Task DeleteQuestionsByJobIdAsync(Guid jobId);
     Task<PagedResultDto<QuestionGenerationJob>> GetPagedByOwnerAsync(Guid ownerId, QuestionGenerationListQueryDto query);
+    Task<GeneratedQuestion?> GetQuestionByIdAsync(Guid questionId);
+    Task<List<GeneratedQuestion>> GetQuestionsByJobIdAsync(Guid jobId);
+    Task UpdateQuestionAsync(GeneratedQuestion question);
+    Task DeleteQuestionAsync(GeneratedQuestion question);
+    Task<int> GetQuestionCountByJobIdAsync(Guid jobId);
+    Task<int> GetMaxOrderByJobIdAsync(Guid jobId);
 }
