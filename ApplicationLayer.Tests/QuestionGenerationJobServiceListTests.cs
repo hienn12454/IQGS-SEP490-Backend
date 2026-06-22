@@ -18,6 +18,7 @@ public class QuestionGenerationJobServiceListTests
     private readonly Mock<IQuestionGenerationJobRepository> _repository = new();
     private readonly Mock<IJobScheduler> _scheduler = new();
     private readonly Mock<IRagService> _ragService = new();
+    private readonly Mock<IQuestionSetRepository> _questionSetRepository = new();
     private readonly QuestionGenerationJobService _service;
 
     public QuestionGenerationJobServiceListTests()
@@ -28,10 +29,15 @@ public class QuestionGenerationJobServiceListTests
             MaxFileSizeMb = 50
         });
 
+        _questionSetRepository
+            .Setup(r => r.GetSourceJobIdsWithDraftAsync(It.IsAny<IEnumerable<Guid>>()))
+            .ReturnsAsync(new HashSet<Guid>());
+
         _service = new QuestionGenerationJobService(
             _repository.Object,
             _scheduler.Object,
             _ragService.Object,
+            _questionSetRepository.Object,
             kbSettings);
     }
 

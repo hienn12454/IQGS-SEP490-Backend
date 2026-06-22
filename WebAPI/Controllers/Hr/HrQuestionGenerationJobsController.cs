@@ -1,5 +1,6 @@
 ﻿using ApplicationLayer.DTOs.QuestionGeneration;
 using ApplicationLayer.Interfaces.Services;
+using ApplicationLayer.DTOs.QuestionSet;
 using ApplicationLayer.ResponseCode;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -14,10 +15,12 @@ namespace WebAPI.Controllers.Hr;
 public class HrQuestionGenerationJobsController : ControllerBase
 {
     private readonly IQuestionGenerationJobService _service;
+    private readonly IQuestionSetService _questionSetService;
 
-    public HrQuestionGenerationJobsController(IQuestionGenerationJobService service)
+    public HrQuestionGenerationJobsController(IQuestionGenerationJobService service, IQuestionSetService questionSetService)
     {
         _service = service;
+        _questionSetService = questionSetService;
     }
 
     [HttpPost("plan")]
@@ -122,6 +125,12 @@ public class HrQuestionGenerationJobsController : ControllerBase
         return SuccessResp.Ok(result);
     }
 
+    [HttpPost("{jobId:guid}/save-draft")]
+    public async Task<IActionResult> SaveDraft(Guid jobId)
+    {
+        var result = await _questionSetService.SaveDraftFromJobAsync(jobId, GetCurrentUserId());
+        return SuccessResp.Created(result);
+    }
     [HttpPost("{jobId:guid}/retry-plan")]
     public async Task<IActionResult> RetryPlan(Guid jobId)
     {

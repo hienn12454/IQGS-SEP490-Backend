@@ -1,4 +1,4 @@
-using ApplicationLayer.Interfaces.Jobs;
+﻿using ApplicationLayer.Interfaces.Jobs;
 using ApplicationLayer.Interfaces.Repositories;
 using ApplicationLayer.Interfaces.Services;
 using ApplicationLayer.Services;
@@ -31,12 +31,12 @@ public class Program
     {
         var builder = WebApplication.CreateBuilder(args);
 
-        // ── Controllers ───────────────────────────────────────────────
+        // â”€â”€ Controllers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         builder.Services.AddControllers()
             .AddJsonOptions(o =>
                 o.JsonSerializerOptions.Encoder = JavaScriptEncoder.Create(UnicodeRanges.All));
 
-        // Custom model-validation response (thay thế default 400 của ASP.NET)
+        // Custom model-validation response (thay tháº¿ default 400 cá»§a ASP.NET)
         builder.Services.Configure<ApiBehaviorOptions>(options =>
         {
             options.InvalidModelStateResponseFactory = ctx =>
@@ -50,14 +50,14 @@ public class Program
                 return new JsonResult(new
                 {
                     Code = 400,
-                    Error = "Dữ liệu không hợp lệ.",
+                    Error = "Dá»¯ liá»‡u khÃ´ng há»£p lá»‡.",
                     Errors = errors
                 })
                 { StatusCode = 400 };
             };
         });
 
-        // ── Swagger / OpenAPI ─────────────────────────────────────────
+        // â”€â”€ Swagger / OpenAPI â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         builder.Services.AddEndpointsApiExplorer();
         builder.Services.AddSwaggerGen(options =>
         {
@@ -68,11 +68,11 @@ public class Program
                 Description = "AI-Powered Interview Question Generation System"
             });
 
-            // Hỗ trợ JWT Bearer trong Swagger UI
+            // Há»— trá»£ JWT Bearer trong Swagger UI
             options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
             {
                 In = ParameterLocation.Header,
-                Description = "Nhập JWT token. Ví dụ: Bearer {token}",
+                Description = "Nháº­p JWT token. VÃ­ dá»¥: Bearer {token}",
                 Name = "Authorization",
                 Type = SecuritySchemeType.Http,
                 BearerFormat = "JWT",
@@ -94,9 +94,9 @@ public class Program
             });
         });
 
-        // ── Database ──────────────────────────────────────────────────
+        // â”€â”€ Database â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
-            ?? throw new InvalidOperationException("ConnectionStrings:DefaultConnection chưa được cấu hình.");
+            ?? throw new InvalidOperationException("ConnectionStrings:DefaultConnection chÆ°a Ä‘Æ°á»£c cáº¥u hÃ¬nh.");
 
         var dataSourceBuilder = new NpgsqlDataSourceBuilder(connectionString);
         dataSourceBuilder.UseVector();
@@ -105,7 +105,7 @@ public class Program
         builder.Services.AddDbContext<AppDbContext>(options =>
             options.UseNpgsql(npgsqlDataSource, o => o.UseVector()));
 
-        // ── App settings ──────────────────────────────────────────────
+        // â”€â”€ App settings â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         builder.Services.Configure<InternalApiSettings>(
             builder.Configuration.GetSection(InternalApiSettings.SectionName));
         builder.Services.Configure<RagServiceSettings>(
@@ -119,7 +119,7 @@ public class Program
             .GetSection(KnowledgeBaseSettings.SectionName)
             .Get<KnowledgeBaseSettings>() ?? new KnowledgeBaseSettings();
 
-        // ── Hangfire ──────────────────────────────────────────────────
+        // â”€â”€ Hangfire â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         builder.Services.AddHangfire(config => config
             .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
             .UseSimpleAssemblyNameTypeSerializer()
@@ -132,7 +132,7 @@ public class Program
             options.WorkerCount = Math.Max(kbSettings.MaxConcurrentIngestJobs, 2);
         });
 
-        // ── RAG HttpClient ────────────────────────────────────────────
+        // â”€â”€ RAG HttpClient â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         var ragSettings = builder.Configuration
             .GetSection(RagServiceSettings.SectionName)
             .Get<RagServiceSettings>() ?? new RagServiceSettings();
@@ -146,14 +146,14 @@ public class Program
                 client.DefaultRequestHeaders.Add("X-Internal-Api-Key", internalApiKey);
         });
 
-        // ── JWT Authentication ────────────────────────────────────────
+        // â”€â”€ JWT Authentication â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         var jwtKey = builder.Configuration["JwtSettings:SecretKey"]
-            ?? throw new InvalidOperationException("JwtSettings:SecretKey chưa được cấu hình.");
+            ?? throw new InvalidOperationException("JwtSettings:SecretKey chÆ°a Ä‘Æ°á»£c cáº¥u hÃ¬nh.");
 
         builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             .AddJwtBearer(options =>
             {
-                // Giữ nguyên claim names gốc — không map "sub" → ClaimTypes.NameIdentifier
+                // Giá»¯ nguyÃªn claim names gá»‘c â€” khÃ´ng map "sub" â†’ ClaimTypes.NameIdentifier
                 options.MapInboundClaims = false;
 
                 options.TokenValidationParameters = new TokenValidationParameters
@@ -170,16 +170,16 @@ public class Program
                     NameClaimType = "sub"
                 };
 
-                // SCRUM-159 AC-04: Thu hồi access token khi logout / tài khoản bị disable
+                // SCRUM-159 AC-04: Thu há»“i access token khi logout / tÃ i khoáº£n bá»‹ disable
                 options.Events = new JwtBearerEvents
                 {
-                    // ── 401: Không có token hoặc token không hợp lệ ──────
+                    // â”€â”€ 401: KhÃ´ng cÃ³ token hoáº·c token khÃ´ng há»£p lá»‡ â”€â”€â”€â”€â”€â”€
                     OnChallenge = async ctx =>
                     {
-                        ctx.HandleResponse(); // Tắt redirect mặc định của ASP.NET
+                        ctx.HandleResponse(); // Táº¯t redirect máº·c Ä‘á»‹nh cá»§a ASP.NET
 
                         var message = ctx.AuthenticateFailure?.Message
-                            ?? "Bạn chưa đăng nhập. Vui lòng đăng nhập để tiếp tục.";
+                            ?? "Báº¡n chÆ°a Ä‘Äƒng nháº­p. Vui lÃ²ng Ä‘Äƒng nháº­p Ä‘á»ƒ tiáº¿p tá»¥c.";
 
                         ctx.Response.StatusCode = 401;
                         ctx.Response.ContentType = "application/json; charset=utf-8";
@@ -191,28 +191,28 @@ public class Program
                             }));
                     },
 
-                    // ── 403: Đã đăng nhập nhưng không đủ quyền ──────────
+                    // â”€â”€ 403: ÄÃ£ Ä‘Äƒng nháº­p nhÆ°ng khÃ´ng Ä‘á»§ quyá»n â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
                     OnForbidden = async ctx =>
                     {
                         ctx.Response.StatusCode = 403;
                         ctx.Response.ContentType = "application/json; charset=utf-8";
                         await ctx.Response.WriteAsync(JsonSerializer.Serialize(
-                            new { code = 403, error = "Bạn không có quyền thực hiện thao tác này." },
+                            new { code = 403, error = "Báº¡n khÃ´ng cÃ³ quyá»n thá»±c hiá»‡n thao tÃ¡c nÃ y." },
                             new JsonSerializerOptions
                             {
                                 Encoder = JavaScriptEncoder.Create(UnicodeRanges.All)
                             }));
                     },
 
-                    // ── Kiểm tra user còn active sau khi token hợp lệ ───
+                    // â”€â”€ Kiá»ƒm tra user cÃ²n active sau khi token há»£p lá»‡ â”€â”€â”€
                     OnTokenValidated = async ctx =>
                     {
-                        // Fallback: JwtSecurityTokenHandler có thể map "sub" → NameIdentifier
+                        // Fallback: JwtSecurityTokenHandler cÃ³ thá»ƒ map "sub" â†’ NameIdentifier
                         var userIdStr = ctx.Principal?.FindFirst("sub")?.Value
                             ?? ctx.Principal?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
                         if (!Guid.TryParse(userIdStr, out var userId))
                         {
-                            ctx.Fail("Token không hợp lệ.");
+                            ctx.Fail("Token khÃ´ng há»£p lá»‡.");
                             return;
                         }
 
@@ -222,14 +222,14 @@ public class Program
 
                         if (user is null || !user.IsActive)
                         {
-                            ctx.Fail("Tài khoản đã bị vô hiệu hóa.");
+                            ctx.Fail("TÃ i khoáº£n Ä‘Ã£ bá»‹ vÃ´ hiá»‡u hÃ³a.");
                             return;
                         }
 
-                        // Nếu người dùng đã đăng xuất (refresh token = null) → từ chối access token
+                        // Náº¿u ngÆ°á»i dÃ¹ng Ä‘Ã£ Ä‘Äƒng xuáº¥t (refresh token = null) â†’ tá»« chá»‘i access token
                         if (user.RefreshToken is null)
                         {
-                            ctx.Fail("Phiên làm việc đã kết thúc. Vui lòng đăng nhập lại.");
+                            ctx.Fail("PhiÃªn lÃ m viá»‡c Ä‘Ã£ káº¿t thÃºc. Vui lÃ²ng Ä‘Äƒng nháº­p láº¡i.");
                         }
                     }
                 };
@@ -237,7 +237,7 @@ public class Program
 
         builder.Services.AddAuthorization();
 
-        // ── CORS ──────────────────────────────────────────────────────
+        // â”€â”€ CORS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         builder.Services.AddCors(options =>
         {
             options.AddDefaultPolicy(policy =>
@@ -248,7 +248,7 @@ public class Program
             });
         });
 
-        // ── Dependency Injection ──────────────────────────────────────
+        // â”€â”€ Dependency Injection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         // Repositories
         builder.Services.AddScoped<IUserRepository, UserRepository>();
         builder.Services.AddScoped<IHRProfileRepository, HRProfileRepository>();
@@ -256,6 +256,7 @@ public class Program
         builder.Services.AddScoped<ICompanyRepository, CompanyRepository>();
         builder.Services.AddScoped<IKnowledgeDocumentRepository, KnowledgeDocumentRepository>();
         builder.Services.AddScoped<IQuestionGenerationJobRepository, QuestionGenerationJobRepository>();
+        builder.Services.AddScoped<IQuestionSetRepository, QuestionSetRepository>();
 
         // Services
         builder.Services.AddScoped<IJwtService, JwtService>();
@@ -268,6 +269,7 @@ public class Program
         builder.Services.AddScoped<IKnowledgeDocumentService, KnowledgeDocumentService>();
         builder.Services.AddScoped<IKnowledgeDocumentInternalService, KnowledgeDocumentInternalService>();
         builder.Services.AddScoped<IQuestionGenerationJobService, QuestionGenerationJobService>();
+        builder.Services.AddScoped<IQuestionSetService, QuestionSetService>();
 
         // Hangfire jobs
         builder.Services.AddScoped<IKnowledgeIngestJob, KnowledgeIngestJob>();
@@ -275,17 +277,17 @@ public class Program
         builder.Services.AddScoped<IGenerateQuestionsFromPlanJob, GenerateQuestionsFromPlanJob>();
         builder.Services.AddSingleton<IJobScheduler, JobScheduler>();
 
-        // ── App pipeline ──────────────────────────────────────────────
+        // â”€â”€ App pipeline â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         var app = builder.Build();
 
         // SCRUM-163 AC-07: Seed database + admin account
         await DatabaseSeeder.SeedAsync(app.Services,
             app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("DatabaseSeeder"));
 
-        // Global exception handler — phải đứng đầu pipeline
+        // Global exception handler â€” pháº£i Ä‘á»©ng Ä‘áº§u pipeline
         app.UseGlobalExceptionHandler();
 
-        // Internal API key — chỉ route /internal/*, không dùng JWT
+        // Internal API key â€” chá»‰ route /internal/*, khÃ´ng dÃ¹ng JWT
         app.UseWhen(
             ctx => ctx.Request.Path.StartsWithSegments("/internal"),
             branch => branch.UseMiddleware<InternalApiKeyMiddleware>());

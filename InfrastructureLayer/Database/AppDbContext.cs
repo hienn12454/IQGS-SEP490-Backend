@@ -19,6 +19,8 @@ public class AppDbContext : DbContext
     public DbSet<QuestionGenerationJob> QuestionGenerationJobs { get; set; }
     public DbSet<QuestionGenerationPlan> QuestionGenerationPlans { get; set; }
     public DbSet<GeneratedQuestion> GeneratedQuestions { get; set; }
+    public DbSet<QuestionSet> QuestionSets { get; set; }
+    public DbSet<QuestionSetQuestion> QuestionSetQuestions { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -129,23 +131,31 @@ public class AppDbContext : DbContext
             entity.HasIndex(p => p.UserId).IsUnique();
         });
 
-        // ── KnowledgeDocument ───────────────────────────────────────
+        // ── KnowledgeDocument (snake_case — shared DB với RAG/migration thủ công) ─
         modelBuilder.Entity<KnowledgeDocument>(entity =>
         {
             entity.ToTable("knowledge_documents");
             entity.HasKey(d => d.Id);
-            entity.Property(d => d.Scope).IsRequired().HasMaxLength(20);
-            entity.Property(d => d.FileName).IsRequired().HasMaxLength(500);
-            entity.Property(d => d.BlobPath).IsRequired().HasMaxLength(1000);
-            entity.Property(d => d.ContentHash).HasMaxLength(128);
-            entity.Property(d => d.SourceTitle).HasMaxLength(500);
-            entity.Property(d => d.SourceUrl).HasMaxLength(1000);
-            entity.Property(d => d.Section).HasMaxLength(200);
-            entity.Property(d => d.Status).IsRequired().HasMaxLength(30);
-            entity.Property(d => d.ErrorMessage).HasMaxLength(2000);
-            entity.HasIndex(d => d.Scope);
-            entity.HasIndex(d => d.OwnerId);
-            entity.HasIndex(d => d.Status);
+            entity.Property(d => d.Id).HasColumnName("id");
+            entity.Property(d => d.Scope).HasColumnName("scope").IsRequired().HasMaxLength(20);
+            entity.Property(d => d.OwnerId).HasColumnName("owner_id");
+            entity.Property(d => d.FileName).HasColumnName("file_name").IsRequired().HasMaxLength(500);
+            entity.Property(d => d.BlobPath).HasColumnName("blob_path").IsRequired().HasMaxLength(1000);
+            entity.Property(d => d.ContentHash).HasColumnName("content_hash").HasMaxLength(128);
+            entity.Property(d => d.SourceTitle).HasColumnName("source_title").HasMaxLength(500);
+            entity.Property(d => d.SourceUrl).HasColumnName("source_url").HasMaxLength(1000);
+            entity.Property(d => d.Section).HasColumnName("section").HasMaxLength(200);
+            entity.Property(d => d.Year).HasColumnName("year");
+            entity.Property(d => d.Status).HasColumnName("status").IsRequired().HasMaxLength(30);
+            entity.Property(d => d.ChunkCount).HasColumnName("chunk_count");
+            entity.Property(d => d.UploadedBy).HasColumnName("uploaded_by");
+            entity.Property(d => d.ErrorMessage).HasColumnName("error_message").HasMaxLength(2000);
+            entity.Property(d => d.CreatedAt).HasColumnName("created_at");
+            entity.Property(d => d.UpdatedAt).HasColumnName("updated_at");
+            entity.Property(d => d.IsActive).HasColumnName("is_active");
+            entity.HasIndex(d => d.Scope).HasDatabaseName("ix_knowledge_documents_scope");
+            entity.HasIndex(d => d.OwnerId).HasDatabaseName("ix_knowledge_documents_owner_id");
+            entity.HasIndex(d => d.Status).HasDatabaseName("ix_knowledge_documents_status");
         });
 
         // ── KnowledgeChunk (pgvector — RAG ghi trực tiếp, snake_case) ─
@@ -223,6 +233,47 @@ public class AppDbContext : DbContext
                   .OnDelete(DeleteBehavior.Cascade);
 
             entity.HasIndex(q => q.JobId);
+        });
+
+        // ── QuestionSet (draft snapshot sau khi HR review) ─────────
+        modelBuilder.Entity<QuestionSet>(entity =>
+        {
+            entity.ToTable("question_sets");
+            entity.HasKey(qs => qs.Id);
+            entity.Property(qs => qs.Status).IsRequired().HasMaxLength(20);
+            entity.Property(qs => qs.Title).HasMaxLength(500);
+            entity.Property(qs => qs.JobDescription).IsRequired();
+            entity.Property(qs => qs.HrNote).HasMaxLength(2000);
+            entity.Property(qs => qs.PlanJson).IsRequired().HasColumnType("jsonb");
+
+            entity.HasOne(qs => qs.SourceJob)
+                  .WithMany()
+                  .HasForeignKey(qs => qs.SourceJobId)
+                  .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(qs => qs.OwnerId);
+            entity.HasIndex(qs => qs.SourceJobId).IsUnique();
+        });
+
+        // ── QuestionSetQuestion ─────────────────────────────────────
+        modelBuilder.Entity<QuestionSetQuestion>(entity =>
+        {
+            entity.ToTable("question_set_questions");
+            entity.HasKey(q => q.Id);
+            entity.Property(q => q.Question).IsRequired();
+            entity.Property(q => q.QuestionType).IsRequired().HasMaxLength(50);
+            entity.Property(q => q.Difficulty).IsRequired().HasMaxLength(20);
+            entity.Property(q => q.Skill).HasMaxLength(200);
+            entity.Property(q => q.FocusArea).HasMaxLength(200);
+            entity.Property(q => q.EvaluationCriteriaJson).IsRequired().HasColumnType("jsonb");
+            entity.Property(q => q.CitationsJson).IsRequired().HasColumnType("jsonb");
+
+            entity.HasOne(q => q.QuestionSet)
+                  .WithMany(qs => qs.Questions)
+                  .HasForeignKey(q => q.QuestionSetId)
+                  .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(q => new { q.QuestionSetId, q.Order });
         });
     }
 }
