@@ -56,10 +56,13 @@ public class JobQuestionsResponseDto
     public Guid JobId { get; set; }
     public string Status { get; set; } = string.Empty;
     public List<GeneratedQuestionResponseDto> Questions { get; set; } = new();
+    public string? ErrorMessage { get; set; }
+    public StructuredErrorResponseDto? Error { get; set; }
 }
 
 public class GeneratedQuestionResponseDto
 {
+    public Guid Id { get; set; }
     public int Order { get; set; }
     public string Question { get; set; } = string.Empty;
     public string QuestionType { get; set; } = string.Empty;
