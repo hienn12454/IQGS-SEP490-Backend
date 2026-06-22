@@ -1,7 +1,6 @@
-using ApplicationLayer.Interfaces.Repositories;
-using ApplicationLayer.DTOs.KnowledgeBase;
+﻿using ApplicationLayer.DTOs.KnowledgeBase;
 using ApplicationLayer.DTOs.QuestionGeneration;
-
+using ApplicationLayer.Interfaces.Repositories;
 using DomainLayer.Entities;
 using Microsoft.EntityFrameworkCore;
 
@@ -57,12 +56,6 @@ public class QuestionGenerationJobRepository : IQuestionGenerationJobRepository
         await _context.SaveChangesAsync();
     }
 
-    public async Task DeleteQuestionsByJobIdAsync(Guid jobId)
-    {
-        var questions = await _context.GeneratedQuestions.Where(q => q.JobId == jobId).ToListAsync();
-        _context.GeneratedQuestions.RemoveRange(questions);
-        await _context.SaveChangesAsync();
-    }
 
     public async Task<PagedResultDto<QuestionGenerationJob>> GetPagedByOwnerAsync(
         Guid ownerId, QuestionGenerationListQueryDto query)
@@ -104,5 +97,43 @@ public class QuestionGenerationJobRepository : IQuestionGenerationJobRepository
             Page = page,
             PageSize = pageSize
         };
+    }
+
+    public Task<GeneratedQuestion?> GetQuestionByIdAsync(Guid questionId)
+        => _context.GeneratedQuestions.FirstOrDefaultAsync(q => q.Id == questionId);
+
+    public Task<List<GeneratedQuestion>> GetQuestionsByJobIdAsync(Guid jobId)
+        => _context.GeneratedQuestions.Where(q => q.JobId == jobId).OrderBy(q => q.Order).ToListAsync();
+
+    public async Task UpdateQuestionAsync(GeneratedQuestion question)
+    {
+        question.UpdatedAt = DateTime.UtcNow;
+        _context.GeneratedQuestions.Update(question);
+        await _context.SaveChangesAsync();
+    }
+
+    public async Task DeleteQuestionAsync(GeneratedQuestion question)
+    {
+        _context.GeneratedQuestions.Remove(question);
+        await _context.SaveChangesAsync();
+    }
+
+    public Task<int> GetQuestionCountByJobIdAsync(Guid jobId)
+        => _context.GeneratedQuestions.CountAsync(q => q.JobId == jobId);
+
+    public async Task<int> GetMaxOrderByJobIdAsync(Guid jobId)
+    {
+        var max = await _context.GeneratedQuestions
+            .Where(q => q.JobId == jobId)
+            .Select(q => (int?)q.Order)
+            .MaxAsync();
+        return max ?? 0;
+    }
+
+    public async Task DeleteQuestionsByJobIdAsync(Guid jobId)
+    {
+        var questions = await _context.GeneratedQuestions.Where(q => q.JobId == jobId).ToListAsync();
+        _context.GeneratedQuestions.RemoveRange(questions);
+        await _context.SaveChangesAsync();
     }
 }
