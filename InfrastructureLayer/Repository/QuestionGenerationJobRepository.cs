@@ -1,4 +1,7 @@
 using ApplicationLayer.Interfaces.Repositories;
+using ApplicationLayer.DTOs.KnowledgeBase;
+using ApplicationLayer.DTOs.QuestionGeneration;
+
 using DomainLayer.Entities;
 using Microsoft.EntityFrameworkCore;
 
@@ -59,5 +62,47 @@ public class QuestionGenerationJobRepository : IQuestionGenerationJobRepository
         var questions = await _context.GeneratedQuestions.Where(q => q.JobId == jobId).ToListAsync();
         _context.GeneratedQuestions.RemoveRange(questions);
         await _context.SaveChangesAsync();
+    }
+
+    public async Task<PagedResultDto<QuestionGenerationJob>> GetPagedByOwnerAsync(
+        Guid ownerId, QuestionGenerationListQueryDto query)
+    {
+        var q = _context.QuestionGenerationJobs
+            .AsNoTracking()
+            .Include(j => j.Questions)
+            .Where(j => j.OwnerId == ownerId);
+
+        if (!string.IsNullOrWhiteSpace(query.Status))
+            q = q.Where(j => j.Status == query.Status.Trim());
+
+        if (query.FromDate.HasValue)
+        {
+            var from = DateTime.SpecifyKind(query.FromDate.Value.Date, DateTimeKind.Utc);
+            q = q.Where(j => j.CreatedAt >= from);
+        }
+
+        if (query.ToDate.HasValue)
+        {
+            var toExclusive = DateTime.SpecifyKind(query.ToDate.Value.Date.AddDays(1), DateTimeKind.Utc);
+            q = q.Where(j => j.CreatedAt < toExclusive);
+        }
+
+        var total = await q.CountAsync();
+        var page = Math.Max(1, query.Page);
+        var pageSize = Math.Clamp(query.PageSize, 1, 100);
+
+        var items = await q
+            .OrderByDescending(j => j.CreatedAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync();
+
+        return new PagedResultDto<QuestionGenerationJob>
+        {
+            Items = items,
+            TotalCount = total,
+            Page = page,
+            PageSize = pageSize
+        };
     }
 }

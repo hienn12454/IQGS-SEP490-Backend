@@ -1,3 +1,4 @@
+using ApplicationLayer.DTOs.KnowledgeBase;
 using ApplicationLayer.DTOs.QuestionGeneration;
 
 namespace ApplicationLayer.Interfaces.Services;
@@ -17,6 +18,7 @@ public interface IQuestionGenerationJobService
         List<string> questionTypes,
         List<string> skills,
         CancellationToken ct = default);
+    Task<PagedResultDto<QuestionGenerationJobListItemDto>> ListJobsAsync(Guid ownerId, QuestionGenerationListQueryDto query);
     Task<JobStatusResponseDto> GetJobAsync(Guid jobId, Guid ownerId);
     Task<object> UpdatePlanAsync(Guid jobId, Guid ownerId, UpdatePlanRequestDto dto);
     Task<JobStatusResponseDto> ApprovePlanAsync(Guid jobId, Guid ownerId);

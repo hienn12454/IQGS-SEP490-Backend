@@ -56,6 +56,13 @@ public class HrQuestionGenerationJobsController : ControllerBase
         return SuccessResp.Accepted(result);
     }
 
+    [HttpGet]
+    public async Task<IActionResult> ListJobs([FromQuery] QuestionGenerationListQueryDto query)
+    {
+        var result = await _service.ListJobsAsync(GetCurrentUserId(), query);
+        return SuccessResp.Ok(result);
+    }
+
     [HttpGet("{jobId:guid}")]
     public async Task<IActionResult> GetJob(Guid jobId)
     {
