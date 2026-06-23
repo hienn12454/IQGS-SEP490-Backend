@@ -19,6 +19,10 @@ public interface IQuestionGenerationJobService
         List<string> skills,
         CancellationToken ct = default);
     Task<PagedResultDto<QuestionGenerationJobListItemDto>> ListJobsAsync(Guid ownerId, QuestionGenerationListQueryDto query);
+    Task<PagedResultDto<QuestionGenerationPlanListItemDto>> ListPlansAsync(Guid ownerId, QuestionGenerationListQueryDto query);
+    Task<QuestionGenerationPlanDetailResponseDto> GetPlanAsync(Guid jobId, Guid ownerId);
+    Task DeletePlanAsync(Guid jobId, Guid ownerId);
+    Task<QuestionExportFileDto> ExportPlanQuestionsExcelAsync(Guid jobId, Guid ownerId);
     Task<JobStatusResponseDto> GetJobAsync(Guid jobId, Guid ownerId);
     Task<object> UpdatePlanAsync(Guid jobId, Guid ownerId, UpdatePlanRequestDto dto);
     Task<JobStatusResponseDto> ApprovePlanAsync(Guid jobId, Guid ownerId);
@@ -29,4 +33,19 @@ public interface IQuestionGenerationJobService
     Task<IReadOnlyList<GeneratedQuestionResponseDto>> ReorderQuestionsAsync(Guid jobId, Guid ownerId, ReorderQuestionsRequestDto dto);
     Task<JobStatusResponseDto> RetryPlanAsync(Guid jobId, Guid ownerId);
     Task<JobStatusResponseDto> RetryQuestionsAsync(Guid jobId, Guid ownerId);
+    Task<JobStatusResponseDto> UpdateJobInputAsync(
+        Guid jobId, Guid ownerId, CreatePlanJobRequestDto dto, CancellationToken ct = default);
+    Task<JobStatusResponseDto> UpdateJobInputFromUploadAsync(
+        Guid jobId,
+        Guid ownerId,
+        string? jobDescription,
+        string? hrNote,
+        Stream? fileStream,
+        string? fileName,
+        long fileSize,
+        int numberOfQuestions,
+        string difficulty,
+        List<string> questionTypes,
+        List<string> skills,
+        CancellationToken ct = default);
 }

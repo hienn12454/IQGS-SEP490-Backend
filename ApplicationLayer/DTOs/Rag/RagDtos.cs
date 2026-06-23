@@ -18,6 +18,14 @@ public class RagIngestResult
     public string? ErrorMessage { get; set; }
 }
 
+public class RagAsyncAcceptedResult
+{
+    public bool Accepted { get; set; }
+    public Guid? DocumentId { get; set; }
+    public Guid? JobId { get; set; }
+    public string Phase { get; set; } = string.Empty;
+}
+
 public class RagDeleteResult
 {
     public Guid DocumentId { get; set; }
