@@ -86,6 +86,21 @@ public class QuestionSetService : IQuestionSetService
         };
     }
 
+    public async Task<IReadOnlyList<QuestionSetListItemDto>> ListQuestionSetsAsync(
+        Guid ownerId, QuestionSetListQueryDto query)
+    {
+        var questionSets = await _questionSetRepository.ListByOwnerAsync(ownerId, query.JobId);
+
+        return questionSets.Select(qs => new QuestionSetListItemDto
+        {
+            QuestionSetId = qs.Id,
+            JobId = qs.SourceJobId,
+            Title = qs.Title,
+            Status = qs.Status,
+            SavedAt = qs.CreatedAt
+        }).ToList();
+    }
+
     public async Task<QuestionSetDetailResponseDto> GetQuestionSetAsync(Guid questionSetId, Guid ownerId)
     {
         var questionSet = await _questionSetRepository.GetByIdWithQuestionsAsync(questionSetId)

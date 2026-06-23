@@ -41,4 +41,18 @@ public class QuestionSetRepository : IQuestionSetRepository
 
         return matched.ToHashSet();
     }
+
+    public async Task<IReadOnlyList<QuestionSet>> ListByOwnerAsync(Guid ownerId, Guid? sourceJobId = null)
+    {
+        var query = _context.QuestionSets
+            .AsNoTracking()
+            .Where(qs => qs.OwnerId == ownerId);
+
+        if (sourceJobId.HasValue)
+            query = query.Where(qs => qs.SourceJobId == sourceJobId.Value);
+
+        return await query
+            .OrderByDescending(qs => qs.CreatedAt)
+            .ToListAsync();
+    }
 }

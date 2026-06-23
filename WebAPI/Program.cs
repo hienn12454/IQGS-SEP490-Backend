@@ -36,7 +36,7 @@ public class Program
             .AddJsonOptions(o =>
                 o.JsonSerializerOptions.Encoder = JavaScriptEncoder.Create(UnicodeRanges.All));
 
-        // Custom model-validation response (thay tháº¿ default 400 cá»§a ASP.NET)
+        // Custom model-validation response (thay thế default 400 của ASP.NET)
         builder.Services.Configure<ApiBehaviorOptions>(options =>
         {
             options.InvalidModelStateResponseFactory = ctx =>
@@ -50,7 +50,7 @@ public class Program
                 return new JsonResult(new
                 {
                     Code = 400,
-                    Error = "Dá»¯ liá»‡u khÃ´ng há»£p lá»‡.",
+                    Error = "Dữ liệu không hợp lệ.",
                     Errors = errors
                 })
                 { StatusCode = 400 };
@@ -68,11 +68,11 @@ public class Program
                 Description = "AI-Powered Interview Question Generation System"
             });
 
-            // Há»— trá»£ JWT Bearer trong Swagger UI
+            // Hỗ trợ JWT Bearer trong Swagger UI
             options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
             {
                 In = ParameterLocation.Header,
-                Description = "Nháº­p JWT token. VÃ­ dá»¥: Bearer {token}",
+                Description = "Nhập JWT token. Ví dụ: Bearer {token}",
                 Name = "Authorization",
                 Type = SecuritySchemeType.Http,
                 BearerFormat = "JWT",
@@ -96,7 +96,7 @@ public class Program
 
         // â”€â”€ Database â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
-            ?? throw new InvalidOperationException("ConnectionStrings:DefaultConnection chÆ°a Ä‘Æ°á»£c cáº¥u hÃ¬nh.");
+            ?? throw new InvalidOperationException("ConnectionStrings:DefaultConnection chưa được cấu hình.");
 
         var dataSourceBuilder = new NpgsqlDataSourceBuilder(connectionString);
         dataSourceBuilder.UseVector();
@@ -114,6 +114,8 @@ public class Program
             builder.Configuration.GetSection(BlobStorageSettings.SectionName));
         builder.Services.Configure<KnowledgeBaseSettings>(
             builder.Configuration.GetSection(KnowledgeBaseSettings.SectionName));
+        builder.Services.Configure<WatchdogSettings>(
+            builder.Configuration.GetSection(WatchdogSettings.SectionName));
 
         var kbSettings = builder.Configuration
             .GetSection(KnowledgeBaseSettings.SectionName)
@@ -148,12 +150,12 @@ public class Program
 
         // â”€â”€ JWT Authentication â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         var jwtKey = builder.Configuration["JwtSettings:SecretKey"]
-            ?? throw new InvalidOperationException("JwtSettings:SecretKey chÆ°a Ä‘Æ°á»£c cáº¥u hÃ¬nh.");
+            ?? throw new InvalidOperationException("JwtSettings:SecretKey chưa được cấu hình.");
 
         builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             .AddJwtBearer(options =>
             {
-                // Giá»¯ nguyÃªn claim names gá»‘c â€” khÃ´ng map "sub" â†’ ClaimTypes.NameIdentifier
+                // Giữ nguyên claim names gốc — không map "sub" → ClaimTypes.NameIdentifier
                 options.MapInboundClaims = false;
 
                 options.TokenValidationParameters = new TokenValidationParameters
@@ -170,16 +172,16 @@ public class Program
                     NameClaimType = "sub"
                 };
 
-                // SCRUM-159 AC-04: Thu há»“i access token khi logout / tÃ i khoáº£n bá»‹ disable
+                // SCRUM-159 AC-04: Thu hồi access token khi logout / tài khoản bị disable
                 options.Events = new JwtBearerEvents
                 {
-                    // â”€â”€ 401: KhÃ´ng cÃ³ token hoáº·c token khÃ´ng há»£p lá»‡ â”€â”€â”€â”€â”€â”€
+                    // ── 401: Không có token hoặc token không hợp lệ ──────
                     OnChallenge = async ctx =>
                     {
-                        ctx.HandleResponse(); // Táº¯t redirect máº·c Ä‘á»‹nh cá»§a ASP.NET
+                        ctx.HandleResponse(); // Tắt redirect mặc định của ASP.NET
 
                         var message = ctx.AuthenticateFailure?.Message
-                            ?? "Báº¡n chÆ°a Ä‘Äƒng nháº­p. Vui lÃ²ng Ä‘Äƒng nháº­p Ä‘á»ƒ tiáº¿p tá»¥c.";
+                            ?? "Bạn chưa đăng nhập. Vui lòng đăng nhập để tiếp tục.";
 
                         ctx.Response.StatusCode = 401;
                         ctx.Response.ContentType = "application/json; charset=utf-8";
@@ -191,28 +193,28 @@ public class Program
                             }));
                     },
 
-                    // â”€â”€ 403: ÄÃ£ Ä‘Äƒng nháº­p nhÆ°ng khÃ´ng Ä‘á»§ quyá»n â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+                    // ── 403: Đã đăng nhập nhưng không đủ quyền ──────────
                     OnForbidden = async ctx =>
                     {
                         ctx.Response.StatusCode = 403;
                         ctx.Response.ContentType = "application/json; charset=utf-8";
                         await ctx.Response.WriteAsync(JsonSerializer.Serialize(
-                            new { code = 403, error = "Báº¡n khÃ´ng cÃ³ quyá»n thá»±c hiá»‡n thao tÃ¡c nÃ y." },
+                            new { code = 403, error = "Bạn không có quyền thực hiện thao tác này." },
                             new JsonSerializerOptions
                             {
                                 Encoder = JavaScriptEncoder.Create(UnicodeRanges.All)
                             }));
                     },
 
-                    // â”€â”€ Kiá»ƒm tra user cÃ²n active sau khi token há»£p lá»‡ â”€â”€â”€
+                    // ── Kiểm tra user còn active sau khi token hợp lệ ───
                     OnTokenValidated = async ctx =>
                     {
-                        // Fallback: JwtSecurityTokenHandler cÃ³ thá»ƒ map "sub" â†’ NameIdentifier
+                        // Fallback: JwtSecurityTokenHandler có thể map "sub" → NameIdentifier
                         var userIdStr = ctx.Principal?.FindFirst("sub")?.Value
                             ?? ctx.Principal?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
                         if (!Guid.TryParse(userIdStr, out var userId))
                         {
-                            ctx.Fail("Token khÃ´ng há»£p lá»‡.");
+                            ctx.Fail("Token không hợp lệ.");
                             return;
                         }
 
@@ -222,14 +224,14 @@ public class Program
 
                         if (user is null || !user.IsActive)
                         {
-                            ctx.Fail("TÃ i khoáº£n Ä‘Ã£ bá»‹ vÃ´ hiá»‡u hÃ³a.");
+                            ctx.Fail("Tài khoản đã bị vô hiệu hóa.");
                             return;
                         }
 
-                        // Náº¿u ngÆ°á»i dÃ¹ng Ä‘Ã£ Ä‘Äƒng xuáº¥t (refresh token = null) â†’ tá»« chá»‘i access token
+                        // Nếu người dùng đã đăng xuất (refresh token = null) → từ chối access token
                         if (user.RefreshToken is null)
                         {
-                            ctx.Fail("PhiÃªn lÃ m viá»‡c Ä‘Ã£ káº¿t thÃºc. Vui lÃ²ng Ä‘Äƒng nháº­p láº¡i.");
+                            ctx.Fail("Phiên làm việc đã kết thúc. Vui lòng đăng nhập lại.");
                         }
                     }
                 };
@@ -269,12 +271,15 @@ public class Program
         builder.Services.AddScoped<IKnowledgeDocumentService, KnowledgeDocumentService>();
         builder.Services.AddScoped<IKnowledgeDocumentInternalService, KnowledgeDocumentInternalService>();
         builder.Services.AddScoped<IQuestionGenerationJobService, QuestionGenerationJobService>();
+        builder.Services.AddScoped<IQuestionGenerationJobInternalService, QuestionGenerationJobInternalService>();
         builder.Services.AddScoped<IQuestionSetService, QuestionSetService>();
 
         // Hangfire jobs
         builder.Services.AddScoped<IKnowledgeIngestJob, KnowledgeIngestJob>();
         builder.Services.AddScoped<IGeneratePlanJob, GeneratePlanJob>();
         builder.Services.AddScoped<IGenerateQuestionsFromPlanJob, GenerateQuestionsFromPlanJob>();
+        builder.Services.AddScoped<IStuckKnowledgeDocumentWatchdogJob, StuckKnowledgeDocumentWatchdogJob>();
+        builder.Services.AddScoped<IStuckQuestionGenerationWatchdogJob, StuckQuestionGenerationWatchdogJob>();
         builder.Services.AddSingleton<IJobScheduler, JobScheduler>();
 
         // â”€â”€ App pipeline â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -284,10 +289,10 @@ public class Program
         await DatabaseSeeder.SeedAsync(app.Services,
             app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("DatabaseSeeder"));
 
-        // Global exception handler â€” pháº£i Ä‘á»©ng Ä‘áº§u pipeline
+        // Global exception handler — phải đứng đầu pipeline
         app.UseGlobalExceptionHandler();
 
-        // Internal API key â€” chá»‰ route /internal/*, khÃ´ng dÃ¹ng JWT
+        // Internal API key — chỉ route /internal/*, không dùng JWT
         app.UseWhen(
             ctx => ctx.Request.Path.StartsWithSegments("/internal"),
             branch => branch.UseMiddleware<InternalApiKeyMiddleware>());
@@ -307,6 +312,16 @@ public class Program
         app.UseAuthentication();
         app.UseAuthorization();
         app.UseHangfireDashboard("/hangfire");
+
+        RecurringJob.AddOrUpdate<IStuckKnowledgeDocumentWatchdogJob>(
+            "stuck-knowledge-documents",
+            job => job.ExecuteAsync(),
+            "*/15 * * * *");
+        RecurringJob.AddOrUpdate<IStuckQuestionGenerationWatchdogJob>(
+            "stuck-question-generation",
+            job => job.ExecuteAsync(),
+            "*/15 * * * *");
+
         app.MapControllers();
         app.Run();
     }
