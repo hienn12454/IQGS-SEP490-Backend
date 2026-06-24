@@ -6,68 +6,53 @@ namespace ApplicationLayer.Helpers;
 /// <summary>Đọc các field tóm tắt từ PlanJson để hiển thị danh sách plan.</summary>
 public static class PlanJsonSummaryReader
 {
-    private const int JobDescriptionPreviewLength = 120;
-
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        PropertyNameCaseInsensitive = true
-    };
-
     public static PlanJsonSummary Read(QuestionGenerationJob job, QuestionGenerationPlan plan)
     {
-        var fallbackSkills = DeserializeSkills(job.SkillsJson);
-        var summary = new PlanJsonSummary
-        {
-            JobTitle = string.Empty,
-            Role = JoinSkills(fallbackSkills),
-            Level = job.Difficulty,
-            Question = job.NumberOfQuestions
-        };
+        var summary = new PlanJsonSummary();
 
         if (string.IsNullOrWhiteSpace(plan.PlanJson))
-            return ApplyJobTitleFallback(summary, job.JobDescription);
+            return summary;
 
         try
         {
             using var doc = JsonDocument.Parse(plan.PlanJson);
             var root = doc.RootElement;
 
-            if (TryGetString(root, "roleTitle", out var roleTitle) && !string.IsNullOrWhiteSpace(roleTitle))
+            if (TryGetStringAny(root, out var roleTitle, "roleTitle", "role_title")
+                && !string.IsNullOrWhiteSpace(roleTitle))
+            {
                 summary.JobTitle = roleTitle;
+                summary.Role = roleTitle;
+            }
 
-            if (TryGetString(root, "difficulty", out var difficulty) && !string.IsNullOrWhiteSpace(difficulty))
+            if (TryGetString(root, "level", out var level) && !string.IsNullOrWhiteSpace(level))
+                summary.Level = level;
+            else if (TryGetString(root, "difficulty", out var difficulty) && !string.IsNullOrWhiteSpace(difficulty))
                 summary.Level = difficulty;
 
             if (TryGetInt(root, "totalQuestions", out var totalQuestions) && totalQuestions > 0)
                 summary.Question = totalQuestions;
+            else if (TryGetInt(root, "total_questions", out totalQuestions) && totalQuestions > 0)
+                summary.Question = totalQuestions;
+
+            if (TryGetStringAny(root, out var experienceLevel, "experienceLevel", "experience_level")
+                && !string.IsNullOrWhiteSpace(experienceLevel))
+                summary.ExperienceLevel = experienceLevel;
 
             if (root.TryGetProperty("skills", out var skillsEl) && skillsEl.ValueKind == JsonValueKind.Array)
             {
-                var skills = skillsEl.EnumerateArray()
+                summary.Skills = skillsEl.EnumerateArray()
                     .Select(s => s.GetString())
                     .Where(s => !string.IsNullOrWhiteSpace(s))
                     .Select(s => s!)
                     .ToList();
-
-                if (skills.Count > 0)
-                    summary.Role = JoinSkills(skills);
             }
         }
         catch (JsonException)
         {
-            // PlanJson lỗi format — giữ fallback từ job
+            // PlanJson lỗi format — trả summary rỗng
         }
 
-        return ApplyJobTitleFallback(summary, job.JobDescription);
-    }
-
-    private static PlanJsonSummary ApplyJobTitleFallback(PlanJsonSummary summary, string jobDescription)
-    {
-        if (!string.IsNullOrWhiteSpace(summary.JobTitle))
-            return summary;
-
-        summary.JobTitle = BuildJobDescriptionPreview(jobDescription);
         return summary;
     }
 
@@ -79,6 +64,21 @@ public static class PlanJsonSummaryReader
 
         value = el.GetString();
         return true;
+    }
+
+    private static bool TryGetStringAny(
+        JsonElement root,
+        out string? value,
+        params string[] propertyNames)
+    {
+        foreach (var name in propertyNames)
+        {
+            if (TryGetString(root, name, out value))
+                return true;
+        }
+
+        value = null;
+        return false;
     }
 
     private static bool TryGetInt(JsonElement root, string propertyName, out int value)
@@ -93,34 +93,13 @@ public static class PlanJsonSummaryReader
         return false;
     }
 
-    private static List<string> DeserializeSkills(string skillsJson)
-    {
-        try
-        {
-            return JsonSerializer.Deserialize<List<string>>(skillsJson, JsonOptions) ?? new List<string>();
-        }
-        catch (JsonException)
-        {
-            return new List<string>();
-        }
-    }
-
-    private static string JoinSkills(IReadOnlyList<string> skills)
-        => string.Join(", ", skills.Where(s => !string.IsNullOrWhiteSpace(s)));
-
-    private static string BuildJobDescriptionPreview(string jobDescription)
-    {
-        var trimmed = jobDescription.Trim();
-        if (trimmed.Length <= JobDescriptionPreviewLength)
-            return trimmed;
-        return trimmed.Substring(0, JobDescriptionPreviewLength) + "...";
-    }
-
     public sealed class PlanJsonSummary
     {
         public string JobTitle { get; set; } = string.Empty;
         public string Role { get; set; } = string.Empty;
         public string Level { get; set; } = string.Empty;
+        public string ExperienceLevel { get; set; } = string.Empty;
         public int Question { get; set; }
+        public List<string> Skills { get; set; } = new();
     }
 }

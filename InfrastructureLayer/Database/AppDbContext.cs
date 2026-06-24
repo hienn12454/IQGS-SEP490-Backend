@@ -21,6 +21,7 @@ public class AppDbContext : DbContext
     public DbSet<GeneratedQuestion> GeneratedQuestions { get; set; }
     public DbSet<QuestionSet> QuestionSets { get; set; }
     public DbSet<QuestionSetQuestion> QuestionSetQuestions { get; set; }
+    public DbSet<QuestionAiChatMessage> QuestionAiChatMessages { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -274,6 +275,28 @@ public class AppDbContext : DbContext
                   .OnDelete(DeleteBehavior.Cascade);
 
             entity.HasIndex(q => new { q.QuestionSetId, q.Order });
+        });
+
+        // ── QuestionAiChatMessage (Ask AI per question — SCRUM-215) ─
+        modelBuilder.Entity<QuestionAiChatMessage>(entity =>
+        {
+            entity.ToTable("question_ai_chat_messages");
+            entity.HasKey(m => m.Id);
+            entity.Property(m => m.Role).IsRequired().HasMaxLength(10);
+            entity.Property(m => m.Content).IsRequired();
+            entity.Property(m => m.SuggestionJson).HasColumnType("jsonb");
+
+            entity.HasOne(m => m.Job)
+                  .WithMany()
+                  .HasForeignKey(m => m.JobId)
+                  .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(m => m.Question)
+                  .WithMany()
+                  .HasForeignKey(m => m.QuestionId)
+                  .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(m => new { m.JobId, m.QuestionId, m.CreatedAt });
         });
     }
 }

@@ -155,7 +155,13 @@ public class QuestionGenerationJobService : IQuestionGenerationJobService
             JobId = job.Id,
             Status = job.Status,
             JdInputType = job.JdInputType,
-            Warnings = resolved.Warnings
+            Warnings = resolved.Warnings,
+            Role = null,
+            Level = normalizedDifficulty,
+            ExperienceLevel = null,
+            NumberOfQuestions = numberOfQuestions,
+            QuestionTypes = normalizedTypes.ToList(),
+            Skills = skills
         };
     }
 
@@ -425,6 +431,7 @@ public class QuestionGenerationJobService : IQuestionGenerationJobService
                 JobTitle = summary.JobTitle,
                 Role = summary.Role,
                 Level = summary.Level,
+                ExperienceLevel = summary.ExperienceLevel,
                 Question = summary.Question,
                 CreatedAt = plan.CreatedAt,
                 Status = job.Status,
@@ -474,9 +481,6 @@ public class QuestionGenerationJobService : IQuestionGenerationJobService
     public async Task DeletePlanAsync(Guid jobId, Guid ownerId)
     {
         var job = await GetOwnedJob(jobId, ownerId);
-
-        if (job.Plan is null)
-            throw new NotFoundException("Plan chưa được tạo.");
 
         if (job.Status is QuestionGenerationJobStatus.PlanProcessing
             or QuestionGenerationJobStatus.QuestionProcessing)
@@ -530,6 +534,8 @@ public class QuestionGenerationJobService : IQuestionGenerationJobService
             roleTitle = dto.RoleTitle,
             summary = dto.Summary,
             difficulty = dto.Difficulty,
+            level = dto.Difficulty,
+            experienceLevel = dto.ExperienceLevel,
             totalQuestions = dto.TotalQuestions,
             skills = dto.Skills,
             questionTypeDistribution = dto.QuestionTypeDistribution,
@@ -821,16 +827,25 @@ public class QuestionGenerationJobService : IQuestionGenerationJobService
 
     private async Task<JobStatusResponseDto> MapJobStatusAsync(QuestionGenerationJob job, QuestionGenerationPlan? plan)
     {
-        object? planObj = null;
-        if (plan is not null)
-            planObj = JsonSerializer.Deserialize<object>(plan.PlanJson, JsonOptions);
+        JobPlanResponseDto? planDto = null;
+        if (plan is not null && !string.IsNullOrWhiteSpace(plan.PlanJson))
+        {
+            try
+            {
+                planDto = JsonSerializer.Deserialize<JobPlanResponseDto>(plan.PlanJson, JsonOptions);
+            }
+            catch (JsonException)
+            {
+                // PlanJson lỗi format — trả null, summary vẫn fallback từ job
+            }
+        }
 
         var questionTypes = JsonSerializer.Deserialize<List<string>>(job.QuestionTypesJson, JsonOptions) ?? new();
         var skills = JsonSerializer.Deserialize<List<string>>(job.SkillsJson, JsonOptions) ?? new();
         var hasDraft = await _questionSetRepository.ExistsBySourceJobIdAsync(job.Id);
         var planApproved = plan?.IsApproved == true;
 
-        var (errorMessage, error) = MapJobError(job.ErrorMessage);
+        var (_, error) = MapJobError(job.ErrorMessage);
         var failure = job.Status == QuestionGenerationJobStatus.Failed
             ? JobUiStateMapper.MapFailure(error)
             : null;
@@ -849,6 +864,9 @@ public class QuestionGenerationJobService : IQuestionGenerationJobService
             JdFileName = job.JdFileName
         };
 
+        var summary = BuildJobStatusSummary(job, plan, questionTypes, skills);
+        var experienceLevel = summary.ExperienceLevel ?? planDto?.ExperienceLevel;
+
         var meta = new JobMetaDto
         {
             CreatedAt = job.CreatedAt,
@@ -862,23 +880,45 @@ public class QuestionGenerationJobService : IQuestionGenerationJobService
         {
             JobId = job.Id,
             Status = job.Status,
-            Phase = ui.Phase,
             Input = input,
+            Summary = summary,
+            ExperienceLevel = experienceLevel,
+            Plan = planDto,
             Meta = meta,
             Ui = ui,
             Failure = failure,
-            JobDescription = job.JobDescription,
-            HrNote = job.HrNote,
-            JdInputType = job.JdInputType,
-            JdFileName = job.JdFileName,
-            NumberOfQuestions = job.NumberOfQuestions,
-            Difficulty = job.Difficulty,
-            QuestionTypes = questionTypes,
-            Skills = skills,
-            Plan = planObj,
-            ErrorMessage = errorMessage,
-            Error = error,
             Warnings = []
+        };
+    }
+
+    private static JobStatusSummaryDto BuildJobStatusSummary(
+        QuestionGenerationJob job,
+        QuestionGenerationPlan? plan,
+        List<string> questionTypes,
+        List<string> skills)
+    {
+        // Chưa có plan từ LLM — summary để trống; HR input nằm ở data.input
+        if (plan is null)
+        {
+            return new JobStatusSummaryDto
+            {
+                QuestionTypes = questionTypes,
+                Skills = skills
+            };
+        }
+
+        var planSummary = PlanJsonSummaryReader.Read(job, plan);
+
+        return new JobStatusSummaryDto
+        {
+            Role = string.IsNullOrWhiteSpace(planSummary.Role) ? null : planSummary.Role,
+            Level = planSummary.Level,
+            ExperienceLevel = string.IsNullOrWhiteSpace(planSummary.ExperienceLevel)
+                ? null
+                : planSummary.ExperienceLevel,
+            NumberOfQuestions = planSummary.Question > 0 ? planSummary.Question : 0,
+            QuestionTypes = questionTypes,
+            Skills = planSummary.Skills.Count > 0 ? planSummary.Skills : skills
         };
     }
 
