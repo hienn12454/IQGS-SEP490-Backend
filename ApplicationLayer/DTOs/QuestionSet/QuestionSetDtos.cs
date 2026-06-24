@@ -1,5 +1,26 @@
 ﻿namespace ApplicationLayer.DTOs.QuestionSet;
 
+/// <summary>Query danh sách question set — lọc theo job nguồn (tùy chọn).</summary>
+public class QuestionSetListQueryDto
+{
+    /// <summary>Chỉ lấy question set thuộc generation job này. Bỏ trống = tất cả của HR.</summary>
+    public Guid? JobId { get; set; }
+}
+
+/// <summary>Một question set kèm job nguồn.</summary>
+public class QuestionSetListItemDto
+{
+    /// <summary>ID của bộ câu hỏi đã lưu draft.</summary>
+    public Guid QuestionSetId { get; set; }
+
+    /// <summary>ID generation session (job) đã tạo ra bộ câu hỏi này.</summary>
+    public Guid JobId { get; set; }
+
+    public string? Title { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public DateTime SavedAt { get; set; }
+}
+
 public class SaveDraftResponseDto
 {
     public Guid QuestionSetId { get; set; }

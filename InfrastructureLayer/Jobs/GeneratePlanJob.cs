@@ -5,8 +5,6 @@ using ApplicationLayer.Interfaces.Jobs;
 using ApplicationLayer.Interfaces.Repositories;
 using ApplicationLayer.Interfaces.Services;
 using DomainLayer.Constants;
-using DomainLayer.Entities;
-using DomainLayer.Exceptions;
 using Hangfire;
 using Microsoft.Extensions.Logging;
 
@@ -52,7 +50,7 @@ public class GeneratePlanJob : IGeneratePlanJob
             var questionTypes = JsonSerializer.Deserialize<List<string>>(job.QuestionTypesJson, JsonOptions) ?? new();
             var skills = JsonSerializer.Deserialize<List<string>>(job.SkillsJson, JsonOptions) ?? new();
 
-            var result = await _ragService.GeneratePlanAsync(new GeneratePlanRequest
+            await _ragService.EnqueueGeneratePlanAsync(jobId, new GeneratePlanRequest
             {
                 OwnerId = job.OwnerId,
                 JobDescription = job.JobDescription,
@@ -62,32 +60,10 @@ public class GeneratePlanJob : IGeneratePlanJob
                 Skills = skills,
                 HrNote = job.HrNote
             });
-
-            var planJson = JsonSerializer.Serialize(result.Plan, JsonOptions);
-
-            if (job.Plan is null)
-            {
-                await _repository.AddPlanAsync(new QuestionGenerationPlan
-                {
-                    JobId = job.Id,
-                    PlanJson = planJson
-                });
-            }
-            else
-            {
-                job.Plan.PlanJson = planJson;
-                job.Plan.IsApproved = false;
-                job.Plan.ApprovedAt = null;
-                await _repository.UpdatePlanAsync(job.Plan);
-            }
-
-            job.Status = QuestionGenerationJobStatus.WaitingHrApproval;
-            job.ErrorMessage = null;
-            await _repository.UpdateAsync(job);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "GeneratePlanJob thất bại cho job {JobId}", jobId);
+            _logger.LogError(ex, "Dispatch RAG generate-plan async thất bại cho job {JobId}", jobId);
             job.Status = QuestionGenerationJobStatus.Failed;
             job.ErrorMessage = JobErrorSerializer.SerializeFromException(ex);
             await _repository.UpdateAsync(job);

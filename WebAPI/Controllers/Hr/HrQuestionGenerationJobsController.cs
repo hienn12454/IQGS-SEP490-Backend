@@ -131,6 +131,45 @@ public class HrQuestionGenerationJobsController : ControllerBase
         var result = await _questionSetService.SaveDraftFromJobAsync(jobId, GetCurrentUserId());
         return SuccessResp.Created(result);
     }
+    [HttpPut("{jobId:guid}/input")]
+    public async Task<IActionResult> UpdateJobInput(
+        Guid jobId, [FromBody] CreatePlanJobRequestDto dto, CancellationToken ct)
+    {
+        var result = await _service.UpdateJobInputAsync(jobId, GetCurrentUserId(), dto, ct);
+        return SuccessResp.Accepted(new { jobId = result.JobId, status = result.Status });
+    }
+
+    [HttpPut("{jobId:guid}/input/upload")]
+    [Consumes("multipart/form-data")]
+    public async Task<IActionResult> UpdateJobInputFromUpload(
+        Guid jobId,
+        [FromForm] CreatePlanJobUploadForm form,
+        CancellationToken ct)
+    {
+        Stream? fileStream = null;
+        if (form.File is { Length: > 0 })
+            fileStream = form.File.OpenReadStream();
+
+        var questionTypes = FormFieldListParser.Parse(form.QuestionTypes);
+        var skills = FormFieldListParser.Parse(form.Skills);
+
+        var result = await _service.UpdateJobInputFromUploadAsync(
+            jobId,
+            GetCurrentUserId(),
+            form.JobDescription,
+            form.HrNote,
+            fileStream,
+            form.File?.FileName,
+            form.File?.Length ?? 0,
+            form.NumberOfQuestions,
+            form.Difficulty,
+            questionTypes,
+            skills,
+            ct);
+
+        return SuccessResp.Accepted(new { jobId = result.JobId, status = result.Status });
+    }
+
     [HttpPost("{jobId:guid}/retry-plan")]
     public async Task<IActionResult> RetryPlan(Guid jobId)
     {

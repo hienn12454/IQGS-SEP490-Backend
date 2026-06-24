@@ -67,7 +67,7 @@ public class KnowledgeIngestJob : IKnowledgeIngestJob
                 document.BlobPath,
                 TimeSpan.FromMinutes(_blobSettings.SasExpiryMinutes));
 
-            await _ragService.IngestAsync(new RagIngestRequest
+            await _ragService.EnqueueIngestAsync(new RagIngestRequest
             {
                 DocumentId = document.Id,
                 BlobReadUrl = sasUrl,
@@ -79,7 +79,7 @@ public class KnowledgeIngestJob : IKnowledgeIngestJob
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Gọi RAG ingest thất bại cho document {DocumentId}", documentId);
+            _logger.LogError(ex, "Dispatch RAG ingest async thất bại cho document {DocumentId}", documentId);
             document.Status = KnowledgeDocumentStatus.Failed;
             document.ErrorMessage = ex.Message;
             await _repository.UpdateAsync(document);

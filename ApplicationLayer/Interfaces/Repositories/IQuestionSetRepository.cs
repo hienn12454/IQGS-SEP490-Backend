@@ -8,4 +8,5 @@ public interface IQuestionSetRepository
     Task AddAsync(QuestionSet questionSet, IEnumerable<QuestionSetQuestion> questions);
     Task<QuestionSet?> GetByIdWithQuestionsAsync(Guid id);
     Task<HashSet<Guid>> GetSourceJobIdsWithDraftAsync(IEnumerable<Guid> sourceJobIds);
+    Task<IReadOnlyList<QuestionSet>> ListByOwnerAsync(Guid ownerId, Guid? sourceJobId = null);
 }

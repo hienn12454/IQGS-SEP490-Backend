@@ -14,3 +14,13 @@ public interface IGenerateQuestionsFromPlanJob
 {
     Task ExecuteAsync(Guid jobId);
 }
+
+public interface IStuckKnowledgeDocumentWatchdogJob
+{
+    Task ExecuteAsync();
+}
+
+public interface IStuckQuestionGenerationWatchdogJob
+{
+    Task ExecuteAsync();
+}

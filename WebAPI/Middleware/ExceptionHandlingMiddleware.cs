@@ -54,7 +54,7 @@ public class ExceptionHandlingMiddleware
     private static async Task WriteStructuredAsync(HttpContext context, int statusCode, StructuredErrorPayload payload)
     {
         context.Response.StatusCode = statusCode;
-        context.Response.ContentType = "application/json";
+        context.Response.ContentType = "application/json; charset=utf-8";
         await context.Response.WriteAsJsonAsync(new
         {
             code = statusCode,
@@ -69,7 +69,7 @@ public class ExceptionHandlingMiddleware
     private async Task WriteJsonAsync(HttpContext context, int statusCode, string message, Exception? ex = null)
     {
         context.Response.StatusCode = statusCode;
-        context.Response.ContentType = "application/json";
+        context.Response.ContentType = "application/json; charset=utf-8";
 
         var showDetail = _env.IsDevelopment()
             || string.Equals(_config["DetailedErrors"], "true", StringComparison.OrdinalIgnoreCase);

@@ -6,4 +6,5 @@ public interface IQuestionSetService
 {
     Task<SaveDraftResponseDto> SaveDraftFromJobAsync(Guid jobId, Guid ownerId);
     Task<QuestionSetDetailResponseDto> GetQuestionSetAsync(Guid questionSetId, Guid ownerId);
+    Task<IReadOnlyList<QuestionSetListItemDto>> ListQuestionSetsAsync(Guid ownerId, QuestionSetListQueryDto query);
 }

@@ -37,6 +37,12 @@ public class QuestionGenerationJobRepository : IQuestionGenerationJobRepository
         await _context.SaveChangesAsync();
     }
 
+    public async Task DeleteJobAsync(QuestionGenerationJob job)
+    {
+        _context.QuestionGenerationJobs.Remove(job);
+        await _context.SaveChangesAsync();
+    }
+
     public async Task AddPlanAsync(QuestionGenerationPlan plan)
     {
         await _context.QuestionGenerationPlans.AddAsync(plan);
@@ -99,6 +105,48 @@ public class QuestionGenerationJobRepository : IQuestionGenerationJobRepository
         };
     }
 
+    public async Task<PagedResultDto<QuestionGenerationJob>> GetPagedPlansByOwnerAsync(
+        Guid ownerId, QuestionGenerationListQueryDto query)
+    {
+        var q = _context.QuestionGenerationJobs
+            .AsNoTracking()
+            .Include(j => j.Plan)
+            .Where(j => j.OwnerId == ownerId && j.Plan != null);
+
+        if (!string.IsNullOrWhiteSpace(query.Status))
+            q = q.Where(j => j.Status == query.Status.Trim());
+
+        if (query.FromDate.HasValue)
+        {
+            var from = DateTime.SpecifyKind(query.FromDate.Value.Date, DateTimeKind.Utc);
+            q = q.Where(j => j.Plan!.CreatedAt >= from);
+        }
+
+        if (query.ToDate.HasValue)
+        {
+            var toExclusive = DateTime.SpecifyKind(query.ToDate.Value.Date.AddDays(1), DateTimeKind.Utc);
+            q = q.Where(j => j.Plan!.CreatedAt < toExclusive);
+        }
+
+        var total = await q.CountAsync();
+        var page = Math.Max(1, query.Page);
+        var pageSize = Math.Clamp(query.PageSize, 1, 100);
+
+        var items = await q
+            .OrderByDescending(j => j.Plan!.CreatedAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync();
+
+        return new PagedResultDto<QuestionGenerationJob>
+        {
+            Items = items,
+            TotalCount = total,
+            Page = page,
+            PageSize = pageSize
+        };
+    }
+
     public Task<GeneratedQuestion?> GetQuestionByIdAsync(Guid questionId)
         => _context.GeneratedQuestions.FirstOrDefaultAsync(q => q.Id == questionId);
 
@@ -136,4 +184,12 @@ public class QuestionGenerationJobRepository : IQuestionGenerationJobRepository
         _context.GeneratedQuestions.RemoveRange(questions);
         await _context.SaveChangesAsync();
     }
+
+    public async Task<IReadOnlyList<QuestionGenerationJob>> GetStuckByStatusesAsync(
+        IReadOnlyList<string> statuses, DateTime updatedBeforeUtc)
+        => await _context.QuestionGenerationJobs
+            .Where(j => statuses.Contains(j.Status)
+                && j.UpdatedAt != null
+                && j.UpdatedAt < updatedBeforeUtc)
+            .ToListAsync();
 }

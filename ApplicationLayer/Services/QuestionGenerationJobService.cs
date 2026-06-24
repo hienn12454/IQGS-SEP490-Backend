@@ -52,9 +52,9 @@ public class QuestionGenerationJobService : IQuestionGenerationJobService
         if (string.IsNullOrWhiteSpace(dto.JobDescription))
         {
             throw StructuredHttpException.FromBe(
-                "Thiáº¿u mÃ´ táº£ cÃ´ng viá»‡c",
+                "Thiếu mô tả công việc",
                 ErrorStage.MissingJdInput,
-                ["Cáº§n nháº­p jobDescription hoáº·c upload file JD."]);
+                ["Cần nhập jobDescription hoặc upload file JD."]);
         }
 
         return CreatePlanJobInternalAsync(
@@ -90,9 +90,9 @@ public class QuestionGenerationJobService : IQuestionGenerationJobService
         if (!hasText && !hasFile)
         {
             throw StructuredHttpException.FromBe(
-                "Thiáº¿u mÃ´ táº£ cÃ´ng viá»‡c",
+                "Thiếu mô tả công việc",
                 ErrorStage.MissingJdInput,
-                ["Cáº§n nháº­p jobDescription hoáº·c upload file JD."]);
+                ["Cần nhập jobDescription hoặc upload file JD."]);
         }
 
         if (hasFile)
@@ -125,8 +125,10 @@ public class QuestionGenerationJobService : IQuestionGenerationJobService
         List<string> skills,
         CancellationToken ct)
     {
-        ValidateBusinessFields(numberOfQuestions, hrNote);
-        var normalizedTypes = QuestionTypeNormalizer.Normalize(questionTypes);
+        ValidateBusinessFields(hrNote);
+        QuestionGenerationInputValidator.ValidateNumberOfQuestions(numberOfQuestions);
+        var normalizedDifficulty = QuestionGenerationInputValidator.ValidateAndNormalizeDifficulty(difficulty);
+        var normalizedTypes = QuestionGenerationInputValidator.ValidateAndNormalizeQuestionTypes(questionTypes);
 
         var resolved = await ResolveJobDescriptionAsync(
             jobDescription, fileStream, fileName, fileSize, ct);
@@ -139,7 +141,7 @@ public class QuestionGenerationJobService : IQuestionGenerationJobService
             JdInputType = resolved.InputType,
             JdFileName = resolved.FileName,
             NumberOfQuestions = numberOfQuestions,
-            Difficulty = difficulty,
+            Difficulty = normalizedDifficulty,
             QuestionTypesJson = JsonSerializer.Serialize(normalizedTypes, JsonOptions),
             SkillsJson = JsonSerializer.Serialize(skills, JsonOptions),
             Status = QuestionGenerationJobStatus.PlanQueued
@@ -157,6 +159,168 @@ public class QuestionGenerationJobService : IQuestionGenerationJobService
         };
     }
 
+    public async Task<JobStatusResponseDto> UpdateJobInputAsync(
+        Guid jobId, Guid ownerId, CreatePlanJobRequestDto dto, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(dto.JobDescription))
+        {
+            throw StructuredHttpException.FromBe(
+                "Thiếu mô tả công việc",
+                ErrorStage.MissingJdInput,
+                ["Cần nhập jobDescription hoặc upload file JD."]);
+        }
+
+        var job = await GetOwnedJob(jobId, ownerId);
+        await EnsureJobInputEditableAsync(job);
+
+        await ApplyJobInputAsync(
+            job,
+            dto.JobDescription,
+            dto.HrNote,
+            null,
+            null,
+            0,
+            dto.NumberOfQuestions,
+            dto.Difficulty,
+            dto.QuestionTypes,
+            dto.Skills,
+            ct);
+
+        return await MapJobStatusAsync(job, job.Plan);
+    }
+
+    public Task<JobStatusResponseDto> UpdateJobInputFromUploadAsync(
+        Guid jobId,
+        Guid ownerId,
+        string? jobDescription,
+        string? hrNote,
+        Stream? fileStream,
+        string? fileName,
+        long fileSize,
+        int numberOfQuestions,
+        string difficulty,
+        List<string> questionTypes,
+        List<string> skills,
+        CancellationToken ct = default)
+    {
+        var hasText = !string.IsNullOrWhiteSpace(jobDescription);
+        var hasFile = fileStream is not null && fileSize > 0;
+
+        if (!hasText && !hasFile)
+        {
+            throw StructuredHttpException.FromBe(
+                "Thiếu mô tả công việc",
+                ErrorStage.MissingJdInput,
+                ["Cần nhập jobDescription hoặc upload file JD."]);
+        }
+
+        if (hasFile)
+            ValidateUploadFile(fileName!, fileSize);
+
+        return UpdateJobInputFromUploadInternalAsync(
+            jobId, ownerId, jobDescription, hrNote, fileStream, fileName, fileSize,
+            numberOfQuestions, difficulty, questionTypes, skills, ct);
+    }
+
+    private async Task<JobStatusResponseDto> UpdateJobInputFromUploadInternalAsync(
+        Guid jobId,
+        Guid ownerId,
+        string? jobDescription,
+        string? hrNote,
+        Stream? fileStream,
+        string? fileName,
+        long fileSize,
+        int numberOfQuestions,
+        string difficulty,
+        List<string> questionTypes,
+        List<string> skills,
+        CancellationToken ct)
+    {
+        var job = await GetOwnedJob(jobId, ownerId);
+        await EnsureJobInputEditableAsync(job);
+
+        await ApplyJobInputAsync(
+            job,
+            jobDescription,
+            hrNote,
+            fileStream,
+            fileName,
+            fileSize,
+            numberOfQuestions,
+            difficulty,
+            questionTypes,
+            skills,
+            ct);
+
+        return await MapJobStatusAsync(job, job.Plan);
+    }
+
+    private async Task ApplyJobInputAsync(
+        QuestionGenerationJob job,
+        string? jobDescription,
+        string? hrNote,
+        Stream? fileStream,
+        string? fileName,
+        long fileSize,
+        int numberOfQuestions,
+        string difficulty,
+        List<string> questionTypes,
+        List<string> skills,
+        CancellationToken ct)
+    {
+        ValidateBusinessFields(hrNote);
+        QuestionGenerationInputValidator.ValidateNumberOfQuestions(numberOfQuestions);
+        var normalizedDifficulty = QuestionGenerationInputValidator.ValidateAndNormalizeDifficulty(difficulty);
+        var normalizedTypes = QuestionGenerationInputValidator.ValidateAndNormalizeQuestionTypes(questionTypes);
+
+        var resolved = await ResolveJobDescriptionAsync(
+            jobDescription, fileStream, fileName, fileSize, ct);
+
+        job.JobDescription = resolved.Text;
+        job.HrNote = string.IsNullOrWhiteSpace(hrNote) ? null : hrNote.Trim();
+        job.JdInputType = resolved.InputType;
+        job.JdFileName = resolved.FileName;
+        job.NumberOfQuestions = numberOfQuestions;
+        job.Difficulty = normalizedDifficulty;
+        job.QuestionTypesJson = JsonSerializer.Serialize(normalizedTypes, JsonOptions);
+        job.SkillsJson = JsonSerializer.Serialize(skills, JsonOptions);
+        job.Status = QuestionGenerationJobStatus.PlanQueued;
+        job.ErrorMessage = null;
+
+        if (job.Plan is not null && !job.Plan.IsApproved)
+        {
+            job.Plan.IsApproved = false;
+            job.Plan.ApprovedAt = null;
+            await _repository.UpdatePlanAsync(job.Plan);
+        }
+
+        await _repository.UpdateAsync(job);
+        _jobScheduler.EnqueueGeneratePlan(job.Id);
+    }
+
+    private Task EnsureJobInputEditableAsync(QuestionGenerationJob job)
+    {
+        if (job.Status != QuestionGenerationJobStatus.Failed)
+            throw new BadRequestException("Chỉ được sửa input khi status FAILED.");
+
+        if (job.Plan?.IsApproved == true)
+            throw new BadRequestException("Job đã approve plan — không thể sửa input, dùng retry-questions.");
+
+        var (_, error) = MapJobError(job.ErrorMessage);
+        if (error?.Stage == ErrorStage.RagUnavailable)
+        {
+            throw new BadRequestException(
+                "Lỗi dịch vụ AI tạm thời — dùng POST retry-plan hoặc retry-questions, không sửa input.");
+        }
+
+        if (error?.Stage is not null && !JobUiStateMapper.IsInputEditableStage(error.Stage))
+        {
+            throw new BadRequestException("Job không thể sửa input với loại lỗi hiện tại.");
+        }
+
+        return Task.CompletedTask;
+    }
+
     private async Task<(string Text, string InputType, string? FileName, List<string> Warnings)> ResolveJobDescriptionAsync(
         string? jobDescription,
         Stream? fileStream,
@@ -167,24 +331,24 @@ public class QuestionGenerationJobService : IQuestionGenerationJobService
         if (fileStream is not null && fileSize > 0)
         {
             var parseResult = await _ragService.ParseJdAsync(fileStream, fileName ?? "jd.txt", ct);
+            var validatedText = JobDescriptionValidator.Validate(
+                parseResult.JobDescription,
+                fileName ?? "JD");
+
             return (
-                parseResult.JobDescription ?? string.Empty,
+                validatedText,
                 JdInputType.File,
                 fileName,
-                parseResult.Warnings);
+                parseResult.Warnings.Distinct().ToList());
         }
 
-        var validateResult = await _ragService.ValidateJdAsync(new ValidateJdRequest
-        {
-            JobDescription = jobDescription!.Trim(),
-            FileName = "JD"
-        }, ct);
+        var validatedTextFromInput = JobDescriptionValidator.Validate(jobDescription);
 
         return (
-            validateResult.JobDescription ?? jobDescription!.Trim(),
+            validatedTextFromInput,
             JdInputType.Text,
             null,
-            validateResult.Warnings);
+            []);
     }
 
     private void ValidateUploadFile(string fileName, long fileSize)
@@ -193,28 +357,25 @@ public class QuestionGenerationJobService : IQuestionGenerationJobService
         if (!_kbSettings.AllowedExtensions.Contains(ext))
         {
             throw StructuredHttpException.FromBe(
-                "File khÃ´ng há»£p lá»‡",
+                "File không hợp lệ",
                 ErrorStage.InvalidFileType,
-                [$"Chá»‰ cháº¥p nháº­n file: {string.Join(", ", _kbSettings.AllowedExtensions)}."]);
+                [$"Chỉ chấp nhận file: {string.Join(", ", _kbSettings.AllowedExtensions)}."]);
         }
 
         var maxBytes = _kbSettings.MaxFileSizeMb * 1024L * 1024L;
         if (fileSize > maxBytes)
         {
             throw StructuredHttpException.FromBe(
-                "File quÃ¡ lá»›n",
+                "File quá lớn",
                 ErrorStage.FileTooLarge,
-                [$"File vÆ°á»£t quÃ¡ {_kbSettings.MaxFileSizeMb}MB."]);
+                [$"File vượt quá {_kbSettings.MaxFileSizeMb}MB."]);
         }
     }
 
-    private static void ValidateBusinessFields(int numberOfQuestions, string? hrNote)
+    private static void ValidateBusinessFields(string? hrNote)
     {
-        if (numberOfQuestions <= 0)
-            throw new BadRequestException("numberOfQuestions pháº£i lá»›n hÆ¡n 0.");
-
         if (hrNote?.Length > MaxHrNoteLength)
-            throw new BadRequestException($"hrNote tá»‘i Ä‘a {MaxHrNoteLength} kÃ½ tá»±.");
+            throw new BadRequestException($"hrNote tối đa {MaxHrNoteLength} ký tự.");
     }
 
 
@@ -247,10 +408,108 @@ public class QuestionGenerationJobService : IQuestionGenerationJobService
         };
     }
 
+    public async Task<PagedResultDto<QuestionGenerationPlanListItemDto>> ListPlansAsync(
+        Guid ownerId, QuestionGenerationListQueryDto query)
+    {
+        query.Page = Math.Max(1, query.Page);
+        query.PageSize = Math.Clamp(query.PageSize, 1, 100);
+        var paged = await _repository.GetPagedPlansByOwnerAsync(ownerId, query);
+
+        var items = paged.Items.Select(job =>
+        {
+            var plan = job.Plan!;
+            var summary = PlanJsonSummaryReader.Read(job, plan);
+            return new QuestionGenerationPlanListItemDto
+            {
+                JobId = job.Id,
+                JobTitle = summary.JobTitle,
+                Role = summary.Role,
+                Level = summary.Level,
+                Question = summary.Question,
+                CreatedAt = plan.CreatedAt,
+                Status = job.Status,
+                IsPlanApproved = plan.IsApproved
+            };
+        }).ToList();
+
+        return new PagedResultDto<QuestionGenerationPlanListItemDto>
+        {
+            Items = items,
+            TotalCount = paged.TotalCount,
+            Page = paged.Page,
+            PageSize = paged.PageSize
+        };
+    }
+
+    public async Task<QuestionGenerationPlanDetailResponseDto> GetPlanAsync(Guid jobId, Guid ownerId)
+    {
+        var job = await GetOwnedJob(jobId, ownerId);
+
+        if (job.Plan is null)
+            throw new NotFoundException("Plan chưa được tạo.");
+
+        var plan = job.Plan;
+        object? planObj = null;
+        if (!string.IsNullOrWhiteSpace(plan.PlanJson))
+            planObj = JsonSerializer.Deserialize<object>(plan.PlanJson, JsonOptions);
+
+        var hasDraft = await _questionSetRepository.ExistsBySourceJobIdAsync(job.Id);
+        var ui = JobUiStateMapper.Map(job.Status, hasDraft, plan.IsApproved, null);
+
+        return new QuestionGenerationPlanDetailResponseDto
+        {
+            PlanId = plan.Id,
+            JobId = job.Id,
+            Status = job.Status,
+            IsPlanApproved = plan.IsApproved,
+            ApprovedAt = plan.ApprovedAt,
+            CreatedAt = plan.CreatedAt,
+            UpdatedAt = plan.UpdatedAt,
+            Input = MapPlanHrInput(job),
+            Plan = planObj,
+            Ui = ui
+        };
+    }
+
+    public async Task DeletePlanAsync(Guid jobId, Guid ownerId)
+    {
+        var job = await GetOwnedJob(jobId, ownerId);
+
+        if (job.Plan is null)
+            throw new NotFoundException("Plan chưa được tạo.");
+
+        if (job.Status is QuestionGenerationJobStatus.PlanProcessing
+            or QuestionGenerationJobStatus.QuestionProcessing)
+        {
+            throw new ConflictException("Không thể xóa khi job đang xử lý.");
+        }
+
+        if (await _questionSetRepository.ExistsBySourceJobIdAsync(jobId))
+            throw new ConflictException("Không thể xóa vì session đã được lưu draft.");
+
+        await _repository.DeleteJobAsync(job);
+    }
+
+    public async Task<QuestionExportFileDto> ExportPlanQuestionsExcelAsync(Guid jobId, Guid ownerId)
+    {
+        var job = await GetOwnedJob(jobId, ownerId);
+
+        if (job.Plan is null)
+            throw new NotFoundException("Plan chưa được tạo.");
+
+        if (job.Status != QuestionGenerationJobStatus.Completed)
+            throw new BadRequestException("Chỉ tải được khi session ở trạng thái COMPLETED.");
+
+        if (job.Questions.Count == 0)
+            throw new BadRequestException("Session chưa có câu hỏi để xuất.");
+
+        return GeneratedQuestionsExcelExporter.Build(job);
+    }
+
     public async Task<JobStatusResponseDto> GetJobAsync(Guid jobId, Guid ownerId)
     {
         var job = await GetOwnedJob(jobId, ownerId);
-        return MapJobStatus(job, job.Plan);
+        return await MapJobStatusAsync(job, job.Plan);
     }
 
     public async Task<object> UpdatePlanAsync(Guid jobId, Guid ownerId, UpdatePlanRequestDto dto)
@@ -258,13 +517,13 @@ public class QuestionGenerationJobService : IQuestionGenerationJobService
         var job = await GetOwnedJob(jobId, ownerId);
 
         if (job.Status != QuestionGenerationJobStatus.WaitingHrApproval)
-            throw new BadRequestException("Chá»‰ Ä‘Æ°á»£c sá»­a plan khi status lÃ  WAITING_HR_APPROVAL.");
+            throw new BadRequestException("Chỉ được sửa plan khi status là WAITING_HR_APPROVAL.");
 
         if (dto.TotalQuestions <= 0)
-            throw new BadRequestException("totalQuestions pháº£i lá»›n hÆ¡n 0.");
+            throw new BadRequestException("totalQuestions phải lớn hơn 0.");
 
         if (job.Plan is null)
-            throw new BadRequestException("Plan chÆ°a tá»“n táº¡i.");
+            throw new BadRequestException("Plan chưa tồn tại.");
 
         var planObject = new
         {
@@ -291,10 +550,10 @@ public class QuestionGenerationJobService : IQuestionGenerationJobService
         var job = await GetOwnedJob(jobId, ownerId);
 
         if (job.Plan is null)
-            throw new BadRequestException("Job chÆ°a cÃ³ plan.");
+            throw new BadRequestException("Job chưa có plan.");
 
         if (job.Status != QuestionGenerationJobStatus.WaitingHrApproval)
-            throw new BadRequestException("Job khÃ´ng á»Ÿ tráº¡ng thÃ¡i WAITING_HR_APPROVAL.");
+            throw new BadRequestException("Job không ở trạng thái WAITING_HR_APPROVAL.");
 
         job.Plan.IsApproved = true;
         job.Plan.ApprovedAt = DateTime.UtcNow;
@@ -305,7 +564,7 @@ public class QuestionGenerationJobService : IQuestionGenerationJobService
         await _repository.UpdateAsync(job);
         _jobScheduler.EnqueueGenerateQuestionsFromPlan(jobId);
 
-        return MapJobStatus(job, job.Plan);
+        return await MapJobStatusAsync(job, job.Plan);
     }
 
     public async Task<JobQuestionsResponseDto> GetQuestionsAsync(Guid jobId, Guid ownerId)
@@ -332,17 +591,17 @@ public class QuestionGenerationJobService : IQuestionGenerationJobService
         var job = await GetOwnedJob(jobId, ownerId);
 
         if (job.Status != QuestionGenerationJobStatus.Failed)
-            throw new BadRequestException("Chá»‰ retry plan khi status FAILED.");
+            throw new BadRequestException("Chỉ retry plan khi status FAILED.");
 
         if (job.Plan?.IsApproved == true)
-            throw new BadRequestException("Job Ä‘Ã£ approve plan â€” dÃ¹ng retry-questions.");
+            throw new BadRequestException("Job đã approve plan — dùng retry-questions.");
 
         job.Status = QuestionGenerationJobStatus.PlanQueued;
         job.ErrorMessage = null;
         await _repository.UpdateAsync(job);
         _jobScheduler.EnqueueGeneratePlan(jobId);
 
-        return MapJobStatus(job, job.Plan);
+        return await MapJobStatusAsync(job, job.Plan);
     }
 
     public async Task<JobStatusResponseDto> RetryQuestionsAsync(Guid jobId, Guid ownerId)
@@ -350,17 +609,17 @@ public class QuestionGenerationJobService : IQuestionGenerationJobService
         var job = await GetOwnedJob(jobId, ownerId);
 
         if (job.Status != QuestionGenerationJobStatus.Failed)
-            throw new BadRequestException("Chá»‰ retry questions khi status FAILED.");
+            throw new BadRequestException("Chỉ retry questions khi status FAILED.");
 
         if (job.Plan is null || !job.Plan.IsApproved)
-            throw new BadRequestException("Plan chÆ°a Ä‘Æ°á»£c approve.");
+            throw new BadRequestException("Plan chưa được approve.");
 
         job.Status = QuestionGenerationJobStatus.QuestionQueued;
         job.ErrorMessage = null;
         await _repository.UpdateAsync(job);
         _jobScheduler.EnqueueGenerateQuestionsFromPlan(jobId);
 
-        return MapJobStatus(job, job.Plan);
+        return await MapJobStatusAsync(job, job.Plan);
     }
 
 
@@ -535,37 +794,91 @@ public class QuestionGenerationJobService : IQuestionGenerationJobService
     private async Task<QuestionGenerationJob> GetOwnedJob(Guid jobId, Guid ownerId)
     {
         var job = await _repository.GetByIdWithPlanAndQuestionsAsync(jobId)
-            ?? throw new NotFoundException("Job khÃ´ng tá»“n táº¡i.");
+            ?? throw new NotFoundException("Job không tồn tại.");
 
         if (job.OwnerId != ownerId)
-            throw new ForbiddenException("Báº¡n khÃ´ng cÃ³ quyá»n truy cáº­p job nÃ y.");
+            throw new ForbiddenException("Bạn không có quyền truy cập job này.");
 
         return job;
     }
 
-    private static JobStatusResponseDto MapJobStatus(QuestionGenerationJob job, QuestionGenerationPlan? plan)
+    private static PlanHrInputDto MapPlanHrInput(QuestionGenerationJob job)
+    {
+        var questionTypes = JsonSerializer.Deserialize<List<string>>(job.QuestionTypesJson, JsonOptions) ?? new();
+        var skills = JsonSerializer.Deserialize<List<string>>(job.SkillsJson, JsonOptions) ?? new();
+        return new PlanHrInputDto
+        {
+            JobDescription = job.JobDescription,
+            HrNote = job.HrNote,
+            NumberOfQuestions = job.NumberOfQuestions,
+            Difficulty = job.Difficulty,
+            QuestionTypes = questionTypes,
+            Skills = skills,
+            JdInputType = job.JdInputType,
+            JdFileName = job.JdFileName
+        };
+    }
+
+    private async Task<JobStatusResponseDto> MapJobStatusAsync(QuestionGenerationJob job, QuestionGenerationPlan? plan)
     {
         object? planObj = null;
         if (plan is not null)
             planObj = JsonSerializer.Deserialize<object>(plan.PlanJson, JsonOptions);
 
+        var questionTypes = JsonSerializer.Deserialize<List<string>>(job.QuestionTypesJson, JsonOptions) ?? new();
+        var skills = JsonSerializer.Deserialize<List<string>>(job.SkillsJson, JsonOptions) ?? new();
+        var hasDraft = await _questionSetRepository.ExistsBySourceJobIdAsync(job.Id);
+        var planApproved = plan?.IsApproved == true;
+
         var (errorMessage, error) = MapJobError(job.ErrorMessage);
+        var failure = job.Status == QuestionGenerationJobStatus.Failed
+            ? JobUiStateMapper.MapFailure(error)
+            : null;
+        var ui = JobUiStateMapper.Map(job.Status, hasDraft, planApproved, error);
+
+        var input = new JobInputSnapshotDto
+        {
+            JobDescription = job.JobDescription,
+            JobDescriptionPreview = BuildJobDescriptionPreview(job.JobDescription),
+            HrNote = job.HrNote,
+            NumberOfQuestions = job.NumberOfQuestions,
+            Difficulty = job.Difficulty,
+            QuestionTypes = questionTypes,
+            Skills = skills,
+            JdInputType = job.JdInputType,
+            JdFileName = job.JdFileName
+        };
+
+        var meta = new JobMetaDto
+        {
+            CreatedAt = job.CreatedAt,
+            CompletedAt = job.CompletedAt,
+            QuestionCount = job.Questions.Count,
+            HasDraft = hasDraft,
+            PlanApproved = planApproved
+        };
 
         return new JobStatusResponseDto
         {
             JobId = job.Id,
             Status = job.Status,
+            Phase = ui.Phase,
+            Input = input,
+            Meta = meta,
+            Ui = ui,
+            Failure = failure,
             JobDescription = job.JobDescription,
             HrNote = job.HrNote,
             JdInputType = job.JdInputType,
             JdFileName = job.JdFileName,
             NumberOfQuestions = job.NumberOfQuestions,
             Difficulty = job.Difficulty,
-            QuestionTypes = JsonSerializer.Deserialize<List<string>>(job.QuestionTypesJson, JsonOptions) ?? new(),
-            Skills = JsonSerializer.Deserialize<List<string>>(job.SkillsJson, JsonOptions) ?? new(),
+            QuestionTypes = questionTypes,
+            Skills = skills,
             Plan = planObj,
             ErrorMessage = errorMessage,
-            Error = error
+            Error = error,
+            Warnings = []
         };
     }
 

@@ -88,4 +88,11 @@ public class KnowledgeDocumentRepository : IKnowledgeDocumentRepository
             PageSize = pageSize
         };
     }
+
+    public async Task<IReadOnlyList<KnowledgeDocument>> GetStuckProcessingAsync(DateTime updatedBeforeUtc)
+        => await _context.KnowledgeDocuments
+            .Where(d => d.Status == DomainLayer.Constants.KnowledgeDocumentStatus.Processing
+                && d.UpdatedAt != null
+                && d.UpdatedAt < updatedBeforeUtc)
+            .ToListAsync();
 }
