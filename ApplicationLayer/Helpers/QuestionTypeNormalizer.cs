@@ -2,6 +2,15 @@ namespace ApplicationLayer.Helpers;
 
 public static class QuestionTypeNormalizer
 {
+    public static readonly IReadOnlySet<string> AllowedTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        "technical",
+        "behavioral",
+        "situational",
+        "system-design",
+        "problem-solving"
+    };
+
     private static readonly Dictionary<string, string> Map = new(StringComparer.OrdinalIgnoreCase)
     {
         ["Technical"] = "technical",
@@ -23,4 +32,7 @@ public static class QuestionTypeNormalizer
             .Distinct()
             .ToList();
     }
+
+    public static bool IsAllowed(string normalizedType)
+        => AllowedTypes.Contains(normalizedType);
 }

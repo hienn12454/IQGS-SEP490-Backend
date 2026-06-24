@@ -13,6 +13,8 @@ public static class ErrorStage
     public const string FileTooLarge = "FILE_TOO_LARGE";
     public const string JdParse = "JD_PARSE";
     public const string JdValidation = "JD_VALIDATION";
+    public const string Validation = "VALIDATION";
     public const string RagUnavailable = "RAG_UNAVAILABLE";
     public const string PlanGeneration = "PLAN_GENERATION";
+    public const string QuestionGeneration = "QUESTION_GENERATION";
 }

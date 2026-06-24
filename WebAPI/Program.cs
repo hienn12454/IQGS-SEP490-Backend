@@ -1,4 +1,4 @@
-using ApplicationLayer.Interfaces.Jobs;
+﻿using ApplicationLayer.Interfaces.Jobs;
 using ApplicationLayer.Interfaces.Repositories;
 using ApplicationLayer.Interfaces.Services;
 using ApplicationLayer.Services;
@@ -31,7 +31,7 @@ public class Program
     {
         var builder = WebApplication.CreateBuilder(args);
 
-        // ── Controllers ───────────────────────────────────────────────
+        // â”€â”€ Controllers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         builder.Services.AddControllers()
             .AddJsonOptions(o =>
                 o.JsonSerializerOptions.Encoder = JavaScriptEncoder.Create(UnicodeRanges.All));
@@ -57,7 +57,7 @@ public class Program
             };
         });
 
-        // ── Swagger / OpenAPI ─────────────────────────────────────────
+        // â”€â”€ Swagger / OpenAPI â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         builder.Services.AddEndpointsApiExplorer();
         builder.Services.AddSwaggerGen(options =>
         {
@@ -94,7 +94,7 @@ public class Program
             });
         });
 
-        // ── Database ──────────────────────────────────────────────────
+        // â”€â”€ Database â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
             ?? throw new InvalidOperationException("ConnectionStrings:DefaultConnection chưa được cấu hình.");
 
@@ -105,7 +105,7 @@ public class Program
         builder.Services.AddDbContext<AppDbContext>(options =>
             options.UseNpgsql(npgsqlDataSource, o => o.UseVector()));
 
-        // ── App settings ──────────────────────────────────────────────
+        // â”€â”€ App settings â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         builder.Services.Configure<InternalApiSettings>(
             builder.Configuration.GetSection(InternalApiSettings.SectionName));
         builder.Services.Configure<RagServiceSettings>(
@@ -114,12 +114,14 @@ public class Program
             builder.Configuration.GetSection(BlobStorageSettings.SectionName));
         builder.Services.Configure<KnowledgeBaseSettings>(
             builder.Configuration.GetSection(KnowledgeBaseSettings.SectionName));
+        builder.Services.Configure<WatchdogSettings>(
+            builder.Configuration.GetSection(WatchdogSettings.SectionName));
 
         var kbSettings = builder.Configuration
             .GetSection(KnowledgeBaseSettings.SectionName)
             .Get<KnowledgeBaseSettings>() ?? new KnowledgeBaseSettings();
 
-        // ── Hangfire ──────────────────────────────────────────────────
+        // â”€â”€ Hangfire â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         builder.Services.AddHangfire(config => config
             .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
             .UseSimpleAssemblyNameTypeSerializer()
@@ -132,7 +134,7 @@ public class Program
             options.WorkerCount = Math.Max(kbSettings.MaxConcurrentIngestJobs, 2);
         });
 
-        // ── RAG HttpClient ────────────────────────────────────────────
+        // â”€â”€ RAG HttpClient â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         var ragSettings = builder.Configuration
             .GetSection(RagServiceSettings.SectionName)
             .Get<RagServiceSettings>() ?? new RagServiceSettings();
@@ -146,7 +148,7 @@ public class Program
                 client.DefaultRequestHeaders.Add("X-Internal-Api-Key", internalApiKey);
         });
 
-        // ── JWT Authentication ────────────────────────────────────────
+        // â”€â”€ JWT Authentication â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         var jwtKey = builder.Configuration["JwtSettings:SecretKey"]
             ?? throw new InvalidOperationException("JwtSettings:SecretKey chưa được cấu hình.");
 
@@ -237,7 +239,7 @@ public class Program
 
         builder.Services.AddAuthorization();
 
-        // ── CORS ──────────────────────────────────────────────────────
+        // â”€â”€ CORS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         builder.Services.AddCors(options =>
         {
             options.AddDefaultPolicy(policy =>
@@ -248,7 +250,7 @@ public class Program
             });
         });
 
-        // ── Dependency Injection ──────────────────────────────────────
+        // â”€â”€ Dependency Injection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         // Repositories
         builder.Services.AddScoped<IUserRepository, UserRepository>();
         builder.Services.AddScoped<IHRProfileRepository, HRProfileRepository>();
@@ -256,6 +258,7 @@ public class Program
         builder.Services.AddScoped<ICompanyRepository, CompanyRepository>();
         builder.Services.AddScoped<IKnowledgeDocumentRepository, KnowledgeDocumentRepository>();
         builder.Services.AddScoped<IQuestionGenerationJobRepository, QuestionGenerationJobRepository>();
+        builder.Services.AddScoped<IQuestionSetRepository, QuestionSetRepository>();
 
         // Services
         builder.Services.AddScoped<IJwtService, JwtService>();
@@ -268,14 +271,18 @@ public class Program
         builder.Services.AddScoped<IKnowledgeDocumentService, KnowledgeDocumentService>();
         builder.Services.AddScoped<IKnowledgeDocumentInternalService, KnowledgeDocumentInternalService>();
         builder.Services.AddScoped<IQuestionGenerationJobService, QuestionGenerationJobService>();
+        builder.Services.AddScoped<IQuestionGenerationJobInternalService, QuestionGenerationJobInternalService>();
+        builder.Services.AddScoped<IQuestionSetService, QuestionSetService>();
 
         // Hangfire jobs
         builder.Services.AddScoped<IKnowledgeIngestJob, KnowledgeIngestJob>();
         builder.Services.AddScoped<IGeneratePlanJob, GeneratePlanJob>();
         builder.Services.AddScoped<IGenerateQuestionsFromPlanJob, GenerateQuestionsFromPlanJob>();
+        builder.Services.AddScoped<IStuckKnowledgeDocumentWatchdogJob, StuckKnowledgeDocumentWatchdogJob>();
+        builder.Services.AddScoped<IStuckQuestionGenerationWatchdogJob, StuckQuestionGenerationWatchdogJob>();
         builder.Services.AddSingleton<IJobScheduler, JobScheduler>();
 
-        // ── App pipeline ──────────────────────────────────────────────
+        // â”€â”€ App pipeline â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         var app = builder.Build();
 
         // SCRUM-163 AC-07: Seed database + admin account
@@ -305,6 +312,16 @@ public class Program
         app.UseAuthentication();
         app.UseAuthorization();
         app.UseHangfireDashboard("/hangfire");
+
+        RecurringJob.AddOrUpdate<IStuckKnowledgeDocumentWatchdogJob>(
+            "stuck-knowledge-documents",
+            job => job.ExecuteAsync(),
+            "*/15 * * * *");
+        RecurringJob.AddOrUpdate<IStuckQuestionGenerationWatchdogJob>(
+            "stuck-question-generation",
+            job => job.ExecuteAsync(),
+            "*/15 * * * *");
+
         app.MapControllers();
         app.Run();
     }

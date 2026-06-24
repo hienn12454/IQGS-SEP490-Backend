@@ -53,6 +53,9 @@ appsettings.Production.json
 *.backup.*
 **/*.backup.*
 
+## Local unit tests — giữ trên máy, không push GitHub
+ApplicationLayer.Tests/
+
 ## OS
 .DS_Store
 Thumbs.db

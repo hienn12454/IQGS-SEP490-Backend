@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -5,15 +6,18 @@ using System.Text.Json.Serialization;
 using DomainLayer.Common;
 using ApplicationLayer.DTOs.Rag;
 using ApplicationLayer.Interfaces.Services;
+using ApplicationLayer.Settings;
 using DomainLayer.Constants;
 using DomainLayer.Exceptions;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Options;
 
 namespace InfrastructureLayer.External;
 
 public class RagService : IRagService
 {
     private readonly HttpClient _httpClient;
+    private readonly RagServiceSettings _settings;
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -21,9 +25,10 @@ public class RagService : IRagService
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
     };
 
-    public RagService(HttpClient httpClient)
+    public RagService(HttpClient httpClient, IOptions<RagServiceSettings> settings)
     {
         _httpClient = httpClient;
+        _settings = settings.Value;
     }
 
     public async Task<RagIngestResult> IngestAsync(RagIngestRequest request, CancellationToken ct = default)
@@ -34,6 +39,9 @@ public class RagService : IRagService
 
         return (await response.Content.ReadFromJsonAsync<RagIngestResult>(JsonOptions, ct))!;
     }
+
+    public Task<RagAsyncAcceptedResult> EnqueueIngestAsync(RagIngestRequest request, CancellationToken ct = default)
+        => PostAsyncAcceptedAsync("/internal/rag/ingest/async", request, ct);
 
     public async Task<RagDeleteResult> DeleteDocumentChunksAsync(Guid documentId, CancellationToken ct = default)
     {
@@ -118,6 +126,23 @@ public class RagService : IRagService
         return result;
     }
 
+    public Task<RagAsyncAcceptedResult> EnqueueGeneratePlanAsync(
+        Guid jobId, GeneratePlanRequest request, CancellationToken ct = default)
+    {
+        var body = new
+        {
+            jobId,
+            request.OwnerId,
+            request.JobDescription,
+            request.NumberOfQuestions,
+            request.Difficulty,
+            request.QuestionTypes,
+            request.Skills,
+            request.HrNote
+        };
+        return PostAsyncAcceptedAsync("/internal/rag/generate-plan/async", body, ct);
+    }
+
     public async Task<GenerateQuestionsFromPlanResult> GenerateQuestionsFromPlanAsync(
         GenerateQuestionsFromPlanRequest request, CancellationToken ct = default)
     {
@@ -141,6 +166,55 @@ public class RagService : IRagService
         var result = await response.Content.ReadFromJsonAsync<GenerateQuestionsFromPlanResult>(JsonOptions, ct);
         if (result is null || !result.Success)
             throw new ServerFailureException(result?.Error ?? "RAG generate-questions-from-plan thất bại.");
+        return result;
+    }
+
+    public Task<RagAsyncAcceptedResult> EnqueueGenerateQuestionsFromPlanAsync(
+        Guid jobId, GenerateQuestionsFromPlanRequest request, CancellationToken ct = default)
+    {
+        var body = new
+        {
+            jobId,
+            request.OwnerId,
+            request.JobDescription,
+            request.ApprovedPlan,
+            request.HrNote
+        };
+        return PostAsyncAcceptedAsync("/internal/rag/generate-questions-from-plan/async", body, ct);
+    }
+
+    private async Task<RagAsyncAcceptedResult> PostAsyncAcceptedAsync(
+        string path, object body, CancellationToken ct)
+    {
+        using var dispatchCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        dispatchCts.CancelAfter(TimeSpan.FromSeconds(_settings.DispatchTimeoutSeconds));
+
+        HttpResponseMessage response;
+        try
+        {
+            response = await _httpClient.PostAsJsonAsync(path, body, JsonOptions, dispatchCts.Token);
+        }
+        catch (HttpRequestException ex)
+        {
+            throw CreateRagUnavailableException(ex);
+        }
+        catch (TaskCanceledException ex) when (!ct.IsCancellationRequested)
+        {
+            throw CreateRagUnavailableException(ex);
+        }
+
+        if (response.StatusCode != HttpStatusCode.Accepted)
+            throw await BuildRagExceptionAsync(response, dispatchCts.Token);
+
+        var result = await response.Content.ReadFromJsonAsync<RagAsyncAcceptedResult>(JsonOptions, dispatchCts.Token);
+        if (result is null || !result.Accepted)
+            throw StructuredHttpException.FromBe(
+                "RAG không chấp nhận job async",
+                ErrorStage.RagUnavailable,
+                ["RAG không trả về accepted=true."],
+                null,
+                StatusCodes.Status502BadGateway);
+
         return result;
     }
 

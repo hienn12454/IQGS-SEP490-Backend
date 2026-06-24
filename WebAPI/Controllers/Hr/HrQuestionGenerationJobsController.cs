@@ -1,5 +1,6 @@
-using ApplicationLayer.DTOs.QuestionGeneration;
+﻿using ApplicationLayer.DTOs.QuestionGeneration;
 using ApplicationLayer.Interfaces.Services;
+using ApplicationLayer.DTOs.QuestionSet;
 using ApplicationLayer.ResponseCode;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -14,10 +15,12 @@ namespace WebAPI.Controllers.Hr;
 public class HrQuestionGenerationJobsController : ControllerBase
 {
     private readonly IQuestionGenerationJobService _service;
+    private readonly IQuestionSetService _questionSetService;
 
-    public HrQuestionGenerationJobsController(IQuestionGenerationJobService service)
+    public HrQuestionGenerationJobsController(IQuestionGenerationJobService service, IQuestionSetService questionSetService)
     {
         _service = service;
+        _questionSetService = questionSetService;
     }
 
     [HttpPost("plan")]
@@ -56,6 +59,13 @@ public class HrQuestionGenerationJobsController : ControllerBase
         return SuccessResp.Accepted(result);
     }
 
+    [HttpGet]
+    public async Task<IActionResult> ListJobs([FromQuery] QuestionGenerationListQueryDto query)
+    {
+        var result = await _service.ListJobsAsync(GetCurrentUserId(), query);
+        return SuccessResp.Ok(result);
+    }
+
     [HttpGet("{jobId:guid}")]
     public async Task<IActionResult> GetJob(Guid jobId)
     {
@@ -82,6 +92,82 @@ public class HrQuestionGenerationJobsController : ControllerBase
     {
         var result = await _service.GetQuestionsAsync(jobId, GetCurrentUserId());
         return SuccessResp.Ok(result);
+    }
+
+
+    [HttpPut("{jobId:guid}/questions/{questionId:guid}")]
+    public async Task<IActionResult> UpdateQuestion(
+        Guid jobId, Guid questionId, [FromBody] UpdateQuestionRequestDto dto)
+    {
+        var result = await _service.UpdateQuestionAsync(jobId, questionId, GetCurrentUserId(), dto);
+        return SuccessResp.Ok(result);
+    }
+
+    [HttpPost("{jobId:guid}/questions")]
+    public async Task<IActionResult> AddQuestion(Guid jobId, [FromBody] CreateQuestionRequestDto dto)
+    {
+        var result = await _service.AddQuestionAsync(jobId, GetCurrentUserId(), dto);
+        return SuccessResp.Created(result);
+    }
+
+    [HttpDelete("{jobId:guid}/questions/{questionId:guid}")]
+    public async Task<IActionResult> DeleteQuestion(Guid jobId, Guid questionId)
+    {
+        await _service.DeleteQuestionAsync(jobId, questionId, GetCurrentUserId());
+        return SuccessResp.NoContent();
+    }
+
+    [HttpPut("{jobId:guid}/questions/reorder")]
+    public async Task<IActionResult> ReorderQuestions(
+        Guid jobId, [FromBody] ReorderQuestionsRequestDto dto)
+    {
+        var result = await _service.ReorderQuestionsAsync(jobId, GetCurrentUserId(), dto);
+        return SuccessResp.Ok(result);
+    }
+
+    [HttpPost("{jobId:guid}/save-draft")]
+    public async Task<IActionResult> SaveDraft(Guid jobId)
+    {
+        var result = await _questionSetService.SaveDraftFromJobAsync(jobId, GetCurrentUserId());
+        return SuccessResp.Created(result);
+    }
+    [HttpPut("{jobId:guid}/input")]
+    public async Task<IActionResult> UpdateJobInput(
+        Guid jobId, [FromBody] CreatePlanJobRequestDto dto, CancellationToken ct)
+    {
+        var result = await _service.UpdateJobInputAsync(jobId, GetCurrentUserId(), dto, ct);
+        return SuccessResp.Accepted(new { jobId = result.JobId, status = result.Status });
+    }
+
+    [HttpPut("{jobId:guid}/input/upload")]
+    [Consumes("multipart/form-data")]
+    public async Task<IActionResult> UpdateJobInputFromUpload(
+        Guid jobId,
+        [FromForm] CreatePlanJobUploadForm form,
+        CancellationToken ct)
+    {
+        Stream? fileStream = null;
+        if (form.File is { Length: > 0 })
+            fileStream = form.File.OpenReadStream();
+
+        var questionTypes = FormFieldListParser.Parse(form.QuestionTypes);
+        var skills = FormFieldListParser.Parse(form.Skills);
+
+        var result = await _service.UpdateJobInputFromUploadAsync(
+            jobId,
+            GetCurrentUserId(),
+            form.JobDescription,
+            form.HrNote,
+            fileStream,
+            form.File?.FileName,
+            form.File?.Length ?? 0,
+            form.NumberOfQuestions,
+            form.Difficulty,
+            questionTypes,
+            skills,
+            ct);
+
+        return SuccessResp.Accepted(new { jobId = result.JobId, status = result.Status });
     }
 
     [HttpPost("{jobId:guid}/retry-plan")]

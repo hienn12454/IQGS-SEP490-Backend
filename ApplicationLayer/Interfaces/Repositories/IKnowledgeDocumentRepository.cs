@@ -10,4 +10,5 @@ public interface IKnowledgeDocumentRepository
     Task UpdateAsync(KnowledgeDocument document);
     Task DeleteHardAsync(KnowledgeDocument document);
     Task<PagedResultDto<KnowledgeDocument>> GetPagedAsync(KnowledgeDocumentQueryDto query);
+    Task<IReadOnlyList<KnowledgeDocument>> GetStuckProcessingAsync(DateTime updatedBeforeUtc);
 }

@@ -6,5 +6,5 @@ public class BlobStorageSettings
 
     public string ConnectionString { get; set; } = string.Empty;
     public string ContainerName { get; set; } = "knowledge-documents";
-    public int SasExpiryMinutes { get; set; } = 15;
+    public int SasExpiryMinutes { get; set; } = 60;
 }
