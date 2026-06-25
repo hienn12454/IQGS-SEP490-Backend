@@ -46,4 +46,28 @@ public class CompanyController : ControllerBase
         var result = await _companyService.CreateAsync(dto);
         return SuccessResp.Created(result);
     }
+
+    /// <summary>Cập nhật công ty (Admin, hoặc HR thuộc chính công ty đó).</summary>
+    [Authorize(Roles = "HR,Admin")]
+    [HttpPut("{id:guid}")]
+    public async Task<IActionResult> Update(Guid id, [FromBody] UpdateCompanyDto dto)
+    {
+        var result = await _companyService.UpdateAsync(id, dto, GetCurrentUserId(), User.IsInRole("Admin"));
+        return SuccessResp.Ok(result);
+    }
+
+    /// <summary>Xoá (mềm) công ty (Admin, hoặc HR thuộc chính công ty đó).</summary>
+    [Authorize(Roles = "HR,Admin")]
+    [HttpDelete("{id:guid}")]
+    public async Task<IActionResult> Delete(Guid id)
+    {
+        await _companyService.DeleteAsync(id, GetCurrentUserId(), User.IsInRole("Admin"));
+        return SuccessResp.NoContent();
+    }
+
+    private Guid GetCurrentUserId()
+    {
+        var idStr = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        return Guid.Parse(idStr!);
+    }
 }
