@@ -13,4 +13,5 @@ public interface IRagService
     Task<RagAsyncAcceptedResult> EnqueueGeneratePlanAsync(Guid jobId, GeneratePlanRequest request, CancellationToken ct = default);
     Task<GenerateQuestionsFromPlanResult> GenerateQuestionsFromPlanAsync(GenerateQuestionsFromPlanRequest request, CancellationToken ct = default);
     Task<RagAsyncAcceptedResult> EnqueueGenerateQuestionsFromPlanAsync(Guid jobId, GenerateQuestionsFromPlanRequest request, CancellationToken ct = default);
+    Task<RagHealthStatusDto> GetHealthStatusAsync(CancellationToken ct = default);
 }

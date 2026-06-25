@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -181,6 +182,204 @@ public class RagService : IRagService
             request.HrNote
         };
         return PostAsyncAcceptedAsync("/internal/rag/generate-questions-from-plan/async", body, ct);
+    }
+
+    public async Task<RagHealthStatusDto> GetHealthStatusAsync(CancellationToken ct = default)
+    {
+        var serviceUrl = _settings.BaseUrl.TrimEnd('/');
+        var checkedAt = DateTimeOffset.UtcNow;
+        var timeoutSeconds = _settings.HealthCheckTimeoutSeconds;
+
+        using var healthCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        healthCts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
+
+        var stopwatch = Stopwatch.StartNew();
+        RagHealthRawResponse? raw = null;
+        var connectionFailed = false;
+        string? connectionFailMessage = null;
+
+        try
+        {
+            var response = await _httpClient.GetAsync("/health", healthCts.Token);
+            stopwatch.Stop();
+
+            if (!response.IsSuccessStatusCode)
+            {
+                connectionFailed = true;
+                connectionFailMessage = $"Dịch vụ RAG phản hồi lỗi (HTTP {(int)response.StatusCode})";
+            }
+            else
+            {
+                raw = await response.Content.ReadFromJsonAsync<RagHealthRawResponse>(JsonOptions, healthCts.Token);
+                if (raw is null)
+                {
+                    connectionFailed = true;
+                    connectionFailMessage = "Dịch vụ RAG phản hồi nhưng không đọc được dữ liệu trạng thái";
+                }
+            }
+        }
+        catch (HttpRequestException)
+        {
+            stopwatch.Stop();
+            connectionFailed = true;
+            connectionFailMessage = $"Không kết nối được — hết thời gian chờ sau {timeoutSeconds} giây";
+        }
+        catch (TaskCanceledException) when (!ct.IsCancellationRequested)
+        {
+            stopwatch.Stop();
+            connectionFailed = true;
+            connectionFailMessage = $"Không kết nối được — hết thời gian chờ sau {timeoutSeconds} giây";
+        }
+
+        var responseTimeMs = connectionFailed ? (long?)null : stopwatch.ElapsedMilliseconds;
+        return BuildHealthStatus(
+            serviceUrl, checkedAt, raw, responseTimeMs, connectionFailed, connectionFailMessage, timeoutSeconds);
+    }
+
+    private const string CheckConnection = "Kết nối tới RAG";
+    private const string CheckConfig = "Cấu hình RAG";
+    private const string CheckDatabase = "Cơ sở dữ liệu vector";
+
+    private sealed class RagHealthRawResponse
+    {
+        public string Status { get; set; } = string.Empty;
+        public string Database { get; set; } = string.Empty;
+        public string Config { get; set; } = string.Empty;
+    }
+
+    private static RagHealthStatusDto BuildHealthStatus(
+        string serviceUrl,
+        DateTimeOffset checkedAt,
+        RagHealthRawResponse? raw,
+        long? responseTimeMs,
+        bool connectionFailed,
+        string? connectionFailMessage,
+        int timeoutSeconds)
+    {
+        List<RagHealthCheckItemDto> checks;
+
+        if (connectionFailed)
+        {
+            checks =
+            [
+                new RagHealthCheckItemDto
+                {
+                    Name = CheckConnection,
+                    Status = "fail",
+                    Message = connectionFailMessage
+                        ?? $"Không kết nối được — hết thời gian chờ sau {timeoutSeconds} giây"
+                },
+                new RagHealthCheckItemDto
+                {
+                    Name = CheckConfig,
+                    Status = "warn",
+                    Message = "Không kiểm tra được vì không kết nối tới RAG"
+                },
+                new RagHealthCheckItemDto
+                {
+                    Name = CheckDatabase,
+                    Status = "warn",
+                    Message = "Không kiểm tra được vì không kết nối tới RAG"
+                }
+            ];
+        }
+        else
+        {
+            var configOk = string.Equals(raw!.Config, "valid", StringComparison.OrdinalIgnoreCase);
+            var databaseOk = string.Equals(raw.Database, "up", StringComparison.OrdinalIgnoreCase);
+
+            checks =
+            [
+                new RagHealthCheckItemDto
+                {
+                    Name = CheckConnection,
+                    Status = "pass",
+                    Message = $"Dịch vụ RAG phản hồi trong {responseTimeMs}ms"
+                },
+                new RagHealthCheckItemDto
+                {
+                    Name = CheckConfig,
+                    Status = configOk ? "pass" : "fail",
+                    Message = configOk
+                        ? "Cấu hình hợp lệ (API key, database URL, embedding dimension)"
+                        : "Cấu hình thiếu hoặc không hợp lệ (API key, database URL, embedding dimension)"
+                },
+                new RagHealthCheckItemDto
+                {
+                    Name = CheckDatabase,
+                    Status = databaseOk ? "pass" : "fail",
+                    Message = databaseOk
+                        ? "PostgreSQL pgvector hoạt động bình thường"
+                        : "PostgreSQL pgvector không phản hồi"
+                }
+            ];
+        }
+
+        var isHealthy = checks.All(c => c.Status == "pass");
+        var (summary, wrapperMessage) = BuildHealthMessages(checks, isHealthy);
+
+        return new RagHealthStatusDto
+        {
+            IsHealthy = isHealthy,
+            Summary = summary,
+            WrapperMessage = wrapperMessage,
+            Checks = checks,
+            ServiceUrl = serviceUrl,
+            ResponseTimeMs = responseTimeMs,
+            CheckedAt = checkedAt,
+            Technical = connectionFailed || raw is null
+                ? null
+                : new RagHealthTechnicalDto
+                {
+                    RagStatus = raw.Status,
+                    Database = raw.Database,
+                    Config = raw.Config
+                }
+        };
+    }
+
+    private static (string Summary, string WrapperMessage) BuildHealthMessages(
+        List<RagHealthCheckItemDto> checks, bool isHealthy)
+    {
+        if (isHealthy)
+        {
+            return (
+                "Tất cả hạng mục kiểm tra đều ổn. Có thể ingest tài liệu và sinh câu hỏi.",
+                "Dịch vụ RAG đang hoạt động bình thường");
+        }
+
+        var connectionFailed = checks.Any(c =>
+            c.Name == CheckConnection && c.Status == "fail");
+
+        if (connectionFailed)
+        {
+            return (
+                "Backend không nhận được phản hồi từ RAG trong thời gian cho phép. Kiểm tra RAG có đang chạy và BaseUrl trong appsettings có đúng không.",
+                "Không thể kết nối tới dịch vụ RAG");
+        }
+
+        var configFailed = checks.Any(c =>
+            c.Name == CheckConfig && c.Status == "fail");
+        var databaseFailed = checks.Any(c =>
+            c.Name == CheckDatabase && c.Status == "fail");
+
+        if (configFailed && !databaseFailed)
+        {
+            return (
+                "RAG thiếu hoặc sai cấu hình (API key, database URL, embedding dimension...). Liên hệ người vận hành RAG.",
+                "Dịch vụ RAG đang gặp sự cố");
+        }
+
+        if (databaseFailed)
+        {
+            return (
+                "RAG phản hồi nhưng không kết nối được cơ sở dữ liệu vector. Ingest và sinh câu hỏi có thể thất bại.",
+                "Dịch vụ RAG đang gặp sự cố");
+        }
+
+        return (
+            "Một hoặc nhiều hạng mục kiểm tra chưa đạt. Xem chi tiết trong danh sách checks.",
+            "Dịch vụ RAG đang gặp sự cố");
     }
 
     private async Task<RagAsyncAcceptedResult> PostAsyncAcceptedAsync(
