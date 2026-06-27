@@ -31,7 +31,8 @@ public static class JobUiStateMapper
             CanViewQuestions = status == QuestionGenerationJobStatus.Completed,
             CanEditQuestions = status == QuestionGenerationJobStatus.Completed && !hasDraft,
             CanSaveDraft = status == QuestionGenerationJobStatus.Completed && !hasDraft,
-            CanViewDraft = hasDraft
+            CanViewDraft = hasDraft,
+            CanEditDraftQuestions = hasDraft
         };
 
         var suggestedAction = ResolveSuggestedAction(status, hasDraft, actions);
