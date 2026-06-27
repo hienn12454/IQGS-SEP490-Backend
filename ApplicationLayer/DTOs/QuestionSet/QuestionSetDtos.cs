@@ -19,6 +19,7 @@ public class QuestionSetListItemDto
     public string? Title { get; set; }
     public string Status { get; set; } = string.Empty;
     public DateTime SavedAt { get; set; }
+    public DateTime? PublishedAt { get; set; }
 }
 
 public class SaveDraftResponseDto
@@ -41,7 +42,53 @@ public class QuestionSetDetailResponseDto
     public object? Plan { get; set; }
     public DateTime? GeneratedAt { get; set; }
     public DateTime SavedAt { get; set; }
+    public DateTime? PublishedAt { get; set; }
     public List<QuestionSetQuestionResponseDto> Questions { get; set; } = new();
+}
+
+public class QuestionSetActionResponseDto
+{
+    public Guid QuestionSetId { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public DateTime? PublishedAt { get; set; }
+}
+
+/// <summary>Read-model cho 1 dòng marketplace (projection JOIN question_sets/HRProfiles/Companies), dùng nội bộ bởi repository.</summary>
+public class PublishedQuestionSetRow
+{
+    public Guid Id { get; set; }
+    public string? Title { get; set; }
+    public string CompanyName { get; set; } = string.Empty;
+    public string? CompanyLogo { get; set; }
+    public string Difficulty { get; set; } = string.Empty;
+    public string SkillsJson { get; set; } = "[]";
+    public int TotalQuestions { get; set; }
+}
+
+/// <summary>Read-model chi tiết 1 bộ đã publish, dùng nội bộ bởi repository — KHÔNG chứa SampleAnswer/EvaluationCriteria.</summary>
+public class PublishedQuestionSetDetail
+{
+    public Guid Id { get; set; }
+    public string? Title { get; set; }
+    public string CompanyName { get; set; } = string.Empty;
+    public string? CompanyLogo { get; set; }
+    public string Difficulty { get; set; } = string.Empty;
+    public string SkillsJson { get; set; } = "[]";
+    public List<PublishedQuestionRow> Questions { get; set; } = new();
+}
+
+/// <summary>Read-model 1 câu hỏi trong bộ đã publish — cố tình KHÔNG có SampleAnswer/EvaluationCriteriaJson.</summary>
+public class PublishedQuestionRow
+{
+    public Guid Id { get; set; }
+    public int Order { get; set; }
+    public string Question { get; set; } = string.Empty;
+    public string QuestionType { get; set; } = string.Empty;
+    public string Difficulty { get; set; } = string.Empty;
+    public string? Skill { get; set; }
+    public string? FocusArea { get; set; }
+    public string? Rationale { get; set; }
+    public string CitationsJson { get; set; } = "[]";
 }
 
 public class QuestionSetQuestionResponseDto

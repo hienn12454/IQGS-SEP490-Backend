@@ -22,6 +22,9 @@ public class AppDbContext : DbContext
     public DbSet<QuestionSet> QuestionSets { get; set; }
     public DbSet<QuestionSetQuestion> QuestionSetQuestions { get; set; }
     public DbSet<QuestionAiChatMessage> QuestionAiChatMessages { get; set; }
+    public DbSet<QuestionSetBookmark> QuestionSetBookmarks { get; set; }
+    public DbSet<PracticeSession> PracticeSessions { get; set; }
+    public DbSet<CandidateAnswer> CandidateAnswers { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -297,6 +300,55 @@ public class AppDbContext : DbContext
                   .OnDelete(DeleteBehavior.Cascade);
 
             entity.HasIndex(m => new { m.JobId, m.QuestionId, m.CreatedAt });
+        });
+
+        // ── QuestionSetBookmark (Candidate — SCRUM-275) ─────────────
+        modelBuilder.Entity<QuestionSetBookmark>(entity =>
+        {
+            entity.ToTable("question_set_bookmarks");
+            entity.HasKey(b => b.Id);
+
+            entity.HasOne(b => b.QuestionSet)
+                  .WithMany()
+                  .HasForeignKey(b => b.QuestionSetId)
+                  .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(b => new { b.CandidateUserId, b.QuestionSetId }).IsUnique();
+        });
+
+        // ── PracticeSession (Candidate — SCRUM-277) ─────────────────
+        modelBuilder.Entity<PracticeSession>(entity =>
+        {
+            entity.ToTable("practice_sessions");
+            entity.HasKey(s => s.Id);
+            entity.Property(s => s.Status).IsRequired().HasMaxLength(20);
+
+            entity.HasOne(s => s.QuestionSet)
+                  .WithMany()
+                  .HasForeignKey(s => s.QuestionSetId)
+                  .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(s => s.CandidateUserId);
+        });
+
+        // ── CandidateAnswer (Candidate — SCRUM-278) ─────────────────
+        modelBuilder.Entity<CandidateAnswer>(entity =>
+        {
+            entity.ToTable("candidate_answers");
+            entity.HasKey(a => a.Id);
+            entity.Property(a => a.AnswerText).IsRequired();
+
+            entity.HasOne(a => a.PracticeSession)
+                  .WithMany()
+                  .HasForeignKey(a => a.PracticeSessionId)
+                  .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(a => a.QuestionSetQuestion)
+                  .WithMany()
+                  .HasForeignKey(a => a.QuestionSetQuestionId)
+                  .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(a => new { a.PracticeSessionId, a.QuestionSetQuestionId }).IsUnique();
         });
     }
 }

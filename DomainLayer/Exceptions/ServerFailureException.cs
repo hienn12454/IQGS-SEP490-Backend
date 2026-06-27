@@ -19,7 +19,7 @@ public class ServerFailureException : BaseHttpException
     {
     }
 
-    public ServerFailureException(string message = "Internal Server Failure", string? errorCode = null, string? refLink = null) : base(message, statusCode, errorCode, refLink)
+    public ServerFailureException(string message = "Đã xảy ra lỗi hệ thống. Vui lòng thử lại sau.", string? errorCode = null, string? refLink = null) : base(message, statusCode, errorCode, refLink)
     {
     }
 }

@@ -18,6 +18,8 @@ public static class DatabaseSeeder
             await context.Database.MigrateAsync();
             await SeedAdminAsync(context, logger);
             await SeedCompaniesAsync(context, logger);
+            await SeedDefaultHRAsync(context, logger);
+            await SeedDefaultCandidateAsync(context, logger);
         }
         catch (Exception ex)
         {
@@ -77,5 +79,71 @@ public static class DatabaseSeeder
         context.Companies.AddRange(companies);
         await context.SaveChangesAsync();
         logger.LogInformation("Đã seed {Count} công ty mẫu.", companies.Count);
+    }
+
+    private static async Task SeedDefaultHRAsync(AppDbContext context, ILogger logger)
+    {
+        if (await context.Users.AnyAsync(u => u.Email == "hr@iqgs.com"))
+            return;
+
+        var company = await context.Companies.FirstOrDefaultAsync(c => c.Name == "FPT Software");
+        if (company is null)
+        {
+            logger.LogWarning("Bỏ qua seed tài khoản HR mặc định vì chưa có công ty nào.");
+            return;
+        }
+
+        var user = new User
+        {
+            FullName = "Default HR Manager",
+            Email = "hr@iqgs.com",
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword("hriqgs", workFactor: 12),
+            RoleId = UserRole.HRId,
+            Provider = AuthProvider.Local,
+            IsEmailVerified = true,
+            IsProfileComplete = true
+        };
+        context.Users.Add(user);
+        await context.SaveChangesAsync();
+
+        context.HRProfiles.Add(new HRProfile
+        {
+            UserId = user.Id,
+            CompanyId = company.Id,
+            JobTitle = "HR Manager",
+            IsCompanyVerified = true
+        });
+        await context.SaveChangesAsync();
+
+        logger.LogInformation("Đã tạo tài khoản HR mặc định: hr@iqgs.com");
+    }
+
+    private static async Task SeedDefaultCandidateAsync(AppDbContext context, ILogger logger)
+    {
+        if (await context.Users.AnyAsync(u => u.Email == "candidate@iqgs.com"))
+            return;
+
+        var user = new User
+        {
+            FullName = "Default Job Seeker",
+            Email = "candidate@iqgs.com",
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword("candidateiqgs", workFactor: 12),
+            RoleId = UserRole.CandidateId,
+            Provider = AuthProvider.Local,
+            IsEmailVerified = true,
+            IsProfileComplete = true
+        };
+        context.Users.Add(user);
+        await context.SaveChangesAsync();
+
+        context.CandidateProfiles.Add(new CandidateProfile
+        {
+            UserId = user.Id,
+            TargetRole = "Backend Developer",
+            SeniorityLevel = "Junior"
+        });
+        await context.SaveChangesAsync();
+
+        logger.LogInformation("Đã tạo tài khoản Job Seeker mặc định: candidate@iqgs.com");
     }
 }
