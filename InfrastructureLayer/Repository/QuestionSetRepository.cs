@@ -1,4 +1,4 @@
-﻿using ApplicationLayer.Interfaces.Repositories;
+using ApplicationLayer.Interfaces.Repositories;
 using DomainLayer.Entities;
 using Microsoft.EntityFrameworkCore;
 
@@ -42,6 +42,12 @@ public class QuestionSetRepository : IQuestionSetRepository
         => _context.QuestionSets
             .Include(qs => qs.Questions.OrderBy(q => q.Order))
             .FirstOrDefaultAsync(qs => qs.Id == id);
+
+    public Task UpdateAsync(QuestionSet questionSet)
+    {
+        _context.QuestionSets.Update(questionSet);
+        return _context.SaveChangesAsync();
+    }
 
     public async Task<HashSet<Guid>> GetSourceJobIdsWithDraftAsync(IEnumerable<Guid> sourceJobIds)
     {
