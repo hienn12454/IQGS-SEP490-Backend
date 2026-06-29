@@ -7,6 +7,7 @@ using WebAPI.Extensions;
 
 namespace WebAPI.Controllers.Candidate;
 
+/// <summary>Marketplace bộ câu hỏi phỏng vấn — Candidate xem/tìm/lọc bộ câu hỏi các công ty đã publish, và bookmark bộ yêu thích.</summary>
 [ApiController]
 [Route("api/candidate/question-sets")]
 public class CandidateQuestionSetsController : ControllerBase
@@ -21,7 +22,9 @@ public class CandidateQuestionSetsController : ControllerBase
         _bookmarkService = bookmarkService;
     }
 
-    /// <summary>Danh sách bộ câu hỏi đã PUBLISHED, kèm thông tin công ty, phân trang. Public — không yêu cầu đăng nhập (AC-05 SCRUM-267).</summary>
+    /// <summary>Danh sách bộ câu hỏi đã PUBLISHED kèm tên/logo công ty, phân trang. Hỗ trợ tìm theo keyword (tên bộ/công ty), lọc theo companyId/difficulty/skills.</summary>
+    /// <remarks>Public — không cần đăng nhập, ai cũng gọi được.</remarks>
+    /// <param name="query">page, pageSize, keyword, companyId, difficulty, skills (có thể truyền nhiều lần).</param>
     [HttpGet]
     [AllowAnonymous]
     public async Task<IActionResult> List([FromQuery] CandidateQuestionSetListQueryDto query)
@@ -30,7 +33,9 @@ public class CandidateQuestionSetsController : ControllerBase
         return SuccessResp.Ok(result);
     }
 
-    /// <summary>Chi tiết 1 bộ PUBLISHED kèm danh sách câu hỏi. Yêu cầu đăng nhập role Candidate (AC-05 SCRUM-269), không trả sampleAnswer/evaluationCriteria.</summary>
+    /// <summary>Chi tiết 1 bộ câu hỏi đã PUBLISHED kèm toàn bộ danh sách câu hỏi — dùng để candidate xem trước khi bắt đầu luyện tập.</summary>
+    /// <remarks>Yêu cầu đăng nhập role Candidate. KHÔNG trả sampleAnswer/evaluationCriteria (giữ bí mật đáp án mẫu). 404 nếu bộ không tồn tại hoặc chưa publish.</remarks>
+    /// <param name="id">Id bộ câu hỏi.</param>
     [HttpGet("{id:guid}")]
     [Authorize(Roles = "Candidate")]
     public async Task<IActionResult> GetById(Guid id)
@@ -39,7 +44,9 @@ public class CandidateQuestionSetsController : ControllerBase
         return SuccessResp.Ok(result);
     }
 
-    /// <summary>Toggle bookmark bộ câu hỏi (thêm nếu chưa có, bỏ nếu đã có). Chỉ bộ PUBLISHED (SCRUM-275).</summary>
+    /// <summary>Toggle bookmark 1 bộ câu hỏi — gọi lần 1 để thêm vào danh sách yêu thích, gọi lại lần 2 để bỏ (xem lại danh sách qua GET /api/candidate/bookmarks).</summary>
+    /// <remarks>Yêu cầu đăng nhập role Candidate. Chỉ bookmark được bộ đang PUBLISHED — 404 nếu chưa publish/không tồn tại.</remarks>
+    /// <param name="id">Id bộ câu hỏi.</param>
     [HttpPost("{id:guid}/bookmark")]
     [Authorize(Roles = "Candidate")]
     public async Task<IActionResult> ToggleBookmark(Guid id)
