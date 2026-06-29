@@ -24,6 +24,44 @@ namespace InfrastructureLayer.Migrations
             NpgsqlModelBuilderExtensions.HasPostgresExtension(modelBuilder, "vector");
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("DomainLayer.Entities.CandidateAnswer", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("AnswerText")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<Guid>("PracticeSessionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("QuestionSetQuestionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("SubmittedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("QuestionSetQuestionId");
+
+                    b.HasIndex("PracticeSessionId", "QuestionSetQuestionId")
+                        .IsUnique();
+
+                    b.ToTable("candidate_answers", (string)null);
+                });
+
             modelBuilder.Entity("DomainLayer.Entities.CandidateProfile", b =>
                 {
                     b.Property<Guid>("Id")
@@ -34,6 +72,18 @@ namespace InfrastructureLayer.Migrations
                         .HasColumnType("text");
 
                     b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("CvBlobPath")
+                        .HasColumnType("text");
+
+                    b.Property<string>("CvContentType")
+                        .HasColumnType("text");
+
+                    b.Property<string>("CvFileName")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("CvUploadedAt")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("GithubUrl")
@@ -380,6 +430,50 @@ namespace InfrastructureLayer.Migrations
                     b.ToTable("knowledge_documents", (string)null);
                 });
 
+            modelBuilder.Entity("DomainLayer.Entities.PracticeSession", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("CandidateUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<double?>("OverallScore")
+                        .HasColumnType("double precision");
+
+                    b.Property<Guid>("QuestionSetId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("StartedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CandidateUserId");
+
+                    b.HasIndex("QuestionSetId");
+
+                    b.ToTable("practice_sessions", (string)null);
+                });
+
             modelBuilder.Entity("DomainLayer.Entities.QuestionAiChatMessage", b =>
                 {
                     b.Property<Guid>("Id")
@@ -562,6 +656,9 @@ namespace InfrastructureLayer.Migrations
                         .IsRequired()
                         .HasColumnType("jsonb");
 
+                    b.Property<DateTime?>("PublishedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<Guid>("SourceJobId")
                         .HasColumnType("uuid");
 
@@ -585,6 +682,37 @@ namespace InfrastructureLayer.Migrations
                         .IsUnique();
 
                     b.ToTable("question_sets", (string)null);
+                });
+
+            modelBuilder.Entity("DomainLayer.Entities.QuestionSetBookmark", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("CandidateUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<Guid>("QuestionSetId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("QuestionSetId");
+
+                    b.HasIndex("CandidateUserId", "QuestionSetId")
+                        .IsUnique();
+
+                    b.ToTable("question_set_bookmarks", (string)null);
                 });
 
             modelBuilder.Entity("DomainLayer.Entities.QuestionSetQuestion", b =>
@@ -791,6 +919,25 @@ namespace InfrastructureLayer.Migrations
                     b.ToTable("Users");
                 });
 
+            modelBuilder.Entity("DomainLayer.Entities.CandidateAnswer", b =>
+                {
+                    b.HasOne("DomainLayer.Entities.PracticeSession", "PracticeSession")
+                        .WithMany()
+                        .HasForeignKey("PracticeSessionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("DomainLayer.Entities.QuestionSetQuestion", "QuestionSetQuestion")
+                        .WithMany()
+                        .HasForeignKey("QuestionSetQuestionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("PracticeSession");
+
+                    b.Navigation("QuestionSetQuestion");
+                });
+
             modelBuilder.Entity("DomainLayer.Entities.CandidateProfile", b =>
                 {
                     b.HasOne("DomainLayer.Entities.User", "User")
@@ -843,6 +990,17 @@ namespace InfrastructureLayer.Migrations
                     b.Navigation("Document");
                 });
 
+            modelBuilder.Entity("DomainLayer.Entities.PracticeSession", b =>
+                {
+                    b.HasOne("DomainLayer.Entities.QuestionSet", "QuestionSet")
+                        .WithMany()
+                        .HasForeignKey("QuestionSetId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("QuestionSet");
+                });
+
             modelBuilder.Entity("DomainLayer.Entities.QuestionAiChatMessage", b =>
                 {
                     b.HasOne("DomainLayer.Entities.QuestionGenerationJob", "Job")
@@ -882,6 +1040,17 @@ namespace InfrastructureLayer.Migrations
                         .IsRequired();
 
                     b.Navigation("SourceJob");
+                });
+
+            modelBuilder.Entity("DomainLayer.Entities.QuestionSetBookmark", b =>
+                {
+                    b.HasOne("DomainLayer.Entities.QuestionSet", "QuestionSet")
+                        .WithMany()
+                        .HasForeignKey("QuestionSetId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("QuestionSet");
                 });
 
             modelBuilder.Entity("DomainLayer.Entities.QuestionSetQuestion", b =>
