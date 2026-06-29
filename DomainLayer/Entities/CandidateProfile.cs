@@ -21,4 +21,10 @@ public class CandidateProfile : BaseEntity
     public string? CvBlobPath { get; set; }
     public string? CvContentType { get; set; }
     public DateTime? CvUploadedAt { get; set; }
+
+    /// <summary>Thời điểm RAG parse-cv thành công lần gần nhất — null nếu chưa từng parse hoặc lần parse gần nhất thất bại.</summary>
+    public DateTime? CvParsedAt { get; set; }
+
+    /// <summary>Kết quả đánh giá CV từ RAG (skills[], summary) dạng JSON.</summary>
+    public string? CvEvaluationJson { get; set; }
 }
