@@ -63,6 +63,15 @@ public class PublishedQuestionSetRow
     public string Difficulty { get; set; } = string.Empty;
     public string SkillsJson { get; set; } = "[]";
     public int TotalQuestions { get; set; }
+
+    /// <summary>Mô tả bộ câu hỏi hiển thị trên card — lấy từ question_sets.HrNote.</summary>
+    public string? Description { get; set; }
+
+    /// <summary>Điểm trung bình OverallScore các phiên luyện tập đã chấm — null khi chưa có phiên nào được chấm.</summary>
+    public double? Rating { get; set; }
+
+    /// <summary>Số phiên luyện tập đã tạo trên bộ này.</summary>
+    public int AttemptCount { get; set; }
 }
 
 /// <summary>Read-model chi tiết 1 bộ đã publish, dùng nội bộ bởi repository — KHÔNG chứa SampleAnswer/EvaluationCriteria.</summary>
@@ -74,6 +83,9 @@ public class PublishedQuestionSetDetail
     public string? CompanyLogo { get; set; }
     public string Difficulty { get; set; } = string.Empty;
     public string SkillsJson { get; set; } = "[]";
+    public string? Description { get; set; }
+    public double? Rating { get; set; }
+    public int AttemptCount { get; set; }
     public List<PublishedQuestionRow> Questions { get; set; } = new();
 }
 

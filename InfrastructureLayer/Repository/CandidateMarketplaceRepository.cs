@@ -34,7 +34,7 @@ public class CandidateMarketplaceRepository : ICandidateMarketplaceRepository
     }
 
     /// <summary>Chiếu 1 join-row sang read-model card marketplace — dùng chung cho list và bookmarks.</summary>
-    private static IQueryable<PublishedQuestionSetRow> ProjectToRow(IQueryable<PublishedQuestionSetJoin> query)
+    private IQueryable<PublishedQuestionSetRow> ProjectToRow(IQueryable<PublishedQuestionSetJoin> query)
         => query.Select(x => new PublishedQuestionSetRow
         {
             Id = x.QuestionSet.Id,
@@ -43,7 +43,13 @@ public class CandidateMarketplaceRepository : ICandidateMarketplaceRepository
             CompanyLogo = x.Company.LogoUrl,
             Difficulty = x.QuestionSet.SourceJob.Difficulty,
             SkillsJson = x.QuestionSet.SourceJob.SkillsJson,
-            TotalQuestions = x.QuestionSet.Questions.Count(q => q.IsActive)
+            TotalQuestions = x.QuestionSet.Questions.Count(q => q.IsActive),
+            Description = x.QuestionSet.HrNote,
+            Rating = _context.PracticeSessions
+                .Where(ps => ps.QuestionSetId == x.QuestionSet.Id && ps.IsActive)
+                .Average(ps => ps.OverallScore),
+            AttemptCount = _context.PracticeSessions
+                .Count(ps => ps.QuestionSetId == x.QuestionSet.Id && ps.IsActive)
         });
 
     public async Task<(IReadOnlyList<PublishedQuestionSetRow> Items, int TotalCount)> ListPublishedAsync(
@@ -92,7 +98,13 @@ public class CandidateMarketplaceRepository : ICandidateMarketplaceRepository
                 CompanyName = x.Company.Name,
                 CompanyLogo = x.Company.LogoUrl,
                 Difficulty = x.QuestionSet.SourceJob.Difficulty,
-                SkillsJson = x.QuestionSet.SourceJob.SkillsJson
+                SkillsJson = x.QuestionSet.SourceJob.SkillsJson,
+                Description = x.QuestionSet.HrNote,
+                Rating = _context.PracticeSessions
+                    .Where(ps => ps.QuestionSetId == x.QuestionSet.Id && ps.IsActive)
+                    .Average(ps => ps.OverallScore),
+                AttemptCount = _context.PracticeSessions
+                    .Count(ps => ps.QuestionSetId == x.QuestionSet.Id && ps.IsActive)
             }).FirstOrDefaultAsync();
 
         if (detail is null)
