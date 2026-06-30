@@ -27,4 +27,7 @@ public class CandidateProfile : BaseEntity
 
     /// <summary>Kết quả đánh giá CV từ RAG (skills[], summary) dạng JSON.</summary>
     public string? CvEvaluationJson { get; set; }
+
+    /// <summary>Consent cho phép hệ thống đề xuất hồ sơ này cho HR khi đạt điều kiện (SCRUM-293) — mặc định tắt.</summary>
+    public bool AllowRecruiterRecommendation { get; set; }
 }

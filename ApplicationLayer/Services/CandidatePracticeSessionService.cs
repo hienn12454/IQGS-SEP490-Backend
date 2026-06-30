@@ -6,6 +6,7 @@ using ApplicationLayer.Interfaces.Services;
 using DomainLayer.Constants;
 using DomainLayer.Entities;
 using DomainLayer.Exceptions;
+using Microsoft.Extensions.Logging;
 
 namespace ApplicationLayer.Services;
 
@@ -14,15 +15,21 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
     private readonly IPracticeSessionRepository _sessionRepository;
     private readonly ICandidateMarketplaceRepository _marketplaceRepository;
     private readonly ICandidateAnswerRepository _answerRepository;
+    private readonly IRecommendationService _recommendationService;
+    private readonly ILogger<CandidatePracticeSessionService> _logger;
 
     public CandidatePracticeSessionService(
         IPracticeSessionRepository sessionRepository,
         ICandidateMarketplaceRepository marketplaceRepository,
-        ICandidateAnswerRepository answerRepository)
+        ICandidateAnswerRepository answerRepository,
+        IRecommendationService recommendationService,
+        ILogger<CandidatePracticeSessionService> logger)
     {
         _sessionRepository = sessionRepository;
         _marketplaceRepository = marketplaceRepository;
         _answerRepository = answerRepository;
+        _recommendationService = recommendationService;
+        _logger = logger;
     }
 
     /// <summary>Tạo phiên mới, hoặc trả về phiên IN_PROGRESS đã có cho cùng bộ câu hỏi (resume — AC-02 SCRUM-298).</summary>
@@ -104,6 +111,19 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
         session.CompletedAt = DateTime.UtcNow;
         // OverallScore: chưa có bảng ai_feedbacks (SCRUM-282 chưa triển khai) — để null, tính sau khi SCRUM-282 xong.
         await _sessionRepository.UpdateAsync(session);
+
+        // Rule MVP SCRUM-291: tạo recommendation cho HR nếu đủ điều kiện.
+        // Lỗi ở bước này không được làm fail việc hoàn thành phiên — phiên đã COMPLETED thành công.
+        try
+        {
+            await _recommendationService.GenerateForCompletedSessionAsync(session);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "Tạo recommendation thất bại cho session {SessionId} (candidate {CandidateUserId}).",
+                session.Id, session.CandidateUserId);
+        }
 
         return new PracticeSessionCompleteResponseDto
         {
