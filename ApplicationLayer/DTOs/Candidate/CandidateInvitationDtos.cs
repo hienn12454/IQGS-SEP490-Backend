@@ -19,6 +19,7 @@ public class CandidateInvitationRow
     public Guid Id { get; set; }
     public string CompanyName { get; set; } = string.Empty;
     public string? CompanyLogo { get; set; }
+    public string? CompanyWebsite { get; set; }
     public string? QuestionSetTitle { get; set; }
     public string? Message { get; set; }
     public string Status { get; set; } = string.Empty;

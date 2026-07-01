@@ -60,6 +60,7 @@ public class PublishedQuestionSetRow
     public string? Title { get; set; }
     public string CompanyName { get; set; } = string.Empty;
     public string? CompanyLogo { get; set; }
+    public string? CompanyWebsite { get; set; }
     public string Difficulty { get; set; } = string.Empty;
     public string SkillsJson { get; set; } = "[]";
     public int TotalQuestions { get; set; }
@@ -81,6 +82,7 @@ public class PublishedQuestionSetDetail
     public string? Title { get; set; }
     public string CompanyName { get; set; } = string.Empty;
     public string? CompanyLogo { get; set; }
+    public string? CompanyWebsite { get; set; }
     public string Difficulty { get; set; } = string.Empty;
     public string SkillsJson { get; set; } = "[]";
     public string? Description { get; set; }
