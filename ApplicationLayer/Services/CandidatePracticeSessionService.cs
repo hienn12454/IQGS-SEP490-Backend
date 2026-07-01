@@ -32,15 +32,34 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
         _logger = logger;
     }
 
-    /// <summary>Tạo phiên mới, hoặc trả về phiên IN_PROGRESS đã có cho cùng bộ câu hỏi (resume — AC-02 SCRUM-298).</summary>
+    /// <summary>
+    /// Mỗi candidate chỉ giữ 1 phiên cho mỗi bộ câu hỏi:
+    /// - Đang IN_PROGRESS → trả về phiên đó, giữ nguyên câu trả lời (resume — AC-02 SCRUM-298).
+    /// - Đã COMPLETED/ABANDONED → ghi đè phiên cũ (reset trạng thái, xóa câu trả lời cũ) thay vì tạo bản ghi lịch sử mới.
+    /// - Chưa từng luyện → tạo phiên mới.
+    /// </summary>
     public async Task<PracticeSessionResponseDto> StartAsync(Guid questionSetId, Guid candidateUserId)
     {
         if (!await _marketplaceRepository.IsPublishedAsync(questionSetId))
             throw new NotFoundException("Bộ câu hỏi không tồn tại hoặc chưa được publish.");
 
-        var existingSession = await _sessionRepository.GetInProgressByQuestionSetAsync(candidateUserId, questionSetId);
+        var existingSession = await _sessionRepository.GetLatestByQuestionSetAsync(candidateUserId, questionSetId);
         if (existingSession is not null)
+        {
+            if (existingSession.Status == PracticeSessionStatus.InProgress)
+                return await BuildSessionResponseAsync(existingSession);
+
+            await _answerRepository.DeleteBySessionIdAsync(existingSession.Id);
+
+            existingSession.Status = PracticeSessionStatus.InProgress;
+            existingSession.StartedAt = DateTime.UtcNow;
+            existingSession.CompletedAt = null;
+            existingSession.OverallScore = null;
+            existingSession.UpdatedAt = DateTime.UtcNow;
+            await _sessionRepository.UpdateAsync(existingSession);
+
             return await BuildSessionResponseAsync(existingSession);
+        }
 
         var session = new PracticeSession
         {

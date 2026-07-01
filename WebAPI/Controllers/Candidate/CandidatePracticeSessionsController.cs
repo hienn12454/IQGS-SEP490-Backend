@@ -20,7 +20,7 @@ public class CandidatePracticeSessionsController : ControllerBase
         _service = service;
     }
 
-    /// <summary>Bắt đầu phiên luyện tập mới từ 1 bộ câu hỏi PUBLISHED. Nếu đang có phiên IN_PROGRESS dở dang cho cùng bộ câu hỏi này, trả về phiên đó thay vì tạo mới (resume tự động).</summary>
+    /// <summary>Bắt đầu luyện tập 1 bộ câu hỏi PUBLISHED. Mỗi candidate chỉ giữ 1 phiên cho mỗi bộ: đang IN_PROGRESS thì trả về phiên đó để làm tiếp (resume, giữ nguyên câu trả lời); đã COMPLETED/ABANDONED thì ghi đè phiên cũ — reset về IN_PROGRESS và xóa câu trả lời + điểm cũ, KHÔNG tạo thêm bản ghi lịch sử mới.</summary>
     /// <remarks>404 nếu questionSetId không tồn tại hoặc chưa publish.</remarks>
     [HttpPost]
     public async Task<IActionResult> Start([FromBody] StartPracticeSessionDto dto)
@@ -29,7 +29,7 @@ public class CandidatePracticeSessionsController : ControllerBase
         return SuccessResp.Ok(result);
     }
 
-    /// <summary>Danh sách phiên luyện tập của Candidate hiện tại — mặc định chỉ lấy COMPLETED, truyền status=IN_PROGRESS để lấy phiên đang làm dở. Hỗ trợ tìm theo keyword (tên bộ/công ty) và lọc theo ngày.</summary>
+    /// <summary>Danh sách phiên luyện tập của Candidate hiện tại — mỗi bộ câu hỏi tối đa 1 dòng (kết quả lần luyện gần nhất, luyện lại sẽ ghi đè). Mặc định chỉ lấy COMPLETED, truyền status=IN_PROGRESS để lấy phiên đang làm dở. Hỗ trợ tìm theo keyword (tên bộ/công ty) và lọc theo ngày.</summary>
     /// <param name="query">status (mặc định COMPLETED), questionSetId, keyword, page, pageSize, và lọc ngày: fromDate/toDate (khoảng cụ thể), hoặc year+month (1 tháng), hoặc chỉ year (cả năm).</param>
     [HttpGet]
     public async Task<IActionResult> List([FromQuery] PracticeSessionListQueryDto query)

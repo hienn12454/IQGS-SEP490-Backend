@@ -7,7 +7,8 @@ public interface IPracticeSessionRepository
 {
     Task AddAsync(PracticeSession session);
     Task<PracticeSession?> GetByIdAsync(Guid id);
-    Task<PracticeSession?> GetInProgressByQuestionSetAsync(Guid candidateUserId, Guid questionSetId);
+    /// <summary>Phiên mới nhất của candidate trên 1 bộ câu hỏi (mọi trạng thái) — mỗi bộ chỉ giữ 1 phiên, luyện lại sẽ ghi đè phiên này.</summary>
+    Task<PracticeSession?> GetLatestByQuestionSetAsync(Guid candidateUserId, Guid questionSetId);
     Task UpdateAsync(PracticeSession session);
 
     Task<(IReadOnlyList<PracticeSessionRow> Items, int TotalCount)> ListAsync(
