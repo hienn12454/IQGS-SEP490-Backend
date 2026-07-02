@@ -86,6 +86,10 @@ public class PracticeSessionStatsDto
     public int TotalSessions { get; set; }
     public double? AverageScore { get; set; }
     public double? BestScore { get; set; }
+
+    /// <summary>Điểm của phiên hoàn thành gần nhất có điểm (theo CompletedAt) — null khi chưa có phiên nào được chấm.</summary>
+    public double? LatestScore { get; set; }
+
     public long TotalDurationSeconds { get; set; }
 }
 

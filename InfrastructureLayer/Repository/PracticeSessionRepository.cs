@@ -121,6 +121,10 @@ public class PracticeSessionRepository : IPracticeSessionRepository
         var bestScore = await scoredQuery.AnyAsync()
             ? await scoredQuery.MaxAsync(s => s.OverallScore)
             : (double?)null;
+        var latestScore = await scoredQuery
+            .OrderByDescending(s => s.CompletedAt)
+            .Select(s => s.OverallScore)
+            .FirstOrDefaultAsync();
 
         // Postgres/Npgsql không hỗ trợ EF.Functions.DateDiff* — lấy 2 mốc thời gian rồi trừ ở client.
         var timestamps = await query
@@ -135,6 +139,7 @@ public class PracticeSessionRepository : IPracticeSessionRepository
             TotalSessions = totalSessions,
             AverageScore = averageScore,
             BestScore = bestScore,
+            LatestScore = latestScore,
             TotalDurationSeconds = (long)totalDurationSeconds
         };
     }
