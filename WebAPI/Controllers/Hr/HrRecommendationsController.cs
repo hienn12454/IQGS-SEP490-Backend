@@ -1,6 +1,7 @@
 using ApplicationLayer.DTOs.Recommendation;
 using ApplicationLayer.Interfaces.Services;
 using ApplicationLayer.ResponseCode;
+using DomainLayer.Exceptions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
@@ -61,7 +62,7 @@ public class HrRecommendationsController : ControllerBase
     {
         var userIdStr = User.FindFirst("sub")?.Value
             ?? User.FindFirst(ClaimTypes.NameIdentifier)?.Value
-            ?? throw new UnauthorizedAccessException("Không thể xác định người dùng từ token.");
+            ?? throw new UnauthorizedException("Không thể xác định người dùng từ token.");
         return Guid.Parse(userIdStr);
     }
 }
