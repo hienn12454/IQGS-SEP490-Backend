@@ -13,6 +13,13 @@ public class PracticeSessionResponseDto
     public DateTime? StartedAt { get; set; }
     public DateTime? CompletedAt { get; set; }
     public double? OverallScore { get; set; }
+
+    /// <summary>Giới hạn thời gian làm bài (phút) HR đặt — null = không giới hạn.</summary>
+    public int? TimeLimitMinutes { get; set; }
+
+    /// <summary>Hạn chót nộp bài (StartedAt + TimeLimitMinutes) — FE dùng để đếm ngược; null nếu không giới hạn. Quá mốc này hệ thống tự nộp bài.</summary>
+    public DateTime? ExpiresAt { get; set; }
+
     public List<PracticeSessionQuestionDto> Questions { get; set; } = new();
 }
 

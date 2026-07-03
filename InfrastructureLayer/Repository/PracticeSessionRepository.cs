@@ -36,6 +36,21 @@ public class PracticeSessionRepository : IPracticeSessionRepository
         return _context.SaveChangesAsync();
     }
 
+    public Task<int?> GetTimeLimitMinutesAsync(Guid questionSetId)
+        => _context.QuestionSets
+            .AsNoTracking()
+            .Where(qs => qs.Id == questionSetId)
+            .Select(qs => qs.TimeLimitMinutes)
+            .FirstOrDefaultAsync();
+
+    public async Task<IReadOnlyList<PracticeSession>> GetInProgressWithTimeLimitAsync()
+        => await _context.PracticeSessions
+            .Include(s => s.QuestionSet)
+            .Where(s => s.Status == PracticeSessionStatus.InProgress
+                && s.StartedAt != null
+                && s.QuestionSet.TimeLimitMinutes != null)
+            .ToListAsync();
+
     public async Task<(IReadOnlyList<PracticeSessionRow> Items, int TotalCount)> ListAsync(
         Guid candidateUserId, string? status, Guid? questionSetId, string? keyword,
         DateTime? fromDate, DateTime? toDate, int page, int pageSize)

@@ -33,7 +33,12 @@ public class CandidateQuestionSetListItemDto
     public string Difficulty { get; set; } = string.Empty;
     public List<string> Skills { get; set; } = new();
     public int TotalQuestions { get; set; }
+
+    /// <summary>Thời gian làm bài hiển thị trên card: HR có đặt giới hạn thì lấy giới hạn đó, chưa đặt thì ước tính theo số câu.</summary>
     public int EstimatedTimeMinutes { get; set; }
+
+    /// <summary>Giới hạn thời gian làm bài HR đặt (phút) — null = không giới hạn, hết giờ hệ thống tự nộp bài.</summary>
+    public int? TimeLimitMinutes { get; set; }
 
     /// <summary>Điểm trung bình các phiên luyện tập đã chấm (1 chữ số thập phân) — null khi chưa có phiên nào được chấm.</summary>
     public double? Rating { get; set; }
@@ -56,7 +61,12 @@ public class CandidateQuestionSetDetailDto
     public string Difficulty { get; set; } = string.Empty;
     public List<string> Skills { get; set; } = new();
     public int TotalQuestions { get; set; }
+
+    /// <summary>Thời gian làm bài hiển thị: HR có đặt giới hạn thì lấy giới hạn đó, chưa đặt thì ước tính theo số câu.</summary>
     public int EstimatedTimeMinutes { get; set; }
+
+    /// <summary>Giới hạn thời gian làm bài HR đặt (phút) — null = không giới hạn, hết giờ hệ thống tự nộp bài.</summary>
+    public int? TimeLimitMinutes { get; set; }
 
     /// <summary>Điểm trung bình các phiên luyện tập đã chấm (1 chữ số thập phân) — null khi chưa có phiên nào được chấm.</summary>
     public double? Rating { get; set; }

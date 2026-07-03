@@ -40,7 +40,12 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
 
         var existingSession = await _sessionRepository.GetInProgressByQuestionSetAsync(candidateUserId, questionSetId);
         if (existingSession is not null)
-            return await BuildSessionResponseAsync(existingSession);
+        {
+            var timeLimit = await _sessionRepository.GetTimeLimitMinutesAsync(questionSetId);
+            if (!await AutoSubmitIfExpiredAsync(existingSession, timeLimit))
+                return await BuildSessionResponseAsync(existingSession);
+            // Phiên dở dang đã hết giờ và vừa được tự động nộp — bắt đầu phiên mới bên dưới.
+        }
 
         var session = new PracticeSession
         {
@@ -57,6 +62,7 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
     public async Task<PracticeSessionResponseDto> GetByIdAsync(Guid sessionId, Guid candidateUserId)
     {
         var session = await GetOwnedSessionAsync(sessionId, candidateUserId);
+        await AutoSubmitIfExpiredAsync(session, await _sessionRepository.GetTimeLimitMinutesAsync(session.QuestionSetId));
         return await BuildSessionResponseAsync(session);
     }
 
@@ -64,6 +70,9 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
         Guid sessionId, Guid candidateUserId, SubmitAnswerDto dto)
     {
         var session = await GetOwnedSessionAsync(sessionId, candidateUserId);
+
+        if (await AutoSubmitIfExpiredAsync(session, await _sessionRepository.GetTimeLimitMinutesAsync(session.QuestionSetId)))
+            throw new BadRequestException("Đã hết thời gian làm bài — phiên đã được tự động nộp.");
 
         if (session.Status != PracticeSessionStatus.InProgress)
             throw new BadRequestException("Chỉ có thể nộp câu trả lời khi phiên đang ở trạng thái IN_PROGRESS.");
@@ -104,25 +113,17 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
     {
         var session = await GetOwnedSessionAsync(sessionId, candidateUserId);
 
-        if (session.Status != PracticeSessionStatus.InProgress)
-            throw new BadRequestException("Chỉ có thể hoàn thành phiên đang ở trạng thái IN_PROGRESS.");
-
-        session.Status = PracticeSessionStatus.Completed;
-        session.CompletedAt = DateTime.UtcNow;
-        // OverallScore: chưa có bảng ai_feedbacks (SCRUM-282 chưa triển khai) — để null, tính sau khi SCRUM-282 xong.
-        await _sessionRepository.UpdateAsync(session);
-
-        // Rule MVP SCRUM-291: tạo recommendation cho HR nếu đủ điều kiện.
-        // Lỗi ở bước này không được làm fail việc hoàn thành phiên — phiên đã COMPLETED thành công.
-        try
+        // Hết giờ thì phiên đã được tự nộp tại đúng deadline — candidate bấm nộp sau đó vẫn nhận kết quả bình thường.
+        if (!await AutoSubmitIfExpiredAsync(session, await _sessionRepository.GetTimeLimitMinutesAsync(session.QuestionSetId)))
         {
-            await _recommendationService.GenerateForCompletedSessionAsync(session);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex,
-                "Tạo recommendation thất bại cho session {SessionId} (candidate {CandidateUserId}).",
-                session.Id, session.CandidateUserId);
+            if (session.Status != PracticeSessionStatus.InProgress)
+                throw new BadRequestException("Chỉ có thể hoàn thành phiên đang ở trạng thái IN_PROGRESS.");
+
+            session.Status = PracticeSessionStatus.Completed;
+            session.CompletedAt = DateTime.UtcNow;
+            // OverallScore: chưa có bảng ai_feedbacks (SCRUM-282 chưa triển khai) — để null, tính sau khi SCRUM-282 xong.
+            await _sessionRepository.UpdateAsync(session);
+            await TryGenerateRecommendationAsync(session);
         }
 
         return new PracticeSessionCompleteResponseDto
@@ -139,6 +140,9 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
     public async Task<PracticeSessionResponseDto> AbandonAsync(Guid sessionId, Guid candidateUserId)
     {
         var session = await GetOwnedSessionAsync(sessionId, candidateUserId);
+
+        if (await AutoSubmitIfExpiredAsync(session, await _sessionRepository.GetTimeLimitMinutesAsync(session.QuestionSetId)))
+            throw new BadRequestException("Phiên đã hết thời gian và được tự động nộp — không thể huỷ.");
 
         if (session.Status != PracticeSessionStatus.InProgress)
             throw new BadRequestException("Chỉ có thể huỷ phiên đang ở trạng thái IN_PROGRESS.");
@@ -200,11 +204,54 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
         return session;
     }
 
+    /// <summary>Hạn chót nộp bài = StartedAt + giới hạn phút — null nếu bộ không giới hạn thời gian.</summary>
+    private static DateTime? ComputeExpiresAt(DateTime? startedAt, int? timeLimitMinutes)
+        => startedAt.HasValue && timeLimitMinutes.HasValue
+            ? startedAt.Value.AddMinutes(timeLimitMinutes.Value)
+            : null;
+
+    /// <summary>
+    /// Hết giờ làm bài → tự động nộp: chuyển COMPLETED với CompletedAt = đúng deadline (không tính thời gian trễ),
+    /// giữ nguyên các câu trả lời đã submit và chấm điểm như nộp tay. Trả về true nếu vừa tự nộp.
+    /// </summary>
+    private async Task<bool> AutoSubmitIfExpiredAsync(PracticeSession session, int? timeLimitMinutes)
+    {
+        if (session.Status != PracticeSessionStatus.InProgress)
+            return false;
+
+        var expiresAt = ComputeExpiresAt(session.StartedAt, timeLimitMinutes);
+        if (expiresAt is null || DateTime.UtcNow < expiresAt)
+            return false;
+
+        session.Status = PracticeSessionStatus.Completed;
+        session.CompletedAt = expiresAt;
+        session.UpdatedAt = DateTime.UtcNow;
+        await _sessionRepository.UpdateAsync(session);
+        await TryGenerateRecommendationAsync(session);
+        return true;
+    }
+
+    /// <summary>Rule MVP SCRUM-291 — lỗi ở bước này không được làm fail việc nộp bài (phiên đã COMPLETED thành công).</summary>
+    private async Task TryGenerateRecommendationAsync(PracticeSession session)
+    {
+        try
+        {
+            await _recommendationService.GenerateForCompletedSessionAsync(session);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "Tạo recommendation thất bại cho session {SessionId} (candidate {CandidateUserId}).",
+                session.Id, session.CandidateUserId);
+        }
+    }
+
     private async Task<PracticeSessionResponseDto> BuildSessionResponseAsync(PracticeSession session)
     {
         var questions = await _marketplaceRepository.GetQuestionsSnapshotAsync(session.QuestionSetId);
         var answers = await _answerRepository.GetAnswersBySessionIdAsync(session.Id);
-        return MapToResponseDto(session, questions, answers);
+        var timeLimitMinutes = await _sessionRepository.GetTimeLimitMinutesAsync(session.QuestionSetId);
+        return MapToResponseDto(session, questions, answers, timeLimitMinutes);
     }
 
     private static int? ComputeDurationSeconds(DateTime? startedAt, DateTime? completedAt)
@@ -215,7 +262,8 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
     }
 
     private static PracticeSessionResponseDto MapToResponseDto(
-        PracticeSession session, IReadOnlyList<PublishedQuestionRow> questions, Dictionary<Guid, string> answersByQuestionId)
+        PracticeSession session, IReadOnlyList<PublishedQuestionRow> questions,
+        Dictionary<Guid, string> answersByQuestionId, int? timeLimitMinutes)
     {
         return new PracticeSessionResponseDto
         {
@@ -225,6 +273,10 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
             StartedAt = session.StartedAt,
             CompletedAt = session.CompletedAt,
             OverallScore = session.OverallScore,
+            TimeLimitMinutes = timeLimitMinutes,
+            ExpiresAt = session.Status == PracticeSessionStatus.InProgress
+                ? ComputeExpiresAt(session.StartedAt, timeLimitMinutes)
+                : null,
             Questions = questions.Select(q => new PracticeSessionQuestionDto
             {
                 Id = q.Id,

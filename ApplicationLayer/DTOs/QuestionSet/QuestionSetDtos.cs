@@ -39,6 +39,9 @@ public class QuestionSetDetailResponseDto
     public string? Title { get; set; }
     public string JobDescription { get; set; } = string.Empty;
     public string? HrNote { get; set; }
+
+    /// <summary>Giới hạn thời gian làm bài practice (phút) — null = không giới hạn.</summary>
+    public int? TimeLimitMinutes { get; set; }
     public object? Plan { get; set; }
     public DateTime? GeneratedAt { get; set; }
     public DateTime SavedAt { get; set; }
@@ -53,6 +56,20 @@ public class QuestionSetActionResponseDto
     public DateTime? PublishedAt { get; set; }
 }
 
+/// <summary>Request đặt giới hạn thời gian làm bài practice cho 1 bộ câu hỏi.</summary>
+public class SetTimeLimitRequestDto
+{
+    /// <summary>Số phút giới hạn (1–480) — truyền null để bỏ giới hạn.</summary>
+    [System.ComponentModel.DataAnnotations.Range(1, 480, ErrorMessage = "Giới hạn thời gian phải từ 1 đến 480 phút.")]
+    public int? TimeLimitMinutes { get; set; }
+}
+
+public class SetTimeLimitResponseDto
+{
+    public Guid QuestionSetId { get; set; }
+    public int? TimeLimitMinutes { get; set; }
+}
+
 /// <summary>Read-model cho 1 dòng marketplace (projection JOIN question_sets/HRProfiles/Companies), dùng nội bộ bởi repository.</summary>
 public class PublishedQuestionSetRow
 {
@@ -64,6 +81,9 @@ public class PublishedQuestionSetRow
     public string Difficulty { get; set; } = string.Empty;
     public string SkillsJson { get; set; } = "[]";
     public int TotalQuestions { get; set; }
+
+    /// <summary>Giới hạn thời gian làm bài HR đặt (phút) — null = không giới hạn.</summary>
+    public int? TimeLimitMinutes { get; set; }
 
     /// <summary>Mô tả bộ câu hỏi hiển thị trên card — lấy từ question_sets.HrNote.</summary>
     public string? Description { get; set; }
@@ -85,6 +105,7 @@ public class PublishedQuestionSetDetail
     public string? CompanyWebsite { get; set; }
     public string Difficulty { get; set; } = string.Empty;
     public string SkillsJson { get; set; } = "[]";
+    public int? TimeLimitMinutes { get; set; }
     public string? Description { get; set; }
     public double? Rating { get; set; }
     public int AttemptCount { get; set; }
