@@ -296,6 +296,7 @@ public class Program
         builder.Services.AddScoped<IGenerateQuestionsFromPlanJob, GenerateQuestionsFromPlanJob>();
         builder.Services.AddScoped<IStuckKnowledgeDocumentWatchdogJob, StuckKnowledgeDocumentWatchdogJob>();
         builder.Services.AddScoped<IStuckQuestionGenerationWatchdogJob, StuckQuestionGenerationWatchdogJob>();
+        builder.Services.AddScoped<IExpiredPracticeSessionWatchdogJob, ExpiredPracticeSessionWatchdogJob>();
         builder.Services.AddSingleton<IJobScheduler, JobScheduler>();
 
         var app = builder.Build();
@@ -354,6 +355,10 @@ public class Program
             "stuck-question-generation",
             job => job.ExecuteAsync(),
             "*/15 * * * *");
+        RecurringJob.AddOrUpdate<IExpiredPracticeSessionWatchdogJob>(
+            "expired-practice-sessions",
+            job => job.ExecuteAsync(),
+            "* * * * *");
 
         app.MapControllers();
         app.Run();

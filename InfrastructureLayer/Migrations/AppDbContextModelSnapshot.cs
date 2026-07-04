@@ -773,6 +773,9 @@ namespace InfrastructureLayer.Migrations
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)");
 
+                    b.Property<int?>("TimeLimitMinutes")
+                        .HasColumnType("integer");
+
                     b.Property<string>("Title")
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
