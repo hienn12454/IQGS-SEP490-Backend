@@ -7,7 +7,7 @@ using WebAPI.Extensions;
 
 namespace WebAPI.Controllers.Candidate;
 
-/// <summary>Vòng đời phiên luyện tập phỏng vấn của Candidate: bắt đầu/tiếp tục, trả lời từng câu, hoàn thành, xem lịch sử + thống kê.</summary>
+/// <summary>Vòng đời phiên luyện tập phỏng vấn của Candidate: bắt đầu/tiếp tục, trả lời từng câu, hoàn thành, xem lịch sử + thống kê + AI feedback.</summary>
 [ApiController]
 [Route("api/candidate/practice-sessions")]
 [Authorize(Roles = "Candidate")]
@@ -38,7 +38,7 @@ public class CandidatePracticeSessionsController : ControllerBase
         return SuccessResp.Ok(result);
     }
 
-    /// <summary>Thống kê luyện tập của Candidate hiện tại: tổng số phiên COMPLETED, điểm trung bình, điểm cao nhất, điểm bài gần nhất, tổng thời gian luyện tập.</summary>
+    /// <summary>Thống kê luyện tập của Candidate hiện tại: tổng số phiên COMPLETED, điểm trung bình, điểm cao nhất, tổng thời gian luyện tập.</summary>
     /// <param name="query">Lọc theo ngày: fromDate/toDate (khoảng cụ thể), hoặc year+month (1 tháng), hoặc chỉ year (cả năm) — bỏ trống để tính toàn bộ thời gian.</param>
     [HttpGet("stats")]
     public async Task<IActionResult> GetStats([FromQuery] PracticeSessionStatsQueryDto query)
@@ -57,8 +57,21 @@ public class CandidatePracticeSessionsController : ControllerBase
         return SuccessResp.Ok(result);
     }
 
-    /// <summary>Lưu câu trả lời cho 1 câu hỏi trong phiên — gọi lại nhiều lần cho cùng câu hỏi sẽ ghi đè câu trả lời cũ (upsert), không tạo bản ghi trùng.</summary>
-    /// <remarks>Chỉ submit được khi phiên đang IN_PROGRESS. questionId phải thuộc đúng bộ câu hỏi của phiên này, nếu không → 400.</remarks>
+    /// <summary>Lấy toàn bộ AI feedback của phiên (score từng câu + overall) — SCRUM-282.</summary>
+    /// <remarks>Chỉ chủ phiên xem được. FE dùng cho màn result `/jobseeker/practice/[id]/result`.</remarks>
+    /// <param name="id">Id phiên luyện tập.</param>
+    [HttpGet("{id:guid}/feedback")]
+    public async Task<IActionResult> GetFeedback(Guid id)
+    {
+        var result = await _service.GetFeedbackAsync(id, User.GetUserId());
+        return SuccessResp.Ok(result);
+    }
+
+    /// <summary>Lưu câu trả lời cho 1 câu hỏi, sau đó gọi RAG evaluate sync và lưu ai_feedbacks (SCRUM-282).</summary>
+    /// <remarks>
+    /// Upsert answer. Nếu RAG timeout/lỗi → answer vẫn được lưu, evaluationStatus=Failed (HTTP 200).
+    /// questionId phải thuộc đúng bộ câu hỏi của phiên này, nếu không → 400.
+    /// </remarks>
     /// <param name="id">Id phiên luyện tập.</param>
     /// <param name="dto">questionId và answerText.</param>
     [HttpPost("{id:guid}/answers")]
@@ -68,7 +81,7 @@ public class CandidatePracticeSessionsController : ControllerBase
         return SuccessResp.Ok(result);
     }
 
-    /// <summary>Đánh dấu phiên luyện tập đã hoàn thành (IN_PROGRESS → COMPLETED), trả về điểm tổng kết + thời gian làm bài.</summary>
+    /// <summary>Đánh dấu phiên luyện tập đã hoàn thành (IN_PROGRESS → COMPLETED), tính overall_score = trung bình ai_feedbacks Succeeded.</summary>
     /// <remarks>Chỉ hoàn thành được phiên đang IN_PROGRESS — 400 nếu phiên đã COMPLETED/ABANDONED.</remarks>
     /// <param name="id">Id phiên luyện tập.</param>
     [HttpPost("{id:guid}/complete")]
