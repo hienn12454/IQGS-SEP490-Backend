@@ -51,8 +51,7 @@ public class QuestionGenerationJobInternalService : IQuestionGenerationJobIntern
         return new JobStatusResponseDto
         {
             JobId = job.Id,
-            Status = job.Status,
-            ErrorMessage = job.ErrorMessage
+            Status = job.Status
         };
     }
 

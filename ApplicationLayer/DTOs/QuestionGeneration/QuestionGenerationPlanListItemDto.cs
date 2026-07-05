@@ -7,6 +7,7 @@ public class QuestionGenerationPlanListItemDto
     public string JobTitle { get; set; } = string.Empty;
     public string Role { get; set; } = string.Empty;
     public string Level { get; set; } = string.Empty;
+    public string ExperienceLevel { get; set; } = string.Empty;
     public int Question { get; set; }
     public DateTime CreatedAt { get; set; }
     public string Status { get; set; } = string.Empty;
