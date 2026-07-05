@@ -34,31 +34,16 @@ public class CandidateMarketplaceRepository : ICandidateMarketplaceRepository
     }
 
     /// <summary>Chiếu 1 join-row sang read-model card marketplace — dùng chung cho list và bookmarks.</summary>
-    private IQueryable<PublishedQuestionSetRow> ProjectToRow(IQueryable<PublishedQuestionSetJoin> query)
+    private static IQueryable<PublishedQuestionSetRow> ProjectToRow(IQueryable<PublishedQuestionSetJoin> query)
         => query.Select(x => new PublishedQuestionSetRow
         {
             Id = x.QuestionSet.Id,
             Title = x.QuestionSet.Title,
-            CompanyId = x.Company.Id,
             CompanyName = x.Company.Name,
             CompanyLogo = x.Company.LogoUrl,
-            CompanyWebsite = x.Company.WebsiteUrl,
             Difficulty = x.QuestionSet.SourceJob.Difficulty,
             SkillsJson = x.QuestionSet.SourceJob.SkillsJson,
-            QuestionSkills = x.QuestionSet.Questions
-                .Where(q => q.IsActive && q.Skill != null && q.Skill != "")
-                .Select(q => q.Skill!)
-                .Distinct()
-                .OrderBy(s => s)
-                .ToList(),
-            TotalQuestions = x.QuestionSet.Questions.Count(q => q.IsActive),
-            TimeLimitMinutes = x.QuestionSet.TimeLimitMinutes,
-            Description = x.QuestionSet.HrNote,
-            Rating = _context.PracticeSessions
-                .Where(ps => ps.QuestionSetId == x.QuestionSet.Id && ps.IsActive)
-                .Average(ps => ps.OverallScore),
-            AttemptCount = _context.PracticeSessions
-                .Count(ps => ps.QuestionSetId == x.QuestionSet.Id && ps.IsActive)
+            TotalQuestions = x.QuestionSet.Questions.Count(q => q.IsActive)
         });
 
     public async Task<(IReadOnlyList<PublishedQuestionSetRow> Items, int TotalCount)> ListPublishedAsync(
@@ -104,19 +89,10 @@ public class CandidateMarketplaceRepository : ICandidateMarketplaceRepository
             {
                 Id = x.QuestionSet.Id,
                 Title = x.QuestionSet.Title,
-                CompanyId = x.Company.Id,
                 CompanyName = x.Company.Name,
                 CompanyLogo = x.Company.LogoUrl,
-                CompanyWebsite = x.Company.WebsiteUrl,
                 Difficulty = x.QuestionSet.SourceJob.Difficulty,
-                SkillsJson = x.QuestionSet.SourceJob.SkillsJson,
-                TimeLimitMinutes = x.QuestionSet.TimeLimitMinutes,
-                Description = x.QuestionSet.HrNote,
-                Rating = _context.PracticeSessions
-                    .Where(ps => ps.QuestionSetId == x.QuestionSet.Id && ps.IsActive)
-                    .Average(ps => ps.OverallScore),
-                AttemptCount = _context.PracticeSessions
-                    .Count(ps => ps.QuestionSetId == x.QuestionSet.Id && ps.IsActive)
+                SkillsJson = x.QuestionSet.SourceJob.SkillsJson
             }).FirstOrDefaultAsync();
 
         if (detail is null)
@@ -147,6 +123,22 @@ public class CandidateMarketplaceRepository : ICandidateMarketplaceRepository
                 CitationsJson = q.CitationsJson
             })
             .ToListAsync();
+
+    public Task<QuestionEvaluationRubric?> GetQuestionEvaluationRubricAsync(Guid questionSetQuestionId)
+        => _context.QuestionSetQuestions
+            .AsNoTracking()
+            .Where(q => q.Id == questionSetQuestionId && q.IsActive)
+            .Select(q => new QuestionEvaluationRubric
+            {
+                Id = q.Id,
+                Question = q.Question,
+                QuestionType = q.QuestionType,
+                Difficulty = q.Difficulty,
+                Skill = q.Skill,
+                SampleAnswer = q.SampleAnswer,
+                EvaluationCriteriaJson = q.EvaluationCriteriaJson
+            })
+            .FirstOrDefaultAsync();
 
     public Task<bool> QuestionBelongsToSetAsync(Guid questionId, Guid questionSetId)
         => _context.QuestionSetQuestions.AnyAsync(q =>

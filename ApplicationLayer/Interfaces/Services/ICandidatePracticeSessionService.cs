@@ -9,6 +9,7 @@ public interface ICandidatePracticeSessionService
     Task<SubmitAnswerResponseDto> SubmitAnswerAsync(Guid sessionId, Guid candidateUserId, SubmitAnswerDto dto);
     Task<PracticeSessionCompleteResponseDto> CompleteAsync(Guid sessionId, Guid candidateUserId);
     Task<PracticeSessionResponseDto> AbandonAsync(Guid sessionId, Guid candidateUserId);
+    Task<PracticeSessionFeedbackDto> GetFeedbackAsync(Guid sessionId, Guid candidateUserId);
     Task<PagedResultDto<PracticeSessionListItemDto>> ListAsync(Guid candidateUserId, PracticeSessionListQueryDto query);
     Task<PracticeSessionStatsDto> GetStatsAsync(Guid candidateUserId, PracticeSessionStatsQueryDto query);
 }

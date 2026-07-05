@@ -239,6 +239,35 @@ public class RagService : IRagService
         };
     }
 
+    /// <summary>Gọi RAG chấm điểm câu trả lời Candidate (SCRUM-281). Timeout/unavailable → throw để BE bắt và lưu Failed.</summary>
+    public async Task<EvaluateAnswerResult> EvaluateAnswerAsync(
+        EvaluateAnswerRequest request, CancellationToken ct = default)
+    {
+        HttpResponseMessage response;
+        try
+        {
+            response = await _httpClient.PostAsJsonAsync("/internal/rag/evaluate-answer", request, JsonOptions, ct);
+        }
+        catch (HttpRequestException ex)
+        {
+            throw CreateRagUnavailableException(ex);
+        }
+        catch (TaskCanceledException ex) when (!ct.IsCancellationRequested)
+        {
+            throw CreateRagUnavailableException(ex);
+        }
+
+        if (!response.IsSuccessStatusCode)
+            throw await BuildRagExceptionAsync(response, ct);
+
+        var result = await response.Content.ReadFromJsonAsync<EvaluateAnswerResult>(JsonOptions, ct);
+        return result ?? new EvaluateAnswerResult
+        {
+            Success = false,
+            Error = "RAG evaluate-answer trả về response rỗng."
+        };
+    }
+
     public async Task<RagHealthStatusDto> GetHealthStatusAsync(CancellationToken ct = default)
     {
         var serviceUrl = _settings.BaseUrl.TrimEnd('/');

@@ -25,8 +25,7 @@ public class AppDbContext : DbContext
     public DbSet<QuestionSetBookmark> QuestionSetBookmarks { get; set; }
     public DbSet<PracticeSession> PracticeSessions { get; set; }
     public DbSet<CandidateAnswer> CandidateAnswers { get; set; }
-    public DbSet<CandidateRecommendation> CandidateRecommendations { get; set; }
-    public DbSet<CandidateInvitation> CandidateInvitations { get; set; }
+    public DbSet<AiFeedback> AiFeedbacks { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -129,8 +128,6 @@ public class AppDbContext : DbContext
             entity.Property(p => p.PhoneNumber).HasMaxLength(20);
             entity.Property(p => p.LinkedInUrl).HasMaxLength(500);
             entity.Property(p => p.GithubUrl).HasMaxLength(500);
-
-            entity.Property(p => p.AllowRecruiterRecommendation).IsRequired().HasDefaultValue(false);
 
             entity.HasOne(p => p.User)
                 .WithOne()
@@ -355,42 +352,25 @@ public class AppDbContext : DbContext
             entity.HasIndex(a => new { a.PracticeSessionId, a.QuestionSetQuestionId }).IsUnique();
         });
 
-        // ── CandidateRecommendation (SCRUM-291) ─────────────────────
-        modelBuilder.Entity<CandidateRecommendation>(entity =>
+        // ── AiFeedback (Candidate — SCRUM-282) ──────────────────────
+        modelBuilder.Entity<AiFeedback>(entity =>
         {
-            entity.ToTable("candidate_recommendations");
-            entity.HasKey(r => r.Id);
-            entity.Property(r => r.Status).IsRequired().HasMaxLength(20);
+            entity.ToTable("ai_feedbacks");
+            entity.HasKey(f => f.Id);
+            entity.Property(f => f.StrengthsJson).IsRequired().HasColumnType("jsonb");
+            entity.Property(f => f.ImprovementsJson).IsRequired().HasColumnType("jsonb");
+            entity.Property(f => f.DimensionScoresJson).HasColumnType("jsonb");
+            entity.Property(f => f.EvaluationStatus).IsRequired().HasMaxLength(20);
+            entity.Property(f => f.Suggestion).HasColumnType("text");
+            entity.Property(f => f.ErrorMessage).HasColumnType("text");
 
-            entity.HasOne(r => r.QuestionSet)
+            // 1-1 với candidate_answers — mỗi answer tối đa 1 feedback
+            entity.HasOne(f => f.CandidateAnswer)
                   .WithMany()
-                  .HasForeignKey(r => r.QuestionSetId)
+                  .HasForeignKey(f => f.CandidateAnswerId)
                   .OnDelete(DeleteBehavior.Cascade);
 
-            entity.HasOne(r => r.PracticeSession)
-                  .WithMany()
-                  .HasForeignKey(r => r.PracticeSessionId)
-                  .OnDelete(DeleteBehavior.Restrict);
-
-            entity.HasIndex(r => new { r.CandidateUserId, r.QuestionSetId }).IsUnique();
-            entity.HasIndex(r => new { r.HrOwnerId, r.Status });
-        });
-
-        // ── CandidateInvitation (SCRUM-295) ─────────────────────────
-        modelBuilder.Entity<CandidateInvitation>(entity =>
-        {
-            entity.ToTable("candidate_invitations");
-            entity.HasKey(i => i.Id);
-            entity.Property(i => i.Status).IsRequired().HasMaxLength(20);
-            entity.Property(i => i.Message).HasMaxLength(2000);
-
-            entity.HasOne(i => i.Recommendation)
-                  .WithMany()
-                  .HasForeignKey(i => i.RecommendationId)
-                  .OnDelete(DeleteBehavior.Cascade);
-
-            entity.HasIndex(i => i.RecommendationId).IsUnique();
-            entity.HasIndex(i => new { i.CandidateUserId, i.Status });
+            entity.HasIndex(f => f.CandidateAnswerId).IsUnique();
         });
     }
 }
