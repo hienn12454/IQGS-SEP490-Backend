@@ -38,7 +38,7 @@ public class CandidatePracticeSessionsController : ControllerBase
         return SuccessResp.Ok(result);
     }
 
-    /// <summary>Thống kê luyện tập của Candidate hiện tại: tổng số phiên COMPLETED, điểm trung bình, điểm cao nhất, tổng thời gian luyện tập.</summary>
+    /// <summary>Thống kê luyện tập của Candidate hiện tại: tổng số phiên COMPLETED, điểm trung bình, điểm cao nhất, điểm bài gần nhất, tổng thời gian luyện tập.</summary>
     /// <param name="query">Lọc theo ngày: fromDate/toDate (khoảng cụ thể), hoặc year+month (1 tháng), hoặc chỉ year (cả năm) — bỏ trống để tính toàn bộ thời gian.</param>
     [HttpGet("stats")]
     public async Task<IActionResult> GetStats([FromQuery] PracticeSessionStatsQueryDto query)
@@ -69,7 +69,8 @@ public class CandidatePracticeSessionsController : ControllerBase
 
     /// <summary>Lưu câu trả lời cho 1 câu hỏi, sau đó gọi RAG evaluate sync và lưu ai_feedbacks (SCRUM-282).</summary>
     /// <remarks>
-    /// Upsert answer. Nếu RAG timeout/lỗi → answer vẫn được lưu, evaluationStatus=Failed (HTTP 200).
+    /// Upsert answer. Câu trả lời trống / quá ngắn / "không biết" / spam → score=0, evaluationStatus=Succeeded, không gọi AI.
+    /// Nếu RAG timeout/lỗi → answer vẫn được lưu, evaluationStatus=Failed (HTTP 200).
     /// questionId phải thuộc đúng bộ câu hỏi của phiên này, nếu không → 400.
     /// </remarks>
     /// <param name="id">Id phiên luyện tập.</param>
@@ -81,8 +82,8 @@ public class CandidatePracticeSessionsController : ControllerBase
         return SuccessResp.Ok(result);
     }
 
-    /// <summary>Đánh dấu phiên luyện tập đã hoàn thành (IN_PROGRESS → COMPLETED), tính overall_score = trung bình ai_feedbacks Succeeded.</summary>
-    /// <remarks>Chỉ hoàn thành được phiên đang IN_PROGRESS — 400 nếu phiên đã COMPLETED/ABANDONED.</remarks>
+    /// <summary>Đánh dấu phiên luyện tập đã hoàn thành (IN_PROGRESS → COMPLETED), tính overall_score = tổng điểm Succeeded / tổng số câu trong bộ (câu chưa làm = 0).</summary>
+    /// <remarks>Chỉ hoàn thành được phiên đang IN_PROGRESS — 400 nếu phiên đã COMPLETED/ABANDONED. Ví dụ bộ 30 câu, 1 câu 95 điểm → overall ≈ 3.17.</remarks>
     /// <param name="id">Id phiên luyện tập.</param>
     [HttpPost("{id:guid}/complete")]
     public async Task<IActionResult> Complete(Guid id)
