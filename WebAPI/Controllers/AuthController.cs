@@ -119,17 +119,14 @@ public class AuthController : ControllerBase
     }
 
     // ────────────────────────────────────────────────────────────────
-    // GET api/auth/verify-email   (SCRUM-151)
+    // POST api/auth/verify-email   (SCRUM-151)
     // ────────────────────────────────────────────────────────────────
-    /// <summary>Xác minh email qua token từ link (AC-01..03).</summary>
+    /// <summary>Xác minh email bằng mã OTP 6 chữ số (AC-01..03).</summary>
     [AllowAnonymous]
-    [HttpGet("verify-email")]
-    public async Task<IActionResult> VerifyEmail([FromQuery] string? token)
+    [HttpPost("verify-email")]
+    public async Task<IActionResult> VerifyEmail([FromBody] VerifyEmailDto request)
     {
-        if (string.IsNullOrWhiteSpace(token))
-            return new JsonResult(new { Code = 400, Error = "Token xác minh là bắt buộc." }) { StatusCode = 400 };
-
-        await _authService.VerifyEmailAsync(new VerifyEmailDto { Token = token });
+        await _authService.VerifyEmailAsync(request);
         return SuccessResp.Ok("Email đã được xác minh thành công. Bạn có thể đăng nhập ngay bây giờ.");
     }
 

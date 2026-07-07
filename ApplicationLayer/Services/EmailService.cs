@@ -62,7 +62,7 @@ public class EmailService : IEmailService
         }
     }
 
-    public async Task SendEmailVerificationAsync(string toEmail, string toName, string verifyLink)
+    public async Task SendEmailVerificationAsync(string toEmail, string toName, string otp)
     {
         var fromName = _config["EmailSettings:FromName"] ?? "IQGS Platform";
         var fromAddress = _config["EmailSettings:FromAddress"] ?? "noreply@iqgs.com";
@@ -74,8 +74,8 @@ public class EmailService : IEmailService
         if (string.IsNullOrWhiteSpace(smtpHost) || string.IsNullOrWhiteSpace(username))
         {
             _logger.LogWarning(
-                "[DEV] Email verification (chưa cấu hình SMTP).\nTo: {Email}\nLink: {Link}",
-                toEmail, verifyLink);
+                "[DEV] Email verification (chưa cấu hình SMTP).\nTo: {Email}\nOTP: {Otp}",
+                toEmail, otp);
             return;
         }
 
@@ -83,7 +83,7 @@ public class EmailService : IEmailService
         message.From.Add(new MailboxAddress(fromName, fromAddress));
         message.To.Add(new MailboxAddress(toName, toEmail));
         message.Subject = "[IQGS] Xác minh địa chỉ email của bạn";
-        message.Body = new TextPart("html") { Text = BuildVerifyEmailHtml(toName, verifyLink) };
+        message.Body = new TextPart("html") { Text = BuildVerifyEmailOtpHtml(toName, otp) };
 
         try
         {
@@ -96,24 +96,23 @@ public class EmailService : IEmailService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Gửi email xác minh thất bại.\nTo: {Email}\nLink: {Link}", toEmail, verifyLink);
+            _logger.LogError(ex, "Gửi email xác minh thất bại.\nTo: {Email}", toEmail);
         }
     }
 
     // ────────────────────────────────────────────────────────────────
-    private static string BuildVerifyEmailHtml(string name, string verifyLink) => $"""
+    private static string BuildVerifyEmailOtpHtml(string name, string otp) => $"""
         <!DOCTYPE html>
         <html lang="vi">
         <head><meta charset="UTF-8"/></head>
         <body style="font-family:Arial,sans-serif;color:#333;max-width:600px;margin:0 auto;padding:24px">
           <h2 style="color:#2563eb">Xác minh email IQGS</h2>
           <p>Xin chào <strong>{name}</strong>,</p>
-          <p>Cảm ơn bạn đã đăng ký! Nhấp vào nút bên dưới để xác minh địa chỉ email. Đường dẫn có hiệu lực trong <strong>24 giờ</strong>.</p>
-          <p style="margin:32px 0">
-            <a href="{verifyLink}"
-               style="background:#16a34a;color:#fff;padding:12px 28px;border-radius:6px;text-decoration:none;font-size:15px">
-              Xác minh email
-            </a>
+          <p>Cảm ơn bạn đã đăng ký! Nhập mã bên dưới để xác minh địa chỉ email. Mã có hiệu lực trong <strong>10 phút</strong>.</p>
+          <p style="margin:32px 0;text-align:center">
+            <span style="background:#f3f4f6;color:#16a34a;padding:16px 32px;border-radius:8px;font-size:32px;font-weight:bold;letter-spacing:8px;display:inline-block">
+              {otp}
+            </span>
           </p>
           <p style="color:#888;font-size:13px">Nếu bạn không tạo tài khoản IQGS, hãy bỏ qua email này.</p>
           <hr style="border:none;border-top:1px solid #eee;margin:24px 0"/>
