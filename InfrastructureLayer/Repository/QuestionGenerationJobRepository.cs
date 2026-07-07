@@ -192,4 +192,35 @@ public class QuestionGenerationJobRepository : IQuestionGenerationJobRepository
                 && j.UpdatedAt != null
                 && j.UpdatedAt < updatedBeforeUtc)
             .ToListAsync();
+
+    public Task<QuestionGenerationJob?> GetOwnedJobWithQuestionAsync(
+        Guid jobId, Guid questionId, Guid ownerId)
+        => _context.QuestionGenerationJobs
+            .Include(j => j.Plan)
+            .Include(j => j.Questions)
+            .FirstOrDefaultAsync(j =>
+                j.Id == jobId
+                && j.OwnerId == ownerId
+                && j.Questions.Any(q => q.Id == questionId));
+
+    public async Task<List<QuestionAiChatMessage>> GetQuestionAiChatMessagesAsync(
+        Guid jobId, Guid questionId, int limit)
+    {
+        var all = await _context.QuestionAiChatMessages
+            .AsNoTracking()
+            .Where(m => m.JobId == jobId && m.QuestionId == questionId && m.IsActive)
+            .OrderBy(m => m.CreatedAt)
+            .ToListAsync();
+
+        if (all.Count <= limit)
+            return all;
+
+        return all.Skip(all.Count - limit).ToList();
+    }
+
+    public async Task AddQuestionAiChatMessagesAsync(IEnumerable<QuestionAiChatMessage> messages)
+    {
+        await _context.QuestionAiChatMessages.AddRangeAsync(messages);
+        await _context.SaveChangesAsync();
+    }
 }
