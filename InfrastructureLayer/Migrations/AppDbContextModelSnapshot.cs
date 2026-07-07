@@ -113,11 +113,71 @@ namespace InfrastructureLayer.Migrations
                     b.ToTable("candidate_answers", (string)null);
                 });
 
+            modelBuilder.Entity("DomainLayer.Entities.CandidateInvitation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("CandidateUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("HrUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Message")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<Guid>("RecommendationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("RespondedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RecommendationId")
+                        .IsUnique();
+
+                    b.HasIndex("CandidateUserId", "Status");
+
+                    b.ToTable("candidate_invitations", (string)null);
+                });
+
             modelBuilder.Entity("DomainLayer.Entities.CandidateProfile", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
+
+                    b.Property<string>("Address")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<bool>("AllowRecruiterRecommendation")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
+                    b.Property<bool>("AutoSyncProfileFromCv")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true);
 
                     b.Property<string>("Bio")
                         .HasColumnType("text");
@@ -182,6 +242,55 @@ namespace InfrastructureLayer.Migrations
                         .IsUnique();
 
                     b.ToTable("CandidateProfiles");
+                });
+
+            modelBuilder.Entity("DomainLayer.Entities.CandidateRecommendation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("CandidateUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("HrOwnerId")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<double>("OverallScore")
+                        .HasColumnType("double precision");
+
+                    b.Property<Guid>("PracticeSessionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("QuestionSetId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PracticeSessionId");
+
+                    b.HasIndex("QuestionSetId");
+
+                    b.HasIndex("CandidateUserId", "QuestionSetId")
+                        .IsUnique();
+
+                    b.HasIndex("HrOwnerId", "Status");
+
+                    b.ToTable("candidate_recommendations", (string)null);
                 });
 
             modelBuilder.Entity("DomainLayer.Entities.Company", b =>
@@ -724,6 +833,9 @@ namespace InfrastructureLayer.Migrations
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)");
 
+                    b.Property<int?>("TimeLimitMinutes")
+                        .HasColumnType("integer");
+
                     b.Property<string>("Title")
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
@@ -1006,6 +1118,17 @@ namespace InfrastructureLayer.Migrations
                     b.Navigation("QuestionSetQuestion");
                 });
 
+            modelBuilder.Entity("DomainLayer.Entities.CandidateInvitation", b =>
+                {
+                    b.HasOne("DomainLayer.Entities.CandidateRecommendation", "Recommendation")
+                        .WithMany()
+                        .HasForeignKey("RecommendationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Recommendation");
+                });
+
             modelBuilder.Entity("DomainLayer.Entities.CandidateProfile", b =>
                 {
                     b.HasOne("DomainLayer.Entities.User", "User")
@@ -1015,6 +1138,25 @@ namespace InfrastructureLayer.Migrations
                         .IsRequired();
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("DomainLayer.Entities.CandidateRecommendation", b =>
+                {
+                    b.HasOne("DomainLayer.Entities.PracticeSession", "PracticeSession")
+                        .WithMany()
+                        .HasForeignKey("PracticeSessionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("DomainLayer.Entities.QuestionSet", "QuestionSet")
+                        .WithMany()
+                        .HasForeignKey("QuestionSetId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("PracticeSession");
+
+                    b.Navigation("QuestionSet");
                 });
 
             modelBuilder.Entity("DomainLayer.Entities.GeneratedQuestion", b =>
