@@ -26,7 +26,7 @@ public class AuthService : IAuthService
     private readonly TimeSpan _lockoutDuration;
     private readonly int _refreshTokenExpirationDays;
     private readonly int _passwordResetTokenExpirationHours;
-    private readonly int _emailVerificationTokenExpirationHours;
+    private readonly int _emailVerificationOtpExpirationMinutes;
 
     public AuthService(
         IUserRepository userRepo,
@@ -54,8 +54,8 @@ public class AuthService : IAuthService
             config["JwtSettings:RefreshTokenExpirationDays"] ?? "7");
         _passwordResetTokenExpirationHours = int.Parse(
             config["AuthSettings:PasswordResetTokenExpirationHours"] ?? "1");
-        _emailVerificationTokenExpirationHours = int.Parse(
-            config["AuthSettings:EmailVerificationTokenExpirationHours"] ?? "24");
+        _emailVerificationOtpExpirationMinutes = int.Parse(
+            config["AuthSettings:EmailVerificationOtpExpirationMinutes"] ?? "10");
     }
 
     // ────────────────────────────────────────────────────────────────
@@ -324,17 +324,17 @@ public class AuthService : IAuthService
     // ────────────────────────────────────────────────────────────────
     public async Task VerifyEmailAsync(VerifyEmailDto request)
     {
-        var tokenHash = ComputeSha256(request.Token.Trim());
-        var user = await _userRepo.GetByEmailVerificationTokenAsync(tokenHash);
+        var user = await _userRepo.GetByEmailAsync(request.Email)
+            ?? throw new BadRequestException("Email hoặc mã xác minh không đúng.");
 
-        if (user == null)
-            throw new BadRequestException(
-                "Đường dẫn xác minh đã hết hạn. Vui lòng yêu cầu đường dẫn mới.");
+        if (user.IsEmailVerified)
+            throw new BadRequestException("Email đã được xác minh trước đó.");
 
-        if (user.EmailVerificationTokenExpiresAt == null
+        var otpHash = ComputeSha256(request.Otp.Trim());
+        if (user.EmailVerificationToken != otpHash
+            || user.EmailVerificationTokenExpiresAt == null
             || user.EmailVerificationTokenExpiresAt < DateTime.UtcNow)
-            throw new BadRequestException(
-                "Đường dẫn xác minh đã hết hạn. Vui lòng yêu cầu đường dẫn mới.");
+            throw new BadRequestException("Mã xác minh không đúng hoặc đã hết hạn.");
 
         user.IsEmailVerified = true;
         user.EmailVerificationToken = null;
@@ -429,16 +429,14 @@ public class AuthService : IAuthService
     // ────────────────────────────────────────────────────────────────
     private async Task SendEmailVerificationAsync(User user)
     {
-        var rawToken = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
-        var tokenHash = ComputeSha256(rawToken);
+        var otp = RandomNumberGenerator.GetInt32(0, 1_000_000).ToString("D6");
+        var otpHash = ComputeSha256(otp);
 
-        user.EmailVerificationToken = tokenHash;
-        user.EmailVerificationTokenExpiresAt = DateTime.UtcNow.AddHours(_emailVerificationTokenExpirationHours);
+        user.EmailVerificationToken = otpHash;
+        user.EmailVerificationTokenExpiresAt = DateTime.UtcNow.AddMinutes(_emailVerificationOtpExpirationMinutes);
         await _userRepo.UpdateAsync(user);
 
-        var frontendUrl = _config["AppSettings:FrontendUrl"] ?? "https://iqgs.com";
-        var verifyLink = $"{frontendUrl}/verify-email?token={rawToken}";
-        await _emailService.SendEmailVerificationAsync(user.Email, user.FullName, verifyLink);
+        await _emailService.SendEmailVerificationAsync(user.Email, user.FullName, otp);
     }
 
     private async Task<LoginResponseDto> IssueTokensAsync(User user)
