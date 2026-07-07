@@ -35,9 +35,18 @@ internal static class PublishedQuestionSetMapper
     public static string ResolveTitle(string? title, string companyName) =>
         string.IsNullOrWhiteSpace(title) ? companyName : title;
 
-    /// <summary>Làm tròn rating về 1 chữ số thập phân cho UI (vd 4.75 → 4.8) — giữ null khi chưa có dữ liệu.</summary>
-    public static double? RoundRating(double? rating) =>
-        rating is double r ? Math.Round(r, 1) : null;
+    /// <summary>OverallScore của phiên luyện tập chấm trên thang 0-100 (SCRUM-304) — hệ số quy đổi sang rating sao 0-5.</summary>
+    private const double OverallScoreToStarRatingDivisor = 20.0;
+
+    /// <summary>
+    /// Quy đổi OverallScore trung bình (thang 0-100, do AI chấm — SCRUM-304) sang rating sao hiển thị marketplace
+    /// (thang 0-5, vd 4.8 ★). Clamp về [0, 5] để chống lệch thang nếu dữ liệu bất thường, làm tròn 1 chữ số thập phân.
+    /// Giữ null khi chưa có phiên nào được chấm.
+    /// </summary>
+    public static double? RoundRating(double? overallScoreAverage) =>
+        overallScoreAverage is double avg
+            ? Math.Round(Math.Clamp(avg / OverallScoreToStarRatingDivisor, 0, 5), 1)
+            : null;
 
     public static List<T> ParseJsonList<T>(string? json) =>
         string.IsNullOrWhiteSpace(json) ? new() : JsonSerializer.Deserialize<List<T>>(json, JsonOptions) ?? new();
