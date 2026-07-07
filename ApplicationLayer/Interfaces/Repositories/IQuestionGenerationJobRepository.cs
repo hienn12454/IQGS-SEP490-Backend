@@ -25,4 +25,7 @@ public interface IQuestionGenerationJobRepository
     Task<int> GetMaxOrderByJobIdAsync(Guid jobId);
     Task<IReadOnlyList<QuestionGenerationJob>> GetStuckByStatusesAsync(
         IReadOnlyList<string> statuses, DateTime updatedBeforeUtc);
+    Task<QuestionGenerationJob?> GetOwnedJobWithQuestionAsync(Guid jobId, Guid questionId, Guid ownerId);
+    Task<List<QuestionAiChatMessage>> GetQuestionAiChatMessagesAsync(Guid jobId, Guid questionId, int limit);
+    Task AddQuestionAiChatMessagesAsync(IEnumerable<QuestionAiChatMessage> messages);
 }

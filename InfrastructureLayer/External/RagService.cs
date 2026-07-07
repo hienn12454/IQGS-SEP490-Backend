@@ -184,6 +184,34 @@ public class RagService : IRagService
         return PostAsyncAcceptedAsync("/internal/rag/generate-questions-from-plan/async", body, ct);
     }
 
+    public async Task<QuestionAssistResult> AskQuestionAssistAsync(
+        QuestionAssistRequest request, CancellationToken ct = default)
+    {
+        HttpResponseMessage response;
+        try
+        {
+            response = await _httpClient.PostAsJsonAsync("/internal/rag/question-assist", request, JsonOptions, ct);
+        }
+        catch (HttpRequestException ex)
+        {
+            throw CreateRagUnavailableException(ex);
+        }
+        catch (TaskCanceledException ex) when (!ct.IsCancellationRequested)
+        {
+            throw CreateRagUnavailableException(ex);
+        }
+
+        if (!response.IsSuccessStatusCode)
+            throw await BuildRagExceptionAsync(response, ct);
+
+        var result = await response.Content.ReadFromJsonAsync<QuestionAssistResult>(JsonOptions, ct);
+        return result ?? new QuestionAssistResult
+        {
+            Success = false,
+            Error = "RAG question-assist trả về response rỗng."
+        };
+    }
+
     public async Task<RagHealthStatusDto> GetHealthStatusAsync(CancellationToken ct = default)
     {
         var serviceUrl = _settings.BaseUrl.TrimEnd('/');

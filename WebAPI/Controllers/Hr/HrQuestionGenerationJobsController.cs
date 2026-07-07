@@ -16,11 +16,16 @@ public class HrQuestionGenerationJobsController : ControllerBase
 {
     private readonly IQuestionGenerationJobService _service;
     private readonly IQuestionSetService _questionSetService;
+    private readonly IQuestionAiAssistService _questionAiAssistService;
 
-    public HrQuestionGenerationJobsController(IQuestionGenerationJobService service, IQuestionSetService questionSetService)
+    public HrQuestionGenerationJobsController(
+        IQuestionGenerationJobService service,
+        IQuestionSetService questionSetService,
+        IQuestionAiAssistService questionAiAssistService)
     {
         _service = service;
         _questionSetService = questionSetService;
+        _questionAiAssistService = questionAiAssistService;
     }
 
     [HttpPost("plan")]
@@ -122,6 +127,21 @@ public class HrQuestionGenerationJobsController : ControllerBase
         Guid jobId, [FromBody] ReorderQuestionsRequestDto dto)
     {
         var result = await _service.ReorderQuestionsAsync(jobId, GetCurrentUserId(), dto);
+        return SuccessResp.Ok(result);
+    }
+
+    [HttpPost("{jobId:guid}/questions/{questionId:guid}/ask-ai")]
+    public async Task<IActionResult> AskQuestionAi(
+        Guid jobId, Guid questionId, [FromBody] AskQuestionAiRequestDto dto, CancellationToken ct)
+    {
+        var result = await _questionAiAssistService.AskAsync(jobId, questionId, GetCurrentUserId(), dto, ct);
+        return SuccessResp.Ok(result);
+    }
+
+    [HttpGet("{jobId:guid}/questions/{questionId:guid}/ai-chat")]
+    public async Task<IActionResult> GetQuestionAiChat(Guid jobId, Guid questionId, CancellationToken ct)
+    {
+        var result = await _questionAiAssistService.GetChatHistoryAsync(jobId, questionId, GetCurrentUserId(), ct);
         return SuccessResp.Ok(result);
     }
 
