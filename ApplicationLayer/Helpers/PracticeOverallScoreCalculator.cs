@@ -16,6 +16,7 @@ public static class PracticeOverallScoreCalculator
             return null;
 
         var sum = succeededScores.Sum();
-        return Math.Round(sum / totalQuestionCount, 2);
+        // Làm tròn về hàng đơn vị (0 chữ số thập phân) — candidate chỉ cần xem điểm nguyên, không cần độ chính xác thập phân.
+        return Math.Round(sum / totalQuestionCount, 0);
     }
 }

@@ -347,23 +347,28 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
 
             var strengths = ragResult.Strengths ?? [];
             var improvements = ragResult.Improvements ?? [];
+            // AI trả điểm thô nhiều chữ số thập phân (vd 51.0739292829) — làm tròn về hàng đơn vị trước khi lưu/trả về,
+            // candidate chỉ cần xem điểm nguyên. Áp dụng luôn cho từng dimension score trong breakdown.
+            var roundedScore = RoundScore(ragResult.Score);
+            var roundedDimensionScores = RoundDimensionScores(ragResult.DimensionScores);
+
             await UpsertFeedbackAsync(
                 answer.Id,
                 AiFeedbackEvaluationStatus.Succeeded,
-                ragResult.Score,
+                roundedScore,
                 strengths,
                 improvements,
                 ragResult.Suggestion,
-                ragResult.DimensionScores,
+                roundedDimensionScores,
                 null);
 
             return (
                 AiFeedbackEvaluationStatus.Succeeded,
-                ragResult.Score,
+                roundedScore,
                 strengths,
                 improvements,
                 ragResult.Suggestion,
-                ragResult.DimensionScores,
+                roundedDimensionScores,
                 null);
         }
         catch (Exception ex)
@@ -428,6 +433,12 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
 
         return session;
     }
+
+    /// <summary>Làm tròn điểm AI trả về hàng đơn vị (vd 51.0739292829 → 51) — không giữ chữ số thập phân.</summary>
+    private static double? RoundScore(double? score) => score.HasValue ? Math.Round(score.Value, 0) : null;
+
+    private static Dictionary<string, double>? RoundDimensionScores(Dictionary<string, double>? dimensionScores) =>
+        dimensionScores?.ToDictionary(kv => kv.Key, kv => Math.Round(kv.Value, 0));
 
     /// <summary>Hạn chót nộp bài = StartedAt + giới hạn phút — null nếu bộ không giới hạn thời gian.</summary>
     private static DateTime? ComputeExpiresAt(DateTime? startedAt, int? timeLimitMinutes)
