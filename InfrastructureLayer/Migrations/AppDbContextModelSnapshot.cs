@@ -596,6 +596,40 @@ namespace InfrastructureLayer.Migrations
                     b.ToTable("knowledge_documents", (string)null);
                 });
 
+            modelBuilder.Entity("DomainLayer.Entities.PlatformSettings", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("MinQuestionsToPublish")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(10);
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("platform_settings", (string)null);
+
+                    b.HasData(
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000001"),
+                            CreatedAt = new DateTime(2026, 7, 21, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            MinQuestionsToPublish = 10
+                        });
+                });
+
             modelBuilder.Entity("DomainLayer.Entities.PracticeSession", b =>
                 {
                     b.Property<Guid>("Id")
