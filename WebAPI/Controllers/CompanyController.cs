@@ -1,8 +1,10 @@
 using ApplicationLayer.DTOs.Company;
 using ApplicationLayer.Interfaces.Services;
 using ApplicationLayer.ResponseCode;
+using DomainLayer.Exceptions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System.Security.Claims;
 
 namespace WebAPI.Controllers;
 
@@ -67,7 +69,9 @@ public class CompanyController : ControllerBase
 
     private Guid GetCurrentUserId()
     {
-        var idStr = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
-        return Guid.Parse(idStr!);
+        var sub = User.FindFirst("sub")?.Value
+            ?? User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+            ?? throw new UnauthorizedException("Không thể xác định người dùng từ token.");
+        return Guid.Parse(sub);
     }
 }
