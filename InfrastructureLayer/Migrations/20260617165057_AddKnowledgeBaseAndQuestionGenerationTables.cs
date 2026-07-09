@@ -194,7 +194,7 @@ namespace InfrastructureLayer.Migrations
             migrationBuilder.Sql(
                 """
                 CREATE INDEX IF NOT EXISTS ix_knowledge_chunks_embedding_hnsw
-                ON knowledge_chunks USING hnsw (embedding vector_cosine_ops);
+                ON knowledge_chunks USING hnsw ("Embedding" vector_cosine_ops);
                 """);
         }
 
