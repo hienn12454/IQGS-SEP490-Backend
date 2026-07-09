@@ -284,6 +284,24 @@ public class Program
         // Global exception handler — phải đứng đầu pipeline
         app.UseGlobalExceptionHandler();
 
+        // Fallback cho các request không khớp route nào (VD: :guid constraint không hợp lệ)
+        // — ASP.NET trả 404 rỗng trước khi vào tới controller/exception middleware, nên cần map thủ công.
+        app.UseStatusCodePages(async statusCodeContext =>
+        {
+            var ctx = statusCodeContext.HttpContext;
+            var message = ctx.Response.StatusCode switch
+            {
+                404 => "Không tìm thấy tài nguyên yêu cầu.",
+                405 => "Phương thức không được hỗ trợ.",
+                _ => "Đã xảy ra lỗi khi xử lý yêu cầu."
+            };
+
+            ctx.Response.ContentType = "application/json; charset=utf-8";
+            await ctx.Response.WriteAsync(JsonSerializer.Serialize(
+                new { code = ctx.Response.StatusCode, error = message },
+                new JsonSerializerOptions { Encoder = JavaScriptEncoder.Create(UnicodeRanges.All) }));
+        });
+
         // Internal API key — chỉ route /internal/*, không dùng JWT
         app.UseWhen(
             ctx => ctx.Request.Path.StartsWithSegments("/internal"),
