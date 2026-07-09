@@ -140,7 +140,7 @@ public class AuthController : ControllerBase
     {
         await _authService.ResendVerificationEmailAsync(request);
         return SuccessResp.Ok(
-            "Nếu email của bạn chưa được xác minh, chúng tôi đã gửi đường dẫn mới. Vui lòng kiểm tra hộp thư.");
+            "Nếu email của bạn chưa được xác minh, chúng tôi đã gửi mã OTP mới. Vui lòng kiểm tra hộp thư.");
     }
 
     // ────────────────────────────────────────────────────────────────
