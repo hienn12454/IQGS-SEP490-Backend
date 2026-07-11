@@ -57,8 +57,8 @@ public class CandidatePracticeSessionsController : ControllerBase
         return SuccessResp.Ok(result);
     }
 
-    /// <summary>Lấy toàn bộ AI feedback của phiên (score từng câu + overall) — SCRUM-282.</summary>
-    /// <remarks>Chỉ chủ phiên xem được. FE dùng cho màn result `/jobseeker/practice/[id]/result`.</remarks>
+    /// <summary>Lấy toàn bộ AI feedback của phiên (score từng câu + overall + aiInsight) — SCRUM-282 / SCRUM-305.</summary>
+    /// <remarks>Chỉ chủ phiên xem được. FE dùng cho màn result. aiInsight gồm nhận xét tổng quan + skillsToImprove song ngữ.</remarks>
     /// <param name="id">Id phiên luyện tập.</param>
     [HttpGet("{id:guid}/feedback")]
     public async Task<IActionResult> GetFeedback(Guid id)
@@ -82,8 +82,8 @@ public class CandidatePracticeSessionsController : ControllerBase
         return SuccessResp.Ok(result);
     }
 
-    /// <summary>Đánh dấu phiên luyện tập đã hoàn thành (IN_PROGRESS → COMPLETED), tính overall_score = tổng điểm Succeeded / tổng số câu trong bộ (câu chưa làm = 0), làm tròn 2 chữ số thập phân.</summary>
-    /// <remarks>Chỉ hoàn thành được phiên đang IN_PROGRESS — 400 nếu phiên đã COMPLETED/ABANDONED. Ví dụ bộ 30 câu, 1 câu 95 điểm → overall ≈ 3.17.</remarks>
+    /// <summary>Đánh dấu phiên luyện tập đã hoàn thành (IN_PROGRESS → COMPLETED), tính overall_score = tổng điểm Succeeded / tổng số câu trong bộ (câu chưa làm = 0), sinh aiInsight song ngữ + skillsToImprove.</summary>
+    /// <remarks>Chỉ hoàn thành được phiên đang IN_PROGRESS — 400 nếu phiên đã COMPLETED/ABANDONED. Ví dụ bộ 30 câu, 1 câu 95 điểm → overall ≈ 3.17. RAG insight lỗi → complete vẫn 200, aiInsight=null.</remarks>
     /// <param name="id">Id phiên luyện tập.</param>
     [HttpPost("{id:guid}/complete")]
     public async Task<IActionResult> Complete(Guid id)
