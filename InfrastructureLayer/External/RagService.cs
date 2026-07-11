@@ -268,6 +268,36 @@ public class RagService : IRagService
         };
     }
 
+    /// <summary>Gọi RAG sinh AI Insight tổng quan phiên practice (SCRUM-305).</summary>
+    public async Task<PracticeSessionInsightResult> GeneratePracticeSessionInsightAsync(
+        PracticeSessionInsightRequest request, CancellationToken ct = default)
+    {
+        HttpResponseMessage response;
+        try
+        {
+            response = await _httpClient.PostAsJsonAsync(
+                "/internal/rag/practice-session-insight", request, JsonOptions, ct);
+        }
+        catch (HttpRequestException ex)
+        {
+            throw CreateRagUnavailableException(ex);
+        }
+        catch (TaskCanceledException ex) when (!ct.IsCancellationRequested)
+        {
+            throw CreateRagUnavailableException(ex);
+        }
+
+        if (!response.IsSuccessStatusCode)
+            throw await BuildRagExceptionAsync(response, ct);
+
+        var result = await response.Content.ReadFromJsonAsync<PracticeSessionInsightResult>(JsonOptions, ct);
+        return result ?? new PracticeSessionInsightResult
+        {
+            Success = false,
+            Error = "RAG practice-session-insight trả về response rỗng."
+        };
+    }
+
     public async Task<RagHealthStatusDto> GetHealthStatusAsync(CancellationToken ct = default)
     {
         var serviceUrl = _settings.BaseUrl.TrimEnd('/');

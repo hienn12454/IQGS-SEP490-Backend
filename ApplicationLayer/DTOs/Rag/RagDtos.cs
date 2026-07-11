@@ -72,17 +72,6 @@ public class ParseCvResult
     public List<string> Skills { get; set; } = new();
     public string? Summary { get; set; }
     public string? FileName { get; set; }
-
-    // Thông tin cá nhân trích xuất từ CV — dùng để tự đồng bộ vào profile (feature "CV auto-apply profile").
-    // Optional/nullable: phụ thuộc RAG service có hỗ trợ trích xuất hay chưa. Nếu RAG chưa trả các field này,
-    // JSON deserialize để null — code gọi (CandidateCvService) coi null là "CV không có thông tin này", giữ nguyên
-    // giá trị cũ trên profile, không lỗi, không mất dữ liệu.
-    public string? FullName { get; set; }
-    public string? PhoneNumber { get; set; }
-    public string? Address { get; set; }
-    public string? GithubUrl { get; set; }
-    public string? LinkedInUrl { get; set; }
-
     public List<string> Warnings { get; set; } = new();
     public string? Error { get; set; }
     public string? Detail { get; set; }
@@ -164,6 +153,39 @@ public class EvaluateAnswerResult
     public List<string> Improvements { get; set; } = new();
     public string? Suggestion { get; set; }
     public Dictionary<string, double>? DimensionScores { get; set; }
+    public double? ProcessingTimeMs { get; set; }
+    public string? Error { get; set; }
+    public string? Detail { get; set; }
+}
+
+/// <summary>Request gọi RAG practice-session-insight (SCRUM-305).</summary>
+public class PracticeSessionInsightRequest
+{
+    public double? OverallScore { get; set; }
+    public int TotalQuestions { get; set; }
+    public int AnsweredCount { get; set; }
+    public string? SetTitle { get; set; }
+    public List<string> SetSkills { get; set; } = new();
+    public List<QuestionInsightSummaryDto> QuestionSummaries { get; set; } = new();
+}
+
+public class QuestionInsightSummaryDto
+{
+    public string? QuestionType { get; set; }
+    public string? Skill { get; set; }
+    public double? Score { get; set; }
+    public List<string> Strengths { get; set; } = new();
+    public List<string> Improvements { get; set; } = new();
+    public Dictionary<string, double>? DimensionScores { get; set; }
+}
+
+public class PracticeSessionInsightResult
+{
+    public bool Success { get; set; }
+    public string? InsightVi { get; set; }
+    public string? InsightEn { get; set; }
+    public List<string> SkillsToImproveVi { get; set; } = new();
+    public List<string> SkillsToImproveEn { get; set; } = new();
     public double? ProcessingTimeMs { get; set; }
     public string? Error { get; set; }
     public string? Detail { get; set; }

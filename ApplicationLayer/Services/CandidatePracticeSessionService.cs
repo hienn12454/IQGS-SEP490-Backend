@@ -5,7 +5,6 @@ using ApplicationLayer.DTOs.Rag;
 using ApplicationLayer.Helpers;
 using ApplicationLayer.Interfaces.Repositories;
 using ApplicationLayer.Interfaces.Services;
-using ApplicationLayer.Services.Mapping;
 using DomainLayer.Constants;
 using DomainLayer.Entities;
 using DomainLayer.Exceptions;
@@ -181,10 +180,7 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
 
             session.Status = PracticeSessionStatus.Completed;
             session.CompletedAt = DateTime.UtcNow;
-            // SCRUM-304: overall = tổng điểm Succeeded / tổng số câu trong bộ (câu chưa làm = 0)
-            session.OverallScore = await ComputeSessionOverallScoreAsync(session);
-            await _sessionRepository.UpdateAsync(session);
-            await TryGenerateRecommendationAsync(session);
+            await FinalizeCompletedSessionAsync(session);
         }
 
         return new PracticeSessionCompleteResponseDto
@@ -193,8 +189,27 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
             Status = session.Status,
             CompletedAt = session.CompletedAt,
             OverallScore = session.OverallScore,
-            DurationSeconds = ComputeDurationSeconds(session.StartedAt, session.CompletedAt)
+            DurationSeconds = ComputeDurationSeconds(session.StartedAt, session.CompletedAt),
+            AiInsight = MapAiInsight(session)
         };
+    }
+
+    /// <inheritdoc />
+    public async Task FinalizeExpiredByWatchdogAsync(Guid sessionId)
+    {
+        var session = await _sessionRepository.GetByIdAsync(sessionId);
+        if (session is null || session.Status != PracticeSessionStatus.InProgress)
+            return;
+
+        var timeLimit = await _sessionRepository.GetTimeLimitMinutesAsync(session.QuestionSetId);
+        var expiresAt = ComputeExpiresAt(session.StartedAt, timeLimit);
+        if (expiresAt is null || DateTime.UtcNow < expiresAt)
+            return;
+
+        session.Status = PracticeSessionStatus.Completed;
+        session.CompletedAt = expiresAt;
+        session.UpdatedAt = DateTime.UtcNow;
+        await FinalizeCompletedSessionAsync(session);
     }
 
     /// <summary>Candidate chủ động bỏ phiên đang làm dở (MVP optional — SCRUM-298).</summary>
@@ -265,6 +280,7 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
             SessionId = session.Id,
             OverallScore = overall,
             Status = session.Status,
+            AiInsight = MapAiInsight(session),
             Items = items
         };
     }
@@ -287,7 +303,6 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
             QuestionSetId = r.QuestionSetId,
             SetTitle = string.IsNullOrWhiteSpace(r.SetTitle) ? r.CompanyName : r.SetTitle,
             CompanyName = r.CompanyName,
-            CompanyLogo = CompanyLogoResolver.Resolve(r.CompanyLogo, r.CompanyWebsite, r.CompanyName),
             Status = r.Status,
             Score = r.Score,
             DurationSeconds = ComputeDurationSeconds(r.StartedAt, r.CompletedAt),
@@ -349,28 +364,23 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
 
             var strengths = ragResult.Strengths ?? [];
             var improvements = ragResult.Improvements ?? [];
-            // AI trả điểm thô nhiều chữ số thập phân (vd 51.0739292829) — làm tròn về hàng đơn vị trước khi lưu/trả về,
-            // candidate chỉ cần xem điểm nguyên. Áp dụng luôn cho từng dimension score trong breakdown.
-            var roundedScore = RoundScore(ragResult.Score);
-            var roundedDimensionScores = RoundDimensionScores(ragResult.DimensionScores);
-
             await UpsertFeedbackAsync(
                 answer.Id,
                 AiFeedbackEvaluationStatus.Succeeded,
-                roundedScore,
+                ragResult.Score,
                 strengths,
                 improvements,
                 ragResult.Suggestion,
-                roundedDimensionScores,
+                ragResult.DimensionScores,
                 null);
 
             return (
                 AiFeedbackEvaluationStatus.Succeeded,
-                roundedScore,
+                ragResult.Score,
                 strengths,
                 improvements,
                 ragResult.Suggestion,
-                roundedDimensionScores,
+                ragResult.DimensionScores,
                 null);
         }
         catch (Exception ex)
@@ -436,12 +446,6 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
         return session;
     }
 
-    /// <summary>Làm tròn điểm AI trả về hàng đơn vị (vd 51.0739292829 → 51) — không giữ chữ số thập phân.</summary>
-    private static double? RoundScore(double? score) => score.HasValue ? Math.Round(score.Value, 0) : null;
-
-    private static Dictionary<string, double>? RoundDimensionScores(Dictionary<string, double>? dimensionScores) =>
-        dimensionScores?.ToDictionary(kv => kv.Key, kv => Math.Round(kv.Value, 0));
-
     /// <summary>Hạn chót nộp bài = StartedAt + giới hạn phút — null nếu bộ không giới hạn thời gian.</summary>
     private static DateTime? ComputeExpiresAt(DateTime? startedAt, int? timeLimitMinutes)
         => startedAt.HasValue && timeLimitMinutes.HasValue
@@ -464,10 +468,105 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
         session.Status = PracticeSessionStatus.Completed;
         session.CompletedAt = expiresAt;
         session.UpdatedAt = DateTime.UtcNow;
+        await FinalizeCompletedSessionAsync(session);
+        return true;
+    }
+
+    /// <summary>
+    /// SCRUM-304 + SCRUM-305: tính overallScore, sinh AI Insight (lỗi RAG không fail complete), recommendation.
+    /// </summary>
+    private async Task FinalizeCompletedSessionAsync(PracticeSession session)
+    {
         session.OverallScore = await ComputeSessionOverallScoreAsync(session);
+        await TryGenerateAiInsightAsync(session);
         await _sessionRepository.UpdateAsync(session);
         await TryGenerateRecommendationAsync(session);
-        return true;
+    }
+
+    /// <summary>SCRUM-305 — gọi RAG sinh insight song ngữ; lỗi → log, để null (FE fallback).</summary>
+    private async Task TryGenerateAiInsightAsync(PracticeSession session)
+    {
+        try
+        {
+            var questions = await _marketplaceRepository.GetQuestionsSnapshotAsync(session.QuestionSetId);
+            var answers = await _answerRepository.GetEntitiesBySessionIdAsync(session.Id);
+            var feedbacks = await _feedbackRepository.GetBySessionIdAsync(session.Id);
+            var feedbackByAnswerId = feedbacks.ToDictionary(f => f.CandidateAnswerId);
+
+            var setDetail = await _marketplaceRepository.GetPublishedByIdAsync(session.QuestionSetId);
+            var setSkills = ParseCriteriaList(setDetail?.SkillsJson);
+            // Bổ sung skill distinct từ câu hỏi nếu SkillsJson trống
+            if (setSkills.Count == 0)
+            {
+                setSkills = questions
+                    .Select(q => q.Skill)
+                    .Where(s => !string.IsNullOrWhiteSpace(s))
+                    .Select(s => s!.Trim())
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .Take(10)
+                    .ToList();
+            }
+
+            var summaries = new List<QuestionInsightSummaryDto>();
+            foreach (var answer in answers)
+            {
+                if (!feedbackByAnswerId.TryGetValue(answer.Id, out var fb))
+                    continue;
+                if (fb.EvaluationStatus != AiFeedbackEvaluationStatus.Succeeded || fb.Score is null)
+                    continue;
+
+                var q = questions.FirstOrDefault(x => x.Id == answer.QuestionSetQuestionId);
+                summaries.Add(new QuestionInsightSummaryDto
+                {
+                    QuestionType = q?.QuestionType,
+                    Skill = q?.Skill,
+                    Score = fb.Score,
+                    Strengths = DeserializeStringList(fb.StrengthsJson).Take(2).ToList(),
+                    Improvements = DeserializeStringList(fb.ImprovementsJson).Take(2).ToList(),
+                    DimensionScores = DeserializeDimensionScores(fb.DimensionScoresJson)
+                });
+            }
+
+            // Ưu tiên câu điểm thấp, tối đa 10
+            summaries = summaries
+                .OrderBy(s => s.Score ?? 999)
+                .Take(10)
+                .ToList();
+
+            var ragResult = await _ragService.GeneratePracticeSessionInsightAsync(new PracticeSessionInsightRequest
+            {
+                OverallScore = session.OverallScore,
+                TotalQuestions = questions.Count,
+                AnsweredCount = answers.Count,
+                SetTitle = setDetail?.Title,
+                SetSkills = setSkills,
+                QuestionSummaries = summaries
+            });
+
+            if (!ragResult.Success
+                || string.IsNullOrWhiteSpace(ragResult.InsightVi)
+                || string.IsNullOrWhiteSpace(ragResult.InsightEn))
+            {
+                _logger.LogWarning(
+                    "RAG practice-session-insight thất bại cho session {SessionId}: {Error}",
+                    session.Id, ragResult.Error ?? ragResult.Detail ?? "unknown");
+                return;
+            }
+
+            session.AiInsightVi = ragResult.InsightVi.Trim();
+            session.AiInsightEn = ragResult.InsightEn.Trim();
+            session.SkillsToImproveJson = JsonSerializer.Serialize(new
+            {
+                vi = ragResult.SkillsToImproveVi ?? new List<string>(),
+                en = ragResult.SkillsToImproveEn ?? new List<string>()
+            }, JsonOptions);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "Sinh AI Insight thất bại cho session {SessionId} — complete vẫn thành công.",
+                session.Id);
+        }
     }
 
     /// <summary>SCRUM-304 — overallScore = tổng Score Succeeded / số câu trong bộ.</summary>
@@ -520,6 +619,7 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
             StartedAt = session.StartedAt,
             CompletedAt = session.CompletedAt,
             OverallScore = session.OverallScore,
+            AiInsight = MapAiInsight(session),
             TimeLimitMinutes = timeLimitMinutes,
             ExpiresAt = session.Status == PracticeSessionStatus.InProgress
                 ? ComputeExpiresAt(session.StartedAt, timeLimitMinutes)
@@ -536,6 +636,54 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
                 AnswerText = answersByQuestionId.TryGetValue(q.Id, out var text) ? text : null
             }).ToList()
         };
+    }
+
+    private static PracticeAiInsightDto? MapAiInsight(PracticeSession session)
+    {
+        if (string.IsNullOrWhiteSpace(session.AiInsightVi) || string.IsNullOrWhiteSpace(session.AiInsightEn))
+            return null;
+
+        var skills = DeserializeSkillsToImprove(session.SkillsToImproveJson);
+        return new PracticeAiInsightDto
+        {
+            Vi = session.AiInsightVi,
+            En = session.AiInsightEn,
+            SkillsToImprove = skills
+        };
+    }
+
+    private static BilingualStringListDto DeserializeSkillsToImprove(string? json)
+    {
+        var empty = new BilingualStringListDto();
+        if (string.IsNullOrWhiteSpace(json))
+            return empty;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            return new BilingualStringListDto
+            {
+                Vi = ReadStringArray(root, "vi"),
+                En = ReadStringArray(root, "en")
+            };
+        }
+        catch (JsonException)
+        {
+            return empty;
+        }
+    }
+
+    private static List<string> ReadStringArray(JsonElement root, string prop)
+    {
+        if (!root.TryGetProperty(prop, out var arr) || arr.ValueKind != JsonValueKind.Array)
+            return new List<string>();
+
+        return arr.EnumerateArray()
+            .Select(e => e.GetString()?.Trim())
+            .Where(s => !string.IsNullOrWhiteSpace(s))
+            .Select(s => s!)
+            .ToList();
     }
 
     private static List<string> ParseCriteriaList(string? json)

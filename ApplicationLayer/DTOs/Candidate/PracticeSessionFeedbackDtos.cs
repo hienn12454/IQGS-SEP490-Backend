@@ -1,11 +1,15 @@
 namespace ApplicationLayer.DTOs.Candidate;
 
-/// <summary>Response GET feedback — align FE AnswerRecord / PracticeSession (SCRUM-282 / SCRUM-283).</summary>
+/// <summary>Response GET feedback — align FE AnswerRecord / PracticeSession (SCRUM-282 / SCRUM-283 / SCRUM-305).</summary>
 public class PracticeSessionFeedbackDto
 {
     public Guid SessionId { get; set; }
     public double? OverallScore { get; set; }
     public string Status { get; set; } = string.Empty;
+
+    /// <summary>AI Insight tổng quan + kỹ năng cần cải thiện (SCRUM-305).</summary>
+    public PracticeAiInsightDto? AiInsight { get; set; }
+
     public List<PracticeSessionFeedbackItemDto> Items { get; set; } = new();
 }
 
