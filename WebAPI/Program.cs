@@ -290,6 +290,7 @@ public class Program
         builder.Services.AddScoped<IQuestionGenerationJobService, QuestionGenerationJobService>();
         builder.Services.AddScoped<IQuestionGenerationJobInternalService, QuestionGenerationJobInternalService>();
         builder.Services.AddScoped<IQuestionSetService, QuestionSetService>();
+        builder.Services.AddScoped<IHrCompanyInfoService, HrCompanyInfoService>();
         builder.Services.AddScoped<QuestionAiContextBuilder>();
         builder.Services.AddScoped<IQuestionAiAssistService, QuestionAiAssistService>();
 
