@@ -28,6 +28,7 @@ public class AppDbContext : DbContext
     public DbSet<AiFeedback> AiFeedbacks { get; set; }
     public DbSet<CandidateRecommendation> CandidateRecommendations { get; set; }
     public DbSet<CandidateInvitation> CandidateInvitations { get; set; }
+    public DbSet<DomainLayer.Entities.PlatformSettings> PlatformSettings { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -130,8 +131,10 @@ public class AppDbContext : DbContext
             entity.Property(p => p.PhoneNumber).HasMaxLength(20);
             entity.Property(p => p.LinkedInUrl).HasMaxLength(500);
             entity.Property(p => p.GithubUrl).HasMaxLength(500);
+            entity.Property(p => p.Address).HasMaxLength(500);
 
-            entity.Property(p => p.AllowRecruiterRecommendation).IsRequired().HasDefaultValue(false);
+            entity.Property(p => p.AllowRecruiterRecommendation).IsRequired().HasDefaultValue(true);
+            entity.Property(p => p.AutoSyncProfileFromCv).IsRequired().HasDefaultValue(true);
 
             entity.HasOne(p => p.User)
                 .WithOne()
@@ -327,10 +330,6 @@ public class AppDbContext : DbContext
             entity.ToTable("practice_sessions");
             entity.HasKey(s => s.Id);
             entity.Property(s => s.Status).IsRequired().HasMaxLength(20);
-            // SCRUM-305: AI Insight song ngữ + skillsToImprove
-            entity.Property(s => s.AiInsightVi).HasMaxLength(2000);
-            entity.Property(s => s.AiInsightEn).HasMaxLength(2000);
-            entity.Property(s => s.SkillsToImproveJson);
 
             entity.HasOne(s => s.QuestionSet)
                   .WithMany()
@@ -417,6 +416,23 @@ public class AppDbContext : DbContext
 
             entity.HasIndex(i => i.RecommendationId).IsUnique();
             entity.HasIndex(i => new { i.CandidateUserId, i.Status });
+        });
+
+        // ── PlatformSettings (singleton — Admin runtime config) ─────
+        modelBuilder.Entity<DomainLayer.Entities.PlatformSettings>(entity =>
+        {
+            entity.ToTable("platform_settings");
+            entity.HasKey(p => p.Id);
+            entity.Property(p => p.MinQuestionsToPublish).IsRequired().HasDefaultValue(10);
+
+            // Seed đúng 1 dòng cố định — repository luôn đọc/ghi dòng này, không tự tạo mới.
+            entity.HasData(new DomainLayer.Entities.PlatformSettings
+            {
+                Id = DomainLayer.Entities.PlatformSettings.SingletonId,
+                MinQuestionsToPublish = 10,
+                CreatedAt = new DateTime(2026, 7, 21, 0, 0, 0, DateTimeKind.Utc),
+                IsActive = true
+            });
         });
     }
 }

@@ -20,7 +20,7 @@ public class CandidatePrivacySettingsService : ICandidatePrivacySettingsService
         var profile = await _profileRepository.GetByUserIdAsync(candidateUserId);
         return new CandidatePrivacySettingsDto
         {
-            AllowRecruiterRecommendation = profile?.AllowRecruiterRecommendation ?? false
+            AllowRecruiterRecommendation = profile?.AllowRecruiterRecommendation ?? true
         };
     }
 
