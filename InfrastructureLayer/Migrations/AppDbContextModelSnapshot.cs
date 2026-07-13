@@ -165,10 +165,19 @@ namespace InfrastructureLayer.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<string>("Address")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
                     b.Property<bool>("AllowRecruiterRecommendation")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
-                        .HasDefaultValue(false);
+                        .HasDefaultValue(true);
+
+                    b.Property<bool>("AutoSyncProfileFromCv")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true);
 
                     b.Property<string>("Bio")
                         .HasColumnType("text");
@@ -587,19 +596,45 @@ namespace InfrastructureLayer.Migrations
                     b.ToTable("knowledge_documents", (string)null);
                 });
 
-            modelBuilder.Entity("DomainLayer.Entities.PracticeSession", b =>
+            modelBuilder.Entity("DomainLayer.Entities.PlatformSettings", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
-                    b.Property<string>("AiInsightEn")
-                        .HasMaxLength(2000)
-                        .HasColumnType("character varying(2000)");
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
 
-                    b.Property<string>("AiInsightVi")
-                        .HasMaxLength(2000)
-                        .HasColumnType("character varying(2000)");
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("MinQuestionsToPublish")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(10);
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("platform_settings", (string)null);
+
+                    b.HasData(
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000001"),
+                            CreatedAt = new DateTime(2026, 7, 21, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            MinQuestionsToPublish = 10
+                        });
+                });
+
+            modelBuilder.Entity("DomainLayer.Entities.PracticeSession", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
 
                     b.Property<Guid>("CandidateUserId")
                         .HasColumnType("uuid");
@@ -618,9 +653,6 @@ namespace InfrastructureLayer.Migrations
 
                     b.Property<Guid>("QuestionSetId")
                         .HasColumnType("uuid");
-
-                    b.Property<string>("SkillsToImproveJson")
-                        .HasColumnType("text");
 
                     b.Property<DateTime?>("StartedAt")
                         .HasColumnType("timestamp with time zone");

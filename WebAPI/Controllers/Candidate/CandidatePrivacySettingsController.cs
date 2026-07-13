@@ -20,7 +20,7 @@ public class CandidatePrivacySettingsController : ControllerBase
         _service = service;
     }
 
-    /// <summary>Xem cài đặt quyền riêng tư hiện tại — allowRecruiterRecommendation mặc định false nếu chưa từng bật.</summary>
+    /// <summary>Xem cài đặt quyền riêng tư hiện tại — allowRecruiterRecommendation mặc định true nếu chưa từng đổi.</summary>
     [HttpGet]
     public async Task<IActionResult> Get()
     {
