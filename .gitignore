@@ -59,3 +59,6 @@ ApplicationLayer.Tests/
 ## OS
 .DS_Store
 Thumbs.db
+
+## Claude Code local memory - khong push len git (tranh len main)
+CLAUDE.md
