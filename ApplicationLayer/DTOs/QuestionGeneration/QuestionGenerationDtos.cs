@@ -55,6 +55,7 @@ public class JobMetaDto
     public int QuestionCount { get; set; }
     public bool HasDraft { get; set; }
     public bool PlanApproved { get; set; }
+    public Guid? QuestionSetId { get; set; }
 }
 
 public class JobFailureDto
@@ -78,6 +79,7 @@ public class JobUiActionsDto
     public bool CanEditQuestions { get; set; }
     public bool CanSaveDraft { get; set; }
     public bool CanViewDraft { get; set; }
+    public bool CanEditDraftQuestions { get; set; }
 }
 
 public class JobUiStateDto

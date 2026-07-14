@@ -843,6 +843,9 @@ public class QuestionGenerationJobService : IQuestionGenerationJobService
         var questionTypes = JsonSerializer.Deserialize<List<string>>(job.QuestionTypesJson, JsonOptions) ?? new();
         var skills = JsonSerializer.Deserialize<List<string>>(job.SkillsJson, JsonOptions) ?? new();
         var hasDraft = await _questionSetRepository.ExistsBySourceJobIdAsync(job.Id);
+        var questionSetId = hasDraft
+            ? await _questionSetRepository.GetIdBySourceJobIdAsync(job.Id)
+            : null;
         var planApproved = plan?.IsApproved == true;
 
         var (_, error) = MapJobError(job.ErrorMessage);
@@ -873,7 +876,8 @@ public class QuestionGenerationJobService : IQuestionGenerationJobService
             CompletedAt = job.CompletedAt,
             QuestionCount = job.Questions.Count,
             HasDraft = hasDraft,
-            PlanApproved = planApproved
+            PlanApproved = planApproved,
+            QuestionSetId = questionSetId
         };
 
         return new JobStatusResponseDto
