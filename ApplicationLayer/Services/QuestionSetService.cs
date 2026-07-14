@@ -1,5 +1,7 @@
 ﻿using System.Text.Json;
 using ApplicationLayer.DTOs.QuestionSet;
+using ApplicationLayer.DTOs.QuestionGeneration;
+using ApplicationLayer.Helpers;
 using ApplicationLayer.Interfaces.Repositories;
 using ApplicationLayer.Interfaces.Services;
 using DomainLayer.Constants;
@@ -143,6 +145,185 @@ public class QuestionSetService : IQuestionSetService
                 .ToList()
         };
     }
+
+    public async Task<QuestionSetQuestionResponseDto> UpdateQuestionAsync(
+        Guid questionSetId, Guid questionId, Guid ownerId, UpdateQuestionRequestDto dto)
+    {
+        await EnsureOwnedQuestionSetAsync(questionSetId, ownerId);
+
+        var question = await _questionSetRepository.GetQuestionByIdAsync(questionId)
+            ?? throw new NotFoundException("Câu hỏi không tồn tại.");
+
+        if (question.QuestionSetId != questionSetId)
+            throw new NotFoundException("Câu hỏi không thuộc question set này.");
+
+        ApplyQuestionFields(question, dto.Question, dto.QuestionType, dto.Difficulty,
+            dto.Skill, dto.FocusArea, dto.Rationale, dto.SampleAnswer,
+            dto.EvaluationCriteria, dto.Citations);
+
+        await _questionSetRepository.UpdateQuestionAsync(question);
+        return MapQuestion(question);
+    }
+
+    public async Task<QuestionSetQuestionResponseDto> AddQuestionAsync(
+        Guid questionSetId, Guid ownerId, CreateQuestionRequestDto dto)
+    {
+        await EnsureOwnedQuestionSetAsync(questionSetId, ownerId);
+        ValidateQuestionInput(dto.Question, dto.QuestionType, dto.Difficulty);
+
+        var order = dto.Order ?? (await _questionSetRepository.GetMaxOrderByQuestionSetIdAsync(questionSetId) + 1);
+        if (order <= 0)
+            throw new BadRequestException("order phải lớn hơn 0.");
+
+        var question = new QuestionSetQuestion
+        {
+            QuestionSetId = questionSetId,
+            Order = order,
+            Question = dto.Question.Trim(),
+            QuestionType = QuestionTypeNormalizer.Normalize(new List<string> { dto.QuestionType }).First(),
+            Difficulty = dto.Difficulty.Trim(),
+            Skill = dto.Skill?.Trim(),
+            FocusArea = dto.FocusArea?.Trim(),
+            Rationale = dto.Rationale?.Trim(),
+            SampleAnswer = dto.SampleAnswer?.Trim(),
+            EvaluationCriteriaJson = JsonSerializer.Serialize(dto.EvaluationCriteria, JsonOptions),
+            CitationsJson = JsonSerializer.Serialize(dto.Citations, JsonOptions)
+        };
+
+        await _questionSetRepository.AddQuestionAsync(question);
+        return MapQuestion(question);
+    }
+
+    public async Task DeleteQuestionAsync(Guid questionSetId, Guid questionId, Guid ownerId)
+    {
+        await EnsureOwnedQuestionSetAsync(questionSetId, ownerId);
+
+        var count = await _questionSetRepository.GetQuestionCountByQuestionSetIdAsync(questionSetId);
+        if (count <= 1)
+            throw new BadRequestException("Không thể xóa câu hỏi cuối cùng.");
+
+        var question = await _questionSetRepository.GetQuestionByIdAsync(questionId)
+            ?? throw new NotFoundException("Câu hỏi không tồn tại.");
+
+        if (question.QuestionSetId != questionSetId)
+            throw new NotFoundException("Câu hỏi không thuộc question set này.");
+
+        await _questionSetRepository.DeleteQuestionAsync(question);
+        await NormalizeQuestionOrdersAsync(questionSetId);
+    }
+
+    public async Task<IReadOnlyList<QuestionSetQuestionResponseDto>> ReorderQuestionsAsync(
+        Guid questionSetId, Guid ownerId, ReorderQuestionsRequestDto dto)
+    {
+        await EnsureOwnedQuestionSetAsync(questionSetId, ownerId);
+
+        if (dto.Items is null || dto.Items.Count == 0)
+            throw new BadRequestException("items không được rỗng.");
+
+        var existing = await _questionSetRepository.GetQuestionsByQuestionSetIdAsync(questionSetId);
+        if (dto.Items.Count != existing.Count)
+            throw new BadRequestException("Danh sách reorder phải chứa đủ tất cả câu hỏi.");
+
+        var existingIds = existing.Select(q => q.Id).ToHashSet();
+        foreach (var item in dto.Items)
+        {
+            if (!existingIds.Contains(item.QuestionId))
+                throw new BadRequestException("questionId không thuộc question set này.");
+            if (item.Order <= 0)
+                throw new BadRequestException("order phải lớn hơn 0.");
+        }
+
+        var orders = dto.Items.Select(i => i.Order).ToList();
+        if (orders.Distinct().Count() != orders.Count)
+            throw new BadRequestException("order bị trùng.");
+
+        foreach (var item in dto.Items)
+        {
+            var question = existing.First(q => q.Id == item.QuestionId);
+            question.Order = item.Order;
+            await _questionSetRepository.UpdateQuestionAsync(question);
+        }
+
+        return (await _questionSetRepository.GetQuestionsByQuestionSetIdAsync(questionSetId))
+            .OrderBy(q => q.Order)
+            .Select(MapQuestion)
+            .ToList();
+    }
+
+    private async Task<QuestionSet> EnsureOwnedQuestionSetAsync(Guid questionSetId, Guid ownerId)
+    {
+        var questionSet = await _questionSetRepository.GetByIdWithQuestionsAsync(questionSetId)
+            ?? throw new NotFoundException("Question set không tồn tại.");
+
+        if (questionSet.OwnerId != ownerId)
+            throw new ForbiddenException("Bạn không có quyền truy cập question set này.");
+
+        return questionSet;
+    }
+
+    private static void ValidateQuestionInput(string question, string questionType, string difficulty)
+    {
+        if (string.IsNullOrWhiteSpace(question))
+            throw new BadRequestException("question không được để trống.");
+        if (string.IsNullOrWhiteSpace(questionType))
+            throw new BadRequestException("questionType không được để trống.");
+        if (string.IsNullOrWhiteSpace(difficulty))
+            throw new BadRequestException("difficulty không được để trống.");
+    }
+
+    private void ApplyQuestionFields(
+        QuestionSetQuestion question,
+        string text,
+        string questionType,
+        string difficulty,
+        string? skill,
+        string? focusArea,
+        string? rationale,
+        string? sampleAnswer,
+        List<object> evaluationCriteria,
+        List<object> citations)
+    {
+        ValidateQuestionInput(text, questionType, difficulty);
+
+        question.Question = text.Trim();
+        question.QuestionType = QuestionTypeNormalizer.Normalize(new List<string> { questionType }).First();
+        question.Difficulty = difficulty.Trim();
+        question.Skill = skill?.Trim();
+        question.FocusArea = focusArea?.Trim();
+        question.Rationale = rationale?.Trim();
+        question.SampleAnswer = sampleAnswer?.Trim();
+        question.EvaluationCriteriaJson = JsonSerializer.Serialize(evaluationCriteria, JsonOptions);
+        question.CitationsJson = JsonSerializer.Serialize(citations, JsonOptions);
+    }
+
+    private async Task NormalizeQuestionOrdersAsync(Guid questionSetId)
+    {
+        var questions = await _questionSetRepository.GetQuestionsByQuestionSetIdAsync(questionSetId);
+        var ordered = questions.OrderBy(q => q.Order).ToList();
+        for (var i = 0; i < ordered.Count; i++)
+        {
+            var expected = i + 1;
+            if (ordered[i].Order == expected)
+                continue;
+            ordered[i].Order = expected;
+            await _questionSetRepository.UpdateQuestionAsync(ordered[i]);
+        }
+    }
+
+    private QuestionSetQuestionResponseDto MapQuestion(QuestionSetQuestion q) => new()
+    {
+        Id = q.Id,
+        Order = q.Order,
+        Question = q.Question,
+        QuestionType = q.QuestionType,
+        Difficulty = q.Difficulty,
+        Skill = q.Skill,
+        FocusArea = q.FocusArea,
+        Rationale = q.Rationale,
+        SampleAnswer = q.SampleAnswer,
+        EvaluationCriteria = JsonSerializer.Deserialize<List<object>>(q.EvaluationCriteriaJson, JsonOptions) ?? new(),
+        Citations = JsonSerializer.Deserialize<List<object>>(q.CitationsJson, JsonOptions) ?? new()
+    };
 
     private static string? TryExtractRoleTitle(string? planJson)
     {

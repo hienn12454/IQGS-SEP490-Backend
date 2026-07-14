@@ -43,12 +43,22 @@ public class QuestionAiAssistService : IQuestionAiAssistService
         var question = job.Questions.FirstOrDefault(q => q.Id == questionId)
             ?? throw new NotFoundException("Câu hỏi không tồn tại.");
 
-        await EnsureJobAllowsAskAiAsync(job);
+        EnsureJobAllowsAskAi(job);
+
+        var questionSet = await _questionSetRepository.GetBySourceJobIdWithQuestionsAsync(jobId);
+        var baseSnapshot = QuestionAiContextBuilder.ResolveBaseSnapshot(question, questionSet);
+        var mergedSnapshot = baseSnapshot.MergeWith(dto.CurrentQuestion);
 
         var priorHistory = await _repository.GetQuestionAiChatMessagesAsync(
             jobId, questionId, QuestionAiContextBuilder.MaxChatHistoryMessages);
 
-        var ragRequest = _contextBuilder.Build(job, question, priorHistory, dto.Message.Trim());
+        var ragRequest = _contextBuilder.Build(
+            job,
+            questionSet,
+            question,
+            mergedSnapshot,
+            priorHistory,
+            dto.Message.Trim());
         var ragResult = await _ragService.AskQuestionAssistAsync(ragRequest, ct);
 
         if (!ragResult.Success)
@@ -112,16 +122,13 @@ public class QuestionAiAssistService : IQuestionAiAssistService
         return job;
     }
 
-    private async Task EnsureJobAllowsAskAiAsync(QuestionGenerationJob job)
+    private static void EnsureJobAllowsAskAi(QuestionGenerationJob job)
     {
         if (job.Status != QuestionGenerationJobStatus.Completed)
             throw new BadRequestException("Chỉ hỏi AI khi session ở trạng thái COMPLETED.");
 
         if (job.Questions.Count == 0)
             throw new BadRequestException("Session chưa có câu hỏi.");
-
-        if (await _questionSetRepository.ExistsBySourceJobIdAsync(job.Id))
-            throw new ConflictException("Session đã lưu draft, không thể hỏi AI thêm.");
     }
 
     private static QuestionAiChatMessageDto MapChatMessage(

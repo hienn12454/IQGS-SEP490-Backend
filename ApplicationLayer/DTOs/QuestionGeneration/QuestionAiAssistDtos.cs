@@ -3,6 +3,19 @@ namespace ApplicationLayer.DTOs.QuestionGeneration;
 public class AskQuestionAiRequestDto
 {
     public string Message { get; set; } = string.Empty;
+    /// <summary>FE override tùy chọn — field trống/null thì BE dùng nguồn mặc định.</summary>
+    public CurrentQuestionOverrideDto? CurrentQuestion { get; set; }
+}
+
+public class CurrentQuestionOverrideDto
+{
+    public string? Question { get; set; }
+    public string? QuestionType { get; set; }
+    public string? Difficulty { get; set; }
+    public string? Skill { get; set; }
+    public string? FocusArea { get; set; }
+    public string? Rationale { get; set; }
+    public string? SampleAnswer { get; set; }
 }
 
 public class QuestionAiSuggestionDto

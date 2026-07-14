@@ -1,4 +1,5 @@
 ﻿using ApplicationLayer.DTOs.QuestionSet;
+using ApplicationLayer.DTOs.QuestionGeneration;
 using ApplicationLayer.Interfaces.Services;
 using ApplicationLayer.ResponseCode;
 using Microsoft.AspNetCore.Authorization;
@@ -31,6 +32,36 @@ public class HrQuestionSetsController : ControllerBase
     public async Task<IActionResult> GetQuestionSet(Guid id)
     {
         var result = await _service.GetQuestionSetAsync(id, GetCurrentUserId());
+        return SuccessResp.Ok(result);
+    }
+
+    [HttpPut("{questionSetId:guid}/questions/{questionId:guid}")]
+    public async Task<IActionResult> UpdateQuestion(
+        Guid questionSetId, Guid questionId, [FromBody] UpdateQuestionRequestDto dto)
+    {
+        var result = await _service.UpdateQuestionAsync(questionSetId, questionId, GetCurrentUserId(), dto);
+        return SuccessResp.Ok(result);
+    }
+
+    [HttpPost("{questionSetId:guid}/questions")]
+    public async Task<IActionResult> AddQuestion(Guid questionSetId, [FromBody] CreateQuestionRequestDto dto)
+    {
+        var result = await _service.AddQuestionAsync(questionSetId, GetCurrentUserId(), dto);
+        return SuccessResp.Created(result);
+    }
+
+    [HttpDelete("{questionSetId:guid}/questions/{questionId:guid}")]
+    public async Task<IActionResult> DeleteQuestion(Guid questionSetId, Guid questionId)
+    {
+        await _service.DeleteQuestionAsync(questionSetId, questionId, GetCurrentUserId());
+        return SuccessResp.NoContent();
+    }
+
+    [HttpPut("{questionSetId:guid}/questions/reorder")]
+    public async Task<IActionResult> ReorderQuestions(
+        Guid questionSetId, [FromBody] ReorderQuestionsRequestDto dto)
+    {
+        var result = await _service.ReorderQuestionsAsync(questionSetId, GetCurrentUserId(), dto);
         return SuccessResp.Ok(result);
     }
 
