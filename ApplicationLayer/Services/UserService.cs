@@ -176,12 +176,31 @@ public class UserService : IUserService
         if (user.Role.Name != UserRole.Candidate)
             throw new ForbiddenException("Chỉ Candidate mới có thể cập nhật hồ sơ này.");
 
+        var profile = await _candidateProfileRepo.GetByUserIdAsync(userId);
+
+        // Candidate tự tay đổi field nào (khác giá trị đang lưu) thì khóa vĩnh viễn field đó khỏi CV sync —
+        // gửi lại đúng giá trị cũ (FE luôn resend cả form) thì không tính là "tự sửa", không bị khóa oan.
+        var newlyChangedFields = new List<string>();
+        if (dto.FullName != user.FullName)
+            newlyChangedFields.Add(CvSyncableProfileFields.FullName);
+        if (dto.PhoneNumber != (profile?.PhoneNumber ?? user.PhoneNumber))
+            newlyChangedFields.Add(CvSyncableProfileFields.PhoneNumber);
+        if (dto.Address != profile?.Address)
+            newlyChangedFields.Add(CvSyncableProfileFields.Address);
+        if (dto.GithubUrl != profile?.GithubUrl)
+            newlyChangedFields.Add(CvSyncableProfileFields.GithubUrl);
+        if (dto.LinkedInUrl != profile?.LinkedInUrl)
+            newlyChangedFields.Add(CvSyncableProfileFields.LinkedInUrl);
+
+        var lockedFields = (profile?.CvSyncLockedFields ?? Array.Empty<string>())
+            .Union(newlyChangedFields)
+            .ToArray();
+
         user.FullName = dto.FullName;
         user.PhoneNumber = dto.PhoneNumber;
         user.AvatarUrl = dto.AvatarUrl;
         if (!user.IsProfileComplete) user.IsProfileComplete = true;
 
-        var profile = await _candidateProfileRepo.GetByUserIdAsync(userId);
         if (profile == null)
         {
             await _candidateProfileRepo.AddAsync(new CandidateProfile
@@ -194,7 +213,8 @@ public class UserService : IUserService
                 LinkedInUrl = dto.LinkedInUrl,
                 GithubUrl = dto.GithubUrl,
                 Bio = dto.Bio,
-                Address = dto.Address
+                Address = dto.Address,
+                CvSyncLockedFields = lockedFields
             });
         }
         else
@@ -207,6 +227,7 @@ public class UserService : IUserService
             profile.GithubUrl = dto.GithubUrl;
             profile.Bio = dto.Bio;
             profile.Address = dto.Address;
+            profile.CvSyncLockedFields = lockedFields;
             await _candidateProfileRepo.UpdateAsync(profile);
         }
 
