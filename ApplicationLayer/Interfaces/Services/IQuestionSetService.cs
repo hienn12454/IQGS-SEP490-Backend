@@ -15,4 +15,6 @@ public interface IQuestionSetService
     Task DeleteQuestionAsync(Guid questionSetId, Guid questionId, Guid ownerId);
     Task<IReadOnlyList<QuestionSetQuestionResponseDto>> ReorderQuestionsAsync(
         Guid questionSetId, Guid ownerId, ReorderQuestionsRequestDto dto);
+    Task<QuestionSetActionResponseDto> PublishAsync(Guid questionSetId, Guid ownerId);
+    Task<QuestionSetActionResponseDto> UnpublishAsync(Guid questionSetId, Guid ownerId);
 }

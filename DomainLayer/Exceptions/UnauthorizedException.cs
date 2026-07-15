@@ -19,7 +19,7 @@ public class UnauthorizedException : BaseHttpException
     {
     }
 
-    public UnauthorizedException(string message = "Unauthorized", string? errorCode = null, string? refLink = null) : base(message, statusCode, errorCode, refLink)
+    public UnauthorizedException(string message = "Bạn cần đăng nhập để thực hiện thao tác này.", string? errorCode = null, string? refLink = null) : base(message, statusCode, errorCode, refLink)
     {
     }
 }

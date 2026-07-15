@@ -10,6 +10,7 @@ public class QuestionSet : BaseEntity
     public string? HrNote { get; set; }
     public string PlanJson { get; set; } = "{}";
     public DateTime? GeneratedAt { get; set; }
+    public DateTime? PublishedAt { get; set; }
 
     public QuestionGenerationJob SourceJob { get; set; } = null!;
     public ICollection<QuestionSetQuestion> Questions { get; set; } = new List<QuestionSetQuestion>();

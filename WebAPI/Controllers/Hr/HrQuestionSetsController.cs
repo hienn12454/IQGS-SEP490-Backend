@@ -2,6 +2,7 @@
 using ApplicationLayer.DTOs.QuestionGeneration;
 using ApplicationLayer.Interfaces.Services;
 using ApplicationLayer.ResponseCode;
+using DomainLayer.Exceptions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
@@ -65,10 +66,30 @@ public class HrQuestionSetsController : ControllerBase
         return SuccessResp.Ok(result);
     }
 
+    /// <summary>Publish bộ câu hỏi lên marketplace (DRAFT → PUBLISHED). Yêu cầu tối thiểu 10 câu hỏi.</summary>
+    [HttpPost("{id:guid}/publish")]
+    public async Task<IActionResult> Publish(Guid id)
+    {
+        var result = await _service.PublishAsync(id, GetCurrentUserId());
+        return SuccessResp.Ok(result);
+    }
+
+    /// <summary>Gỡ bộ câu hỏi khỏi marketplace (PUBLISHED → DRAFT).</summary>
+    [HttpPost("{id:guid}/unpublish")]
+    public async Task<IActionResult> Unpublish(Guid id)
+    {
+        var result = await _service.UnpublishAsync(id, GetCurrentUserId());
+        return SuccessResp.Ok(result);
+    }
+
     private Guid GetCurrentUserId()
     {
         var userIdStr = User.FindFirst("sub")?.Value
             ?? User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        return Guid.Parse(userIdStr!);
+
+        if (!Guid.TryParse(userIdStr, out var userId))
+            throw new UnauthorizedException("Không xác định được người dùng từ token đăng nhập.");
+
+        return userId;
     }
 }

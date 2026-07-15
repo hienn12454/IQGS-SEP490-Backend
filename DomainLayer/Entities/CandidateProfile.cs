@@ -16,4 +16,9 @@ public class CandidateProfile : BaseEntity
     public string? LinkedInUrl { get; set; }
     public string? GithubUrl { get; set; }
     public string? Bio { get; set; }
+
+    public string? CvFileName { get; set; }
+    public string? CvBlobPath { get; set; }
+    public string? CvContentType { get; set; }
+    public DateTime? CvUploadedAt { get; set; }
 }

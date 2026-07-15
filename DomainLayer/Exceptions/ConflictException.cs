@@ -19,7 +19,7 @@ public class ConflictException : BaseHttpException
     {
     }
 
-    public ConflictException(string message = "Conflict", string? errorCode = null, string? refLink = null) : base(message, statusCode, errorCode, refLink)
+    public ConflictException(string message = "Dữ liệu đang xung đột với trạng thái hiện tại.", string? errorCode = null, string? refLink = null) : base(message, statusCode, errorCode, refLink)
     {
     }
 }
