@@ -14,6 +14,7 @@ public class HRProfile : BaseEntity
     public string? JobTitle { get; set; }               // Chức danh: Recruiter, HR Manager...
     public string? PhoneNumber { get; set; }
     public string? LinkedInUrl { get; set; }
+    public string? GithubUrl { get; set; }
     public string? Bio { get; set; }
 
     /// <summary>Admin xác minh người dùng thực sự thuộc công ty (AC-07 SCRUM-147).</summary>

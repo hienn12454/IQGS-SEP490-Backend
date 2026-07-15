@@ -33,6 +33,10 @@ public class UpdateHRProfileDto
     [Url(ErrorMessage = "LinkedIn URL không hợp lệ.")]
     public string? LinkedInUrl { get; set; }
 
+    [MaxLength(500, ErrorMessage = "GitHub URL không được vượt quá 500 ký tự.")]
+    [Url(ErrorMessage = "GitHub URL không hợp lệ.")]
+    public string? GithubUrl { get; set; }
+
     [MaxLength(1000, ErrorMessage = "Giới thiệu bản thân không được vượt quá 1000 ký tự.")]
     public string? Bio { get; set; }
 }
