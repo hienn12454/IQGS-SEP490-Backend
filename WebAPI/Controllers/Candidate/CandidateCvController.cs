@@ -6,6 +6,7 @@ using WebAPI.Extensions;
 
 namespace WebAPI.Controllers.Candidate;
 
+/// <summary>CV của Candidate — upload để AI trích kỹ năng (skills) và tự động cập nhật TechStack trên hồ sơ. Mỗi Candidate chỉ giữ đúng 1 CV.</summary>
 [ApiController]
 [Route("api/candidate/cv")]
 [Authorize(Roles = "Candidate")]
@@ -18,22 +19,26 @@ public class CandidateCvController : ControllerBase
         _service = service;
     }
 
-    /// <summary>Tải lên CV — mỗi candidate chỉ giữ 1 CV, tải lên mới sẽ thay thế CV cũ.</summary>
+    /// <summary>Tải lên CV (PDF/DOCX, tối đa theo cấu hình Cv:MaxFileSizeMb) — lưu file, gọi AI phân tích kỹ năng, tự động ghi đè TechStack trên hồ sơ. Upload mới sẽ thay thế CV cũ.</summary>
+    /// <remarks>
+    /// 400 nếu sai định dạng/quá dung lượng. Nếu bước phân tích AI lỗi/timeout, request trả lỗi rõ ràng nhưng file CV đã lưu vẫn được giữ nguyên, TechStack cũ không bị mất.
+    /// </remarks>
     [HttpPost]
     [Consumes("multipart/form-data")]
-    public async Task<IActionResult> Upload([FromForm] CandidateCvUploadForm form)
+    public async Task<IActionResult> Upload([FromForm] CandidateCvUploadForm form, CancellationToken ct)
     {
         if (form.File is null || form.File.Length == 0)
             return BadRequest(new { Code = 400, Error = "File là bắt buộc." });
 
         await using var stream = form.File.OpenReadStream();
         var result = await _service.UploadAsync(
-            stream, form.File.FileName, form.File.ContentType, form.File.Length, User.GetUserId());
+            stream, form.File.FileName, form.File.ContentType, form.File.Length, User.GetUserId(), ct);
 
         return SuccessResp.Ok(result);
     }
 
-    /// <summary>Lấy thông tin CV hiện tại kèm link tải xuống (SAS URL có thời hạn).</summary>
+    /// <summary>Trạng thái + kết quả phân tích CV gần nhất: tên file, skills[], summary, techStack hiện tại, thời điểm phân tích, link tải file.</summary>
+    /// <remarks>404 nếu Candidate chưa từng upload CV nào.</remarks>
     [HttpGet]
     public async Task<IActionResult> Get()
     {
@@ -41,7 +46,8 @@ public class CandidateCvController : ControllerBase
         return SuccessResp.Ok(result);
     }
 
-    /// <summary>Xóa CV hiện tại.</summary>
+    /// <summary>Xóa CV hiện tại (file trên Blob + toàn bộ thông tin đánh giá) — không tự động xóa TechStack đã cập nhật trước đó trên hồ sơ.</summary>
+    /// <remarks>404 nếu chưa có CV nào để xóa.</remarks>
     [HttpDelete]
     public async Task<IActionResult> Delete()
     {
@@ -52,5 +58,6 @@ public class CandidateCvController : ControllerBase
 
 public class CandidateCvUploadForm
 {
+    /// <summary>File CV, định dạng PDF hoặc DOCX.</summary>
     public IFormFile File { get; set; } = null!;
 }

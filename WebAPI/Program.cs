@@ -90,6 +90,14 @@ public class Program
                     Array.Empty<string>()
                 }
             });
+
+            // Đọc XML doc comment (/// <summary>) từ WebAPI + ApplicationLayer để hiển thị mô tả API/DTO trên Swagger UI
+            foreach (var xmlFile in new[] { "WebAPI.xml", "ApplicationLayer.xml" })
+            {
+                var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFile);
+                if (File.Exists(xmlPath))
+                    options.IncludeXmlComments(xmlPath, includeControllerXmlComments: true);
+            }
         });
 
         var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")

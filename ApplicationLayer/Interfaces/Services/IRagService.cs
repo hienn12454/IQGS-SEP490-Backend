@@ -8,6 +8,7 @@ public interface IRagService
     Task<RagAsyncAcceptedResult> EnqueueIngestAsync(RagIngestRequest request, CancellationToken ct = default);
     Task<RagDeleteResult> DeleteDocumentChunksAsync(Guid documentId, CancellationToken ct = default);
     Task<ParseJdResult> ParseJdAsync(Stream fileStream, string fileName, CancellationToken ct = default);
+    Task<ParseCvResult> ParseCvAsync(Stream fileStream, string fileName, CancellationToken ct = default);
     Task<ValidateJdResult> ValidateJdAsync(ValidateJdRequest request, CancellationToken ct = default);
     Task<GeneratePlanResult> GeneratePlanAsync(GeneratePlanRequest request, CancellationToken ct = default);
     Task<RagAsyncAcceptedResult> EnqueueGeneratePlanAsync(Guid jobId, GeneratePlanRequest request, CancellationToken ct = default);
