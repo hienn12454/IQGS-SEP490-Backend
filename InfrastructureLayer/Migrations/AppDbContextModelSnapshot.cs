@@ -200,6 +200,10 @@ namespace InfrastructureLayer.Migrations
                     b.Property<DateTime?>("CvParsedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string[]>("CvSyncLockedFields")
+                        .IsRequired()
+                        .HasColumnType("text[]");
+
                     b.Property<DateTime?>("CvUploadedAt")
                         .HasColumnType("timestamp with time zone");
 
