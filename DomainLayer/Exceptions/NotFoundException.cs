@@ -19,7 +19,7 @@ public class NotFoundException : BaseHttpException
     {
     }
 
-    public NotFoundException(string message = "Entity not found", string? errorCode = null, string? refLink = null) : base(message, statusCode, errorCode, refLink)
+    public NotFoundException(string message = "Không tìm thấy dữ liệu.", string? errorCode = null, string? refLink = null) : base(message, statusCode, errorCode, refLink)
     {
     }
 }

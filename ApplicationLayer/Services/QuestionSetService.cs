@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using ApplicationLayer.DTOs.QuestionSet;
 using ApplicationLayer.DTOs.QuestionGeneration;
 using ApplicationLayer.Helpers;
@@ -12,6 +12,8 @@ namespace ApplicationLayer.Services;
 
 public class QuestionSetService : IQuestionSetService
 {
+    private const int MinQuestionsToPublish = 10;
+
     private readonly IQuestionSetRepository _questionSetRepository;
     private readonly IQuestionGenerationJobRepository _jobRepository;
 
@@ -99,7 +101,8 @@ public class QuestionSetService : IQuestionSetService
             JobId = qs.SourceJobId,
             Title = qs.Title,
             Status = qs.Status,
-            SavedAt = qs.CreatedAt
+            SavedAt = qs.CreatedAt,
+            PublishedAt = qs.PublishedAt
         }).ToList();
     }
 
@@ -126,6 +129,7 @@ public class QuestionSetService : IQuestionSetService
             Plan = planObj,
             GeneratedAt = questionSet.GeneratedAt,
             SavedAt = questionSet.CreatedAt,
+            PublishedAt = questionSet.PublishedAt,
             Questions = questionSet.Questions
                 .OrderBy(q => q.Order)
                 .Select(q => new QuestionSetQuestionResponseDto
@@ -149,7 +153,7 @@ public class QuestionSetService : IQuestionSetService
     public async Task<QuestionSetQuestionResponseDto> UpdateQuestionAsync(
         Guid questionSetId, Guid questionId, Guid ownerId, UpdateQuestionRequestDto dto)
     {
-        await EnsureOwnedQuestionSetAsync(questionSetId, ownerId);
+        await EnsureEditableQuestionSetAsync(questionSetId, ownerId);
 
         var question = await _questionSetRepository.GetQuestionByIdAsync(questionId)
             ?? throw new NotFoundException("Câu hỏi không tồn tại.");
@@ -168,7 +172,7 @@ public class QuestionSetService : IQuestionSetService
     public async Task<QuestionSetQuestionResponseDto> AddQuestionAsync(
         Guid questionSetId, Guid ownerId, CreateQuestionRequestDto dto)
     {
-        await EnsureOwnedQuestionSetAsync(questionSetId, ownerId);
+        await EnsureEditableQuestionSetAsync(questionSetId, ownerId);
         ValidateQuestionInput(dto.Question, dto.QuestionType, dto.Difficulty);
 
         var order = dto.Order ?? (await _questionSetRepository.GetMaxOrderByQuestionSetIdAsync(questionSetId) + 1);
@@ -196,7 +200,7 @@ public class QuestionSetService : IQuestionSetService
 
     public async Task DeleteQuestionAsync(Guid questionSetId, Guid questionId, Guid ownerId)
     {
-        await EnsureOwnedQuestionSetAsync(questionSetId, ownerId);
+        await EnsureEditableQuestionSetAsync(questionSetId, ownerId);
 
         var count = await _questionSetRepository.GetQuestionCountByQuestionSetIdAsync(questionSetId);
         if (count <= 1)
@@ -215,7 +219,7 @@ public class QuestionSetService : IQuestionSetService
     public async Task<IReadOnlyList<QuestionSetQuestionResponseDto>> ReorderQuestionsAsync(
         Guid questionSetId, Guid ownerId, ReorderQuestionsRequestDto dto)
     {
-        await EnsureOwnedQuestionSetAsync(questionSetId, ownerId);
+        await EnsureEditableQuestionSetAsync(questionSetId, ownerId);
 
         if (dto.Items is null || dto.Items.Count == 0)
             throw new BadRequestException("items không được rỗng.");
@@ -250,6 +254,53 @@ public class QuestionSetService : IQuestionSetService
             .ToList();
     }
 
+    public async Task<QuestionSetActionResponseDto> PublishAsync(Guid questionSetId, Guid ownerId)
+    {
+        var questionSet = await EnsureOwnedQuestionSetAsync(questionSetId, ownerId);
+
+        if (questionSet.Status == QuestionSetStatus.Published)
+            throw new ConflictException("Bộ câu hỏi đã được publish trước đó.");
+
+        var activeQuestionCount = questionSet.Questions.Count(q => q.IsActive);
+        if (activeQuestionCount < MinQuestionsToPublish)
+            throw new BadRequestException(
+                $"Bộ câu hỏi cần tối thiểu {MinQuestionsToPublish} câu hỏi để publish (hiện có {activeQuestionCount}).");
+
+        questionSet.Status = QuestionSetStatus.Published;
+        questionSet.PublishedAt = DateTime.UtcNow;
+        questionSet.UpdatedAt = DateTime.UtcNow;
+
+        await _questionSetRepository.UpdateAsync(questionSet);
+
+        return new QuestionSetActionResponseDto
+        {
+            QuestionSetId = questionSet.Id,
+            Status = questionSet.Status,
+            PublishedAt = questionSet.PublishedAt
+        };
+    }
+
+    public async Task<QuestionSetActionResponseDto> UnpublishAsync(Guid questionSetId, Guid ownerId)
+    {
+        var questionSet = await EnsureOwnedQuestionSetAsync(questionSetId, ownerId);
+
+        if (questionSet.Status != QuestionSetStatus.Published)
+            throw new ConflictException("Bộ câu hỏi hiện không ở trạng thái PUBLISHED.");
+
+        questionSet.Status = QuestionSetStatus.Draft;
+        questionSet.PublishedAt = null;
+        questionSet.UpdatedAt = DateTime.UtcNow;
+
+        await _questionSetRepository.UpdateAsync(questionSet);
+
+        return new QuestionSetActionResponseDto
+        {
+            QuestionSetId = questionSet.Id,
+            Status = questionSet.Status,
+            PublishedAt = questionSet.PublishedAt
+        };
+    }
+
     private async Task<QuestionSet> EnsureOwnedQuestionSetAsync(Guid questionSetId, Guid ownerId)
     {
         var questionSet = await _questionSetRepository.GetByIdWithQuestionsAsync(questionSetId)
@@ -257,6 +308,17 @@ public class QuestionSetService : IQuestionSetService
 
         if (questionSet.OwnerId != ownerId)
             throw new ForbiddenException("Bạn không có quyền truy cập question set này.");
+
+        return questionSet;
+    }
+
+    /// <summary>Như <see cref="EnsureOwnedQuestionSetAsync"/> nhưng chặn sửa câu hỏi khi bộ đang PUBLISHED trên marketplace.</summary>
+    private async Task<QuestionSet> EnsureEditableQuestionSetAsync(Guid questionSetId, Guid ownerId)
+    {
+        var questionSet = await EnsureOwnedQuestionSetAsync(questionSetId, ownerId);
+
+        if (questionSet.Status == QuestionSetStatus.Published)
+            throw new ConflictException("Bộ câu hỏi đang publish trên marketplace. Vui lòng unpublish trước khi chỉnh sửa câu hỏi.");
 
         return questionSet;
     }

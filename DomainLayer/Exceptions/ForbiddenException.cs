@@ -19,7 +19,7 @@ public class ForbiddenException : BaseHttpException
     {
     }
 
-    public ForbiddenException(string message = "Forbidden", string? errorCode = null, string? refLink = null) : base(message, statusCode, errorCode, refLink)
+    public ForbiddenException(string message = "Bạn không có quyền thực hiện thao tác này.", string? errorCode = null, string? refLink = null) : base(message, statusCode, errorCode, refLink)
     {
     }
 }

@@ -90,6 +90,14 @@ public class Program
                     Array.Empty<string>()
                 }
             });
+
+            // Đọc XML doc comment (/// <summary>) từ WebAPI + ApplicationLayer để hiển thị mô tả API/DTO trên Swagger UI
+            foreach (var xmlFile in new[] { "WebAPI.xml", "ApplicationLayer.xml" })
+            {
+                var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFile);
+                if (File.Exists(xmlPath))
+                    options.IncludeXmlComments(xmlPath, includeControllerXmlComments: true);
+            }
         });
 
         var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
@@ -110,6 +118,8 @@ public class Program
             builder.Configuration.GetSection(BlobStorageSettings.SectionName));
         builder.Services.Configure<KnowledgeBaseSettings>(
             builder.Configuration.GetSection(KnowledgeBaseSettings.SectionName));
+        builder.Services.Configure<CvSettings>(
+            builder.Configuration.GetSection(CvSettings.SectionName));
         builder.Services.Configure<WatchdogSettings>(
             builder.Configuration.GetSection(WatchdogSettings.SectionName));
 
@@ -246,6 +256,10 @@ public class Program
         builder.Services.AddScoped<IUserRepository, UserRepository>();
         builder.Services.AddScoped<IHRProfileRepository, HRProfileRepository>();
         builder.Services.AddScoped<ICandidateProfileRepository, CandidateProfileRepository>();
+        builder.Services.AddScoped<IQuestionSetBookmarkRepository, QuestionSetBookmarkRepository>();
+        builder.Services.AddScoped<IPracticeSessionRepository, PracticeSessionRepository>();
+        builder.Services.AddScoped<ICandidateAnswerRepository, CandidateAnswerRepository>();
+        builder.Services.AddScoped<ICandidateMarketplaceRepository, CandidateMarketplaceRepository>();
         builder.Services.AddScoped<ICompanyRepository, CompanyRepository>();
         builder.Services.AddScoped<IKnowledgeDocumentRepository, KnowledgeDocumentRepository>();
         builder.Services.AddScoped<IQuestionGenerationJobRepository, QuestionGenerationJobRepository>();
@@ -260,6 +274,10 @@ public class Program
         builder.Services.AddScoped<ICompanyService, CompanyService>();
         builder.Services.AddScoped<IBlobStorageService, AzureBlobStorageService>();
         builder.Services.AddScoped<IKnowledgeDocumentService, KnowledgeDocumentService>();
+        builder.Services.AddScoped<ICandidateCvService, CandidateCvService>();
+        builder.Services.AddScoped<ICandidateQuestionSetService, CandidateQuestionSetService>();
+        builder.Services.AddScoped<ICandidateBookmarkService, CandidateBookmarkService>();
+        builder.Services.AddScoped<ICandidatePracticeSessionService, CandidatePracticeSessionService>();
         builder.Services.AddScoped<IKnowledgeDocumentInternalService, KnowledgeDocumentInternalService>();
         builder.Services.AddScoped<IQuestionGenerationJobService, QuestionGenerationJobService>();
         builder.Services.AddScoped<IQuestionGenerationJobInternalService, QuestionGenerationJobInternalService>();

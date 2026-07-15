@@ -288,7 +288,9 @@ public class UserService : IUserService
                     PhoneNumber = c.PhoneNumber,
                     LinkedInUrl = c.LinkedInUrl,
                     GithubUrl = c.GithubUrl,
-                    Bio = c.Bio
+                    Bio = c.Bio,
+                    CvFileName = c.CvFileName,
+                    CvUploadedAt = c.CvUploadedAt
                 };
         }
     }

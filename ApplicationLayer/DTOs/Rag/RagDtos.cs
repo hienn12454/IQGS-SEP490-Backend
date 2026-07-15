@@ -66,6 +66,20 @@ public class ParseJdResult
     public List<string> Errors { get; set; } = new();
 }
 
+public class ParseCvResult
+{
+    public bool Success { get; set; }
+    public List<string> Skills { get; set; } = new();
+    public string? Summary { get; set; }
+    public string? FileName { get; set; }
+    public List<string> Warnings { get; set; } = new();
+    public string? Error { get; set; }
+    public string? Detail { get; set; }
+    public string? Stage { get; set; }
+    public string? ExceptionType { get; set; }
+    public List<string> Errors { get; set; } = new();
+}
+
 public class GeneratePlanRequest
 {
     public Guid OwnerId { get; set; }

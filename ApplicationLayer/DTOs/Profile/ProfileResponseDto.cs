@@ -38,4 +38,6 @@ public class CandidateProfileDto
     public string? LinkedInUrl { get; set; }
     public string? GithubUrl { get; set; }
     public string? Bio { get; set; }
+    public string? CvFileName { get; set; }
+    public DateTime? CvUploadedAt { get; set; }
 }

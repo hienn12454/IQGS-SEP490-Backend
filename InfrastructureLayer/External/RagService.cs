@@ -80,6 +80,33 @@ public class RagService : IRagService
         return (await response.Content.ReadFromJsonAsync<ParseJdResult>(JsonOptions, ct))!;
     }
 
+    public async Task<ParseCvResult> ParseCvAsync(Stream fileStream, string fileName, CancellationToken ct = default)
+    {
+        using var content = new MultipartFormDataContent();
+        var streamContent = new StreamContent(fileStream);
+        streamContent.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
+        content.Add(streamContent, "file", fileName);
+
+        HttpResponseMessage response;
+        try
+        {
+            response = await _httpClient.PostAsync("/internal/rag/parse-cv", content, ct);
+        }
+        catch (HttpRequestException ex)
+        {
+            throw CreateRagUnavailableException(ex);
+        }
+        catch (TaskCanceledException ex) when (!ct.IsCancellationRequested)
+        {
+            throw CreateRagUnavailableException(ex);
+        }
+
+        if (!response.IsSuccessStatusCode)
+            throw await BuildRagExceptionAsync(response, ct);
+
+        return (await response.Content.ReadFromJsonAsync<ParseCvResult>(JsonOptions, ct))!;
+    }
+
     public async Task<ValidateJdResult> ValidateJdAsync(ValidateJdRequest request, CancellationToken ct = default)
     {
         HttpResponseMessage response;
@@ -504,7 +531,7 @@ public class RagService : IRagService
 
             return new RagServiceException(new StructuredErrorPayload
             {
-                Error = ragError.Error ?? "RAG error",
+                Error = ragError.Error ?? "Lỗi từ dịch vụ RAG",
                 Detail = ragError.Detail ?? errors.FirstOrDefault() ?? ragError.Error,
                 Stage = ragError.Stage,
                 Source = "RAG",
