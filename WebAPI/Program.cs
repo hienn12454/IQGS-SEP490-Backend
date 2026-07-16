@@ -291,6 +291,7 @@ public class Program
         builder.Services.AddScoped<IQuestionGenerationJobInternalService, QuestionGenerationJobInternalService>();
         builder.Services.AddScoped<IQuestionSetService, QuestionSetService>();
         builder.Services.AddScoped<IHrCompanyInfoService, HrCompanyInfoService>();
+        builder.Services.AddScoped<IHrDashboardService, HrDashboardService>();
         builder.Services.AddScoped<QuestionAiContextBuilder>();
         builder.Services.AddScoped<IQuestionAiAssistService, QuestionAiAssistService>();
 

@@ -105,6 +105,16 @@ public class QuestionGenerationJobRepository : IQuestionGenerationJobRepository
         };
     }
 
+    public async Task<IReadOnlyList<QuestionGenerationJob>> GetAllByOwnerWithPlanAndQuestionsAsync(Guid ownerId)
+    {
+        return await _context.QuestionGenerationJobs
+            .AsNoTracking()
+            .Include(j => j.Plan)
+            .Include(j => j.Questions)
+            .Where(j => j.OwnerId == ownerId)
+            .ToListAsync();
+    }
+
     public async Task<PagedResultDto<QuestionGenerationJob>> GetPagedPlansByOwnerAsync(
         Guid ownerId, QuestionGenerationListQueryDto query)
     {
