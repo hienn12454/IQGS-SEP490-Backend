@@ -454,6 +454,37 @@ namespace InfrastructureLayer.Migrations
                     b.ToTable("HRProfiles");
                 });
 
+            modelBuilder.Entity("DomainLayer.Entities.HrQuestionSetBookmark", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("HrUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<Guid>("QuestionSetId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("QuestionSetId");
+
+                    b.HasIndex("HrUserId", "QuestionSetId")
+                        .IsUnique();
+
+                    b.ToTable("hr_question_set_bookmarks", (string)null);
+                });
+
             modelBuilder.Entity("DomainLayer.Entities.KnowledgeChunk", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1240,6 +1271,17 @@ namespace InfrastructureLayer.Migrations
                     b.Navigation("Company");
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("DomainLayer.Entities.HrQuestionSetBookmark", b =>
+                {
+                    b.HasOne("DomainLayer.Entities.QuestionSet", "QuestionSet")
+                        .WithMany()
+                        .HasForeignKey("QuestionSetId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("QuestionSet");
                 });
 
             modelBuilder.Entity("DomainLayer.Entities.KnowledgeChunk", b =>
