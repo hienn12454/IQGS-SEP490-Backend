@@ -23,6 +23,7 @@ public class AppDbContext : DbContext
     public DbSet<QuestionSetQuestion> QuestionSetQuestions { get; set; }
     public DbSet<QuestionAiChatMessage> QuestionAiChatMessages { get; set; }
     public DbSet<QuestionSetBookmark> QuestionSetBookmarks { get; set; }
+    public DbSet<HrQuestionSetBookmark> HrQuestionSetBookmarks { get; set; }
     public DbSet<PracticeSession> PracticeSessions { get; set; }
     public DbSet<CandidateAnswer> CandidateAnswers { get; set; }
     public DbSet<AiFeedback> AiFeedbacks { get; set; }
@@ -324,6 +325,20 @@ public class AppDbContext : DbContext
                   .OnDelete(DeleteBehavior.Cascade);
 
             entity.HasIndex(b => new { b.CandidateUserId, b.QuestionSetId }).IsUnique();
+        });
+
+        // ── HrQuestionSetBookmark (HR — SCRUM-324) ──────────────────
+        modelBuilder.Entity<HrQuestionSetBookmark>(entity =>
+        {
+            entity.ToTable("hr_question_set_bookmarks");
+            entity.HasKey(b => b.Id);
+
+            entity.HasOne(b => b.QuestionSet)
+                  .WithMany()
+                  .HasForeignKey(b => b.QuestionSetId)
+                  .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(b => new { b.HrUserId, b.QuestionSetId }).IsUnique();
         });
 
         // ── PracticeSession (Candidate — SCRUM-277) ─────────────────

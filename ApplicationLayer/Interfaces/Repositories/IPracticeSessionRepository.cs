@@ -1,4 +1,5 @@
 using ApplicationLayer.DTOs.Candidate;
+using ApplicationLayer.DTOs.QuestionSet;
 using DomainLayer.Entities;
 
 namespace ApplicationLayer.Interfaces.Repositories;
@@ -21,4 +22,7 @@ public interface IPracticeSessionRepository
         DateTime? fromDate, DateTime? toDate, int page, int pageSize);
 
     Task<PracticeSessionStatsDto> GetStatsAsync(Guid candidateUserId, DateTime? fromDate, DateTime? toDate);
+
+    /// <summary>SCRUM-326: candidate đã practice 1 bộ câu hỏi (mọi status), sắp giảm dần theo StartedAt — dùng cho HR xem engagement.</summary>
+    Task<IReadOnlyList<QuestionSetPractitionerRow>> ListPractitionersByQuestionSetAsync(Guid questionSetId);
 }

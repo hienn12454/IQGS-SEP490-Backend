@@ -18,4 +18,7 @@ public interface IQuestionSetService
     Task<QuestionSetActionResponseDto> PublishAsync(Guid questionSetId, Guid ownerId);
     Task<QuestionSetActionResponseDto> UnpublishAsync(Guid questionSetId, Guid ownerId);
     Task<SetTimeLimitResponseDto> SetTimeLimitAsync(Guid questionSetId, Guid ownerId, SetTimeLimitRequestDto dto);
+    Task<RenameQuestionSetTitleResponseDto> RenameTitleAsync(
+        Guid questionSetId, Guid ownerId, RenameQuestionSetTitleRequestDto dto);
+    Task<IReadOnlyList<QuestionSetPractitionerDto>> GetPractitionersAsync(Guid questionSetId, Guid ownerId);
 }
