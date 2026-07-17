@@ -1,5 +1,7 @@
+using System.Text.Json;
 using ApplicationLayer.DTOs.Candidate;
 using ApplicationLayer.DTOs.QuestionSet;
+using ApplicationLayer.DTOs.Rag;
 using ApplicationLayer.Helpers;
 using ApplicationLayer.Interfaces.Repositories;
 using ApplicationLayer.Interfaces.Services;
@@ -11,18 +13,29 @@ namespace ApplicationLayer.Services;
 
 public class CandidatePracticeSessionService : ICandidatePracticeSessionService
 {
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNameCaseInsensitive = true
+    };
+
     private readonly IPracticeSessionRepository _sessionRepository;
     private readonly ICandidateMarketplaceRepository _marketplaceRepository;
     private readonly ICandidateAnswerRepository _answerRepository;
+    private readonly IAiFeedbackRepository _feedbackRepository;
+    private readonly IRagService _ragService;
 
     public CandidatePracticeSessionService(
         IPracticeSessionRepository sessionRepository,
         ICandidateMarketplaceRepository marketplaceRepository,
-        ICandidateAnswerRepository answerRepository)
+        ICandidateAnswerRepository answerRepository,
+        IAiFeedbackRepository feedbackRepository,
+        IRagService ragService)
     {
         _sessionRepository = sessionRepository;
         _marketplaceRepository = marketplaceRepository;
         _answerRepository = answerRepository;
+        _feedbackRepository = feedbackRepository;
+        _ragService = ragService;
     }
 
     /// <summary>Tạo phiên mới, hoặc trả về phiên IN_PROGRESS đã có cho cùng bộ câu hỏi (resume — AC-02 SCRUM-298).</summary>
@@ -67,29 +80,43 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
         var answerText = dto.AnswerText.Trim();
         var submittedAt = DateTime.UtcNow;
 
+        // 1) Luôn lưu answer trước — AC-03: RAG fail vẫn giữ câu trả lời
         var existing = await _answerRepository.GetAsync(sessionId, dto.QuestionId);
+        CandidateAnswer answer;
         if (existing is null)
         {
-            await _answerRepository.AddAsync(new CandidateAnswer
+            answer = new CandidateAnswer
             {
                 PracticeSessionId = sessionId,
                 QuestionSetQuestionId = dto.QuestionId,
                 AnswerText = answerText,
                 SubmittedAt = submittedAt
-            });
+            };
+            await _answerRepository.AddAsync(answer);
         }
         else
         {
             existing.AnswerText = answerText;
             existing.SubmittedAt = submittedAt;
             await _answerRepository.UpdateAsync(existing);
+            answer = existing;
         }
+
+        // 2) Gọi RAG evaluate sync (SCRUM-282) — lỗi → lưu Failed, không throw ra FE
+        var evaluation = await EvaluateAndPersistAsync(answer, dto.QuestionId);
 
         return new SubmitAnswerResponseDto
         {
             QuestionId = dto.QuestionId,
             AnswerText = answerText,
-            SubmittedAt = submittedAt
+            SubmittedAt = submittedAt,
+            EvaluationStatus = evaluation.EvaluationStatus,
+            Score = evaluation.Score,
+            Strengths = evaluation.Strengths,
+            Improvements = evaluation.Improvements,
+            Suggestion = evaluation.Suggestion,
+            DimensionScores = evaluation.DimensionScores,
+            EvaluationError = evaluation.ErrorMessage
         };
     }
 
@@ -102,7 +129,8 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
 
         session.Status = PracticeSessionStatus.Completed;
         session.CompletedAt = DateTime.UtcNow;
-        // OverallScore: chưa có bảng ai_feedbacks (SCRUM-282 chưa triển khai) — để null, tính sau khi SCRUM-282 xong.
+        // OverallScore = trung bình các feedback Succeeded (null nếu chưa evaluate được câu nào)
+        session.OverallScore = await _feedbackRepository.GetAverageSucceededScoreAsync(sessionId);
         await _sessionRepository.UpdateAsync(session);
 
         return new PracticeSessionCompleteResponseDto
@@ -127,6 +155,57 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
         await _sessionRepository.UpdateAsync(session);
 
         return await BuildSessionResponseAsync(session);
+    }
+
+    public async Task<PracticeSessionFeedbackDto> GetFeedbackAsync(Guid sessionId, Guid candidateUserId)
+    {
+        var session = await GetOwnedSessionAsync(sessionId, candidateUserId);
+        var questions = await _marketplaceRepository.GetQuestionsSnapshotAsync(session.QuestionSetId);
+        var answers = await _answerRepository.GetEntitiesBySessionIdAsync(sessionId);
+        var feedbacks = await _feedbackRepository.GetBySessionIdAsync(sessionId);
+
+        var feedbackByAnswerId = feedbacks.ToDictionary(f => f.CandidateAnswerId);
+        var answerByQuestionId = answers.ToDictionary(a => a.QuestionSetQuestionId);
+
+        var items = new List<PracticeSessionFeedbackItemDto>();
+        foreach (var q in questions.OrderBy(x => x.Order))
+        {
+            if (!answerByQuestionId.TryGetValue(q.Id, out var answer))
+                continue;
+
+            feedbackByAnswerId.TryGetValue(answer.Id, out var feedback);
+
+            items.Add(new PracticeSessionFeedbackItemDto
+            {
+                QuestionId = q.Id,
+                QuestionText = q.Question,
+                QuestionType = q.QuestionType,
+                Difficulty = q.Difficulty,
+                AnswerText = answer.AnswerText,
+                Score = feedback?.Score,
+                Strengths = DeserializeStringList(feedback?.StrengthsJson),
+                Improvements = DeserializeStringList(feedback?.ImprovementsJson),
+                Suggestion = feedback?.Suggestion,
+                DimensionScores = DeserializeDimensionScores(feedback?.DimensionScoresJson),
+                EvaluationStatus = feedback?.EvaluationStatus ?? AiFeedbackEvaluationStatus.Failed
+            });
+        }
+
+        double? overall = session.OverallScore;
+        if (overall is null)
+        {
+            var scored = items.Where(i => i.Score.HasValue).Select(i => i.Score!.Value).ToList();
+            if (scored.Count > 0)
+                overall = Math.Round(scored.Average(), 2);
+        }
+
+        return new PracticeSessionFeedbackDto
+        {
+            SessionId = session.Id,
+            OverallScore = overall,
+            Status = session.Status,
+            Items = items
+        };
     }
 
     public async Task<PagedResultDto<PracticeSessionListItemDto>> ListAsync(
@@ -167,6 +246,116 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
     {
         var (from, to) = DateRangeFilterHelper.Resolve(query.FromDate, query.ToDate, query.Year, query.Month);
         return await _sessionRepository.GetStatsAsync(candidateUserId, from, to);
+    }
+
+    private async Task<(
+        string EvaluationStatus,
+        double? Score,
+        List<string> Strengths,
+        List<string> Improvements,
+        string? Suggestion,
+        Dictionary<string, double>? DimensionScores,
+        string? ErrorMessage)> EvaluateAndPersistAsync(CandidateAnswer answer, Guid questionId)
+    {
+        var rubric = await _marketplaceRepository.GetQuestionEvaluationRubricAsync(questionId);
+        if (rubric is null)
+        {
+            await UpsertFeedbackAsync(answer.Id, AiFeedbackEvaluationStatus.Failed, null, [], [], null, null,
+                "Không tìm thấy câu hỏi để đánh giá.");
+            return (AiFeedbackEvaluationStatus.Failed, null, [], [], null, null, "Không tìm thấy câu hỏi để đánh giá.");
+        }
+
+        try
+        {
+            var criteria = ParseCriteriaList(rubric.EvaluationCriteriaJson);
+            var ragResult = await _ragService.EvaluateAnswerAsync(new EvaluateAnswerRequest
+            {
+                Question = rubric.Question,
+                EvaluationCriteria = criteria,
+                CandidateAnswer = answer.AnswerText,
+                SampleAnswer = rubric.SampleAnswer,
+                Skill = rubric.Skill,
+                QuestionType = rubric.QuestionType
+            });
+
+            if (!ragResult.Success || ragResult.Score is null)
+            {
+                var err = ragResult.Error ?? ragResult.Detail ?? "RAG evaluate thất bại.";
+                await UpsertFeedbackAsync(answer.Id, AiFeedbackEvaluationStatus.Failed, null, [], [], null, null, err);
+                return (AiFeedbackEvaluationStatus.Failed, null, [], [], null, null, err);
+            }
+
+            var strengths = ragResult.Strengths ?? [];
+            var improvements = ragResult.Improvements ?? [];
+            await UpsertFeedbackAsync(
+                answer.Id,
+                AiFeedbackEvaluationStatus.Succeeded,
+                ragResult.Score,
+                strengths,
+                improvements,
+                ragResult.Suggestion,
+                ragResult.DimensionScores,
+                null);
+
+            return (
+                AiFeedbackEvaluationStatus.Succeeded,
+                ragResult.Score,
+                strengths,
+                improvements,
+                ragResult.Suggestion,
+                ragResult.DimensionScores,
+                null);
+        }
+        catch (Exception ex)
+        {
+            // AC-03: timeout / RAG unavailable — answer đã lưu, chỉ báo Failed
+            var message = ex.Message;
+            await UpsertFeedbackAsync(answer.Id, AiFeedbackEvaluationStatus.Failed, null, [], [], null, null, message);
+            return (AiFeedbackEvaluationStatus.Failed, null, [], [], null, null, message);
+        }
+    }
+
+    private async Task UpsertFeedbackAsync(
+        Guid candidateAnswerId,
+        string status,
+        double? score,
+        List<string> strengths,
+        List<string> improvements,
+        string? suggestion,
+        Dictionary<string, double>? dimensionScores,
+        string? errorMessage)
+    {
+        var existing = await _feedbackRepository.GetByCandidateAnswerIdAsync(candidateAnswerId);
+        var strengthsJson = JsonSerializer.Serialize(strengths, JsonOptions);
+        var improvementsJson = JsonSerializer.Serialize(improvements, JsonOptions);
+        var dimensionJson = dimensionScores is null
+            ? null
+            : JsonSerializer.Serialize(dimensionScores, JsonOptions);
+
+        if (existing is null)
+        {
+            await _feedbackRepository.AddAsync(new AiFeedback
+            {
+                CandidateAnswerId = candidateAnswerId,
+                Score = score,
+                StrengthsJson = strengthsJson,
+                ImprovementsJson = improvementsJson,
+                Suggestion = suggestion,
+                DimensionScoresJson = dimensionJson,
+                EvaluationStatus = status,
+                ErrorMessage = errorMessage
+            });
+            return;
+        }
+
+        existing.Score = score;
+        existing.StrengthsJson = strengthsJson;
+        existing.ImprovementsJson = improvementsJson;
+        existing.Suggestion = suggestion;
+        existing.DimensionScoresJson = dimensionJson;
+        existing.EvaluationStatus = status;
+        existing.ErrorMessage = errorMessage;
+        await _feedbackRepository.UpdateAsync(existing);
     }
 
     private async Task<PracticeSession> GetOwnedSessionAsync(Guid sessionId, Guid candidateUserId)
@@ -217,5 +406,72 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
                 AnswerText = answersByQuestionId.TryGetValue(q.Id, out var text) ? text : null
             }).ToList()
         };
+    }
+
+    private static List<string> ParseCriteriaList(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return [];
+
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind != JsonValueKind.Array)
+                return [];
+
+            var list = new List<string>();
+            foreach (var el in doc.RootElement.EnumerateArray())
+            {
+                if (el.ValueKind == JsonValueKind.String)
+                {
+                    var s = el.GetString();
+                    if (!string.IsNullOrWhiteSpace(s))
+                        list.Add(s);
+                }
+                else if (el.ValueKind == JsonValueKind.Object)
+                {
+                    // Một số rubric lưu dạng object — lấy text/criterion nếu có
+                    if (el.TryGetProperty("text", out var textProp) && textProp.ValueKind == JsonValueKind.String)
+                        list.Add(textProp.GetString()!);
+                    else if (el.TryGetProperty("criterion", out var critProp) && critProp.ValueKind == JsonValueKind.String)
+                        list.Add(critProp.GetString()!);
+                    else
+                        list.Add(el.GetRawText());
+                }
+            }
+            return list;
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
+    }
+
+    private static List<string> DeserializeStringList(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return [];
+        try
+        {
+            return JsonSerializer.Deserialize<List<string>>(json, JsonOptions) ?? [];
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
+    }
+
+    private static Dictionary<string, double>? DeserializeDimensionScores(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return null;
+        try
+        {
+            return JsonSerializer.Deserialize<Dictionary<string, double>>(json, JsonOptions);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 }

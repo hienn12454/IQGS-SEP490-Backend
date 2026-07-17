@@ -15,6 +15,9 @@ public interface ICandidateMarketplaceRepository
     /// <summary>Snapshot câu hỏi của 1 bộ — KHÔNG lọc theo Status (dùng khi session đã tạo, set có thể đã bị unpublish sau đó). Cố tình không có SampleAnswer/EvaluationCriteria.</summary>
     Task<IReadOnlyList<PublishedQuestionRow>> GetQuestionsSnapshotAsync(Guid questionSetId);
 
+    /// <summary>Lấy rubric nội bộ để gọi RAG evaluate — KHÔNG trả SampleAnswer/EvaluationCriteria ra API Candidate (SCRUM-282).</summary>
+    Task<QuestionEvaluationRubric?> GetQuestionEvaluationRubricAsync(Guid questionSetQuestionId);
+
     Task<bool> QuestionBelongsToSetAsync(Guid questionId, Guid questionSetId);
 
     Task<IReadOnlyList<PublishedQuestionSetRow>> ListBookmarkedAsync(Guid candidateUserId);

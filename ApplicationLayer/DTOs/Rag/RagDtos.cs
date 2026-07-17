@@ -132,3 +132,28 @@ public class GenerateQuestionsFromPlanResult
     public double? ProcessingTimeMs { get; set; }
     public string? Error { get; set; }
 }
+
+/// <summary>Request gọi RAG evaluate-answer (SCRUM-281/282).</summary>
+public class EvaluateAnswerRequest
+{
+    public string Question { get; set; } = string.Empty;
+    public List<string> EvaluationCriteria { get; set; } = new();
+    public string CandidateAnswer { get; set; } = string.Empty;
+    public string? SampleAnswer { get; set; }
+    public string? JdContext { get; set; }
+    public string? Skill { get; set; }
+    public string? QuestionType { get; set; }
+}
+
+public class EvaluateAnswerResult
+{
+    public bool Success { get; set; }
+    public double? Score { get; set; }
+    public List<string> Strengths { get; set; } = new();
+    public List<string> Improvements { get; set; } = new();
+    public string? Suggestion { get; set; }
+    public Dictionary<string, double>? DimensionScores { get; set; }
+    public double? ProcessingTimeMs { get; set; }
+    public string? Error { get; set; }
+    public string? Detail { get; set; }
+}
