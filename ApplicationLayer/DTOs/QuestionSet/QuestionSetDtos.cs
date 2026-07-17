@@ -91,6 +91,18 @@ public class PublishedQuestionRow
     public string CitationsJson { get; set; } = "[]";
 }
 
+/// <summary>Rubric nội bộ cho RAG evaluate — không expose qua Candidate marketplace API (SCRUM-282).</summary>
+public class QuestionEvaluationRubric
+{
+    public Guid Id { get; set; }
+    public string Question { get; set; } = string.Empty;
+    public string QuestionType { get; set; } = string.Empty;
+    public string Difficulty { get; set; } = string.Empty;
+    public string? Skill { get; set; }
+    public string? SampleAnswer { get; set; }
+    public string EvaluationCriteriaJson { get; set; } = "[]";
+}
+
 public class QuestionSetQuestionResponseDto
 {
     public Guid Id { get; set; }

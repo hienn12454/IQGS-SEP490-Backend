@@ -25,6 +25,7 @@ public class AppDbContext : DbContext
     public DbSet<QuestionSetBookmark> QuestionSetBookmarks { get; set; }
     public DbSet<PracticeSession> PracticeSessions { get; set; }
     public DbSet<CandidateAnswer> CandidateAnswers { get; set; }
+    public DbSet<AiFeedback> AiFeedbacks { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -349,6 +350,27 @@ public class AppDbContext : DbContext
                   .OnDelete(DeleteBehavior.Restrict);
 
             entity.HasIndex(a => new { a.PracticeSessionId, a.QuestionSetQuestionId }).IsUnique();
+        });
+
+        // ── AiFeedback (Candidate — SCRUM-282) ──────────────────────
+        modelBuilder.Entity<AiFeedback>(entity =>
+        {
+            entity.ToTable("ai_feedbacks");
+            entity.HasKey(f => f.Id);
+            entity.Property(f => f.StrengthsJson).IsRequired().HasColumnType("jsonb");
+            entity.Property(f => f.ImprovementsJson).IsRequired().HasColumnType("jsonb");
+            entity.Property(f => f.DimensionScoresJson).HasColumnType("jsonb");
+            entity.Property(f => f.EvaluationStatus).IsRequired().HasMaxLength(20);
+            entity.Property(f => f.Suggestion).HasColumnType("text");
+            entity.Property(f => f.ErrorMessage).HasColumnType("text");
+
+            // 1-1 với candidate_answers — mỗi answer tối đa 1 feedback
+            entity.HasOne(f => f.CandidateAnswer)
+                  .WithMany()
+                  .HasForeignKey(f => f.CandidateAnswerId)
+                  .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(f => f.CandidateAnswerId).IsUnique();
         });
     }
 }

@@ -124,6 +124,22 @@ public class CandidateMarketplaceRepository : ICandidateMarketplaceRepository
             })
             .ToListAsync();
 
+    public Task<QuestionEvaluationRubric?> GetQuestionEvaluationRubricAsync(Guid questionSetQuestionId)
+        => _context.QuestionSetQuestions
+            .AsNoTracking()
+            .Where(q => q.Id == questionSetQuestionId && q.IsActive)
+            .Select(q => new QuestionEvaluationRubric
+            {
+                Id = q.Id,
+                Question = q.Question,
+                QuestionType = q.QuestionType,
+                Difficulty = q.Difficulty,
+                Skill = q.Skill,
+                SampleAnswer = q.SampleAnswer,
+                EvaluationCriteriaJson = q.EvaluationCriteriaJson
+            })
+            .FirstOrDefaultAsync();
+
     public Task<bool> QuestionBelongsToSetAsync(Guid questionId, Guid questionSetId)
         => _context.QuestionSetQuestions.AnyAsync(q =>
             q.Id == questionId && q.QuestionSetId == questionSetId && q.IsActive);
