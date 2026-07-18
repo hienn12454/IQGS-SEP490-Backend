@@ -120,6 +120,8 @@ public class RecommendationService : IRecommendationService
                 OverallScore = r.OverallScore,
                 Status = r.Status,
                 InvitationStatus = r.InvitationStatus,
+                InvitationResponseMessage = r.InvitationResponseMessage,
+                InvitationSharedPhoneNumber = r.InvitationSharedPhoneNumber,
                 RecommendedAt = r.RecommendedAt
             }).ToList(),
             TotalCount = totalCount,

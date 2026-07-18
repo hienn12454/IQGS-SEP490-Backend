@@ -79,6 +79,14 @@ public class CandidateRecommendationRepository : ICandidateRecommendationReposit
                     .Where(i => i.RecommendationId == x.r.Id && i.IsActive)
                     .Select(i => i.Status)
                     .FirstOrDefault(),
+                InvitationResponseMessage = _context.CandidateInvitations
+                    .Where(i => i.RecommendationId == x.r.Id && i.IsActive)
+                    .Select(i => i.ResponseMessage)
+                    .FirstOrDefault(),
+                InvitationSharedPhoneNumber = _context.CandidateInvitations
+                    .Where(i => i.RecommendationId == x.r.Id && i.IsActive)
+                    .Select(i => i.SharedPhoneNumber)
+                    .FirstOrDefault(),
                 RecommendedAt = x.r.CreatedAt
             });
 
