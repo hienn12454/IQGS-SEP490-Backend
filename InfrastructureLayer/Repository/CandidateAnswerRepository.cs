@@ -34,4 +34,9 @@ public class CandidateAnswerRepository : ICandidateAnswerRepository
             .AsNoTracking()
             .Where(a => a.PracticeSessionId == practiceSessionId)
             .ToDictionaryAsync(a => a.QuestionSetQuestionId, a => a.AnswerText);
+
+    public Task DeleteBySessionIdAsync(Guid practiceSessionId)
+        => _context.CandidateAnswers
+            .Where(a => a.PracticeSessionId == practiceSessionId)
+            .ExecuteDeleteAsync();
 }

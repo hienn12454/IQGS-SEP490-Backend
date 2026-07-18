@@ -24,11 +24,11 @@ public class PracticeSessionRepository : IPracticeSessionRepository
     public Task<PracticeSession?> GetByIdAsync(Guid id)
         => _context.PracticeSessions.FirstOrDefaultAsync(s => s.Id == id);
 
-    public Task<PracticeSession?> GetInProgressByQuestionSetAsync(Guid candidateUserId, Guid questionSetId)
-        => _context.PracticeSessions.FirstOrDefaultAsync(s =>
-            s.CandidateUserId == candidateUserId &&
-            s.QuestionSetId == questionSetId &&
-            s.Status == PracticeSessionStatus.InProgress);
+    public Task<PracticeSession?> GetLatestByQuestionSetAsync(Guid candidateUserId, Guid questionSetId)
+        => _context.PracticeSessions
+            .Where(s => s.CandidateUserId == candidateUserId && s.QuestionSetId == questionSetId)
+            .OrderByDescending(s => s.CreatedAt)
+            .FirstOrDefaultAsync();
 
     public Task UpdateAsync(PracticeSession session)
     {
