@@ -49,6 +49,10 @@ public class CandidateInvitationRepository : ICandidateInvitationRepository
                     .Where(h => h.UserId == i.HrUserId)
                     .Select(h => h.Company.LogoUrl)
                     .FirstOrDefault(),
+                CompanyWebsite = _context.HRProfiles
+                    .Where(h => h.UserId == i.HrUserId)
+                    .Select(h => h.Company.WebsiteUrl)
+                    .FirstOrDefault(),
                 QuestionSetTitle = i.Recommendation.QuestionSet.Title,
                 Message = i.Message,
                 Status = i.Status,

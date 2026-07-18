@@ -20,7 +20,7 @@ internal static class PublishedQuestionSetMapper
         Id = row.Id,
         Title = ResolveTitle(row.Title, row.CompanyName),
         CompanyName = row.CompanyName,
-        CompanyLogo = row.CompanyLogo,
+        CompanyLogo = CompanyLogoResolver.Resolve(row.CompanyLogo, row.CompanyWebsite, row.CompanyName),
         Description = row.Description,
         Difficulty = row.Difficulty,
         Skills = ParseJsonList<string>(row.SkillsJson),

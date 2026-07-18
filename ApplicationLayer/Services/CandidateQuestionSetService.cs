@@ -43,7 +43,7 @@ public class CandidateQuestionSetService : ICandidateQuestionSetService
             Id = detail.Id,
             Title = PublishedQuestionSetMapper.ResolveTitle(detail.Title, detail.CompanyName),
             CompanyName = detail.CompanyName,
-            CompanyLogo = detail.CompanyLogo,
+            CompanyLogo = CompanyLogoResolver.Resolve(detail.CompanyLogo, detail.CompanyWebsite, detail.CompanyName),
             Description = detail.Description,
             Difficulty = detail.Difficulty,
             Skills = PublishedQuestionSetMapper.ParseJsonList<string>(detail.SkillsJson),

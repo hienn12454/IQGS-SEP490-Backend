@@ -26,7 +26,7 @@ public class CandidateInvitationService : ICandidateInvitationService
         {
             Id = r.Id,
             CompanyName = r.CompanyName,
-            CompanyLogo = r.CompanyLogo,
+            CompanyLogo = CompanyLogoResolver.Resolve(r.CompanyLogo, r.CompanyWebsite, r.CompanyName),
             QuestionSetTitle = PublishedQuestionSetMapper.ResolveTitle(r.QuestionSetTitle, r.CompanyName),
             Message = r.Message,
             Status = r.Status,
