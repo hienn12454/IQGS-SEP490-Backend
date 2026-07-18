@@ -260,6 +260,8 @@ public class Program
         builder.Services.AddScoped<IPracticeSessionRepository, PracticeSessionRepository>();
         builder.Services.AddScoped<ICandidateAnswerRepository, CandidateAnswerRepository>();
         builder.Services.AddScoped<ICandidateMarketplaceRepository, CandidateMarketplaceRepository>();
+        builder.Services.AddScoped<ICandidateRecommendationRepository, CandidateRecommendationRepository>();
+        builder.Services.AddScoped<ICandidateInvitationRepository, CandidateInvitationRepository>();
         builder.Services.AddScoped<ICompanyRepository, CompanyRepository>();
         builder.Services.AddScoped<IKnowledgeDocumentRepository, KnowledgeDocumentRepository>();
         builder.Services.AddScoped<IQuestionGenerationJobRepository, QuestionGenerationJobRepository>();
@@ -278,6 +280,9 @@ public class Program
         builder.Services.AddScoped<ICandidateQuestionSetService, CandidateQuestionSetService>();
         builder.Services.AddScoped<ICandidateBookmarkService, CandidateBookmarkService>();
         builder.Services.AddScoped<ICandidatePracticeSessionService, CandidatePracticeSessionService>();
+        builder.Services.AddScoped<ICandidatePrivacySettingsService, CandidatePrivacySettingsService>();
+        builder.Services.AddScoped<IRecommendationService, RecommendationService>();
+        builder.Services.AddScoped<ICandidateInvitationService, CandidateInvitationService>();
         builder.Services.AddScoped<IKnowledgeDocumentInternalService, KnowledgeDocumentInternalService>();
         builder.Services.AddScoped<IQuestionGenerationJobService, QuestionGenerationJobService>();
         builder.Services.AddScoped<IQuestionGenerationJobInternalService, QuestionGenerationJobInternalService>();
@@ -291,6 +296,7 @@ public class Program
         builder.Services.AddScoped<IGenerateQuestionsFromPlanJob, GenerateQuestionsFromPlanJob>();
         builder.Services.AddScoped<IStuckKnowledgeDocumentWatchdogJob, StuckKnowledgeDocumentWatchdogJob>();
         builder.Services.AddScoped<IStuckQuestionGenerationWatchdogJob, StuckQuestionGenerationWatchdogJob>();
+        builder.Services.AddScoped<IExpiredPracticeSessionWatchdogJob, ExpiredPracticeSessionWatchdogJob>();
         builder.Services.AddSingleton<IJobScheduler, JobScheduler>();
 
         var app = builder.Build();
@@ -349,6 +355,10 @@ public class Program
             "stuck-question-generation",
             job => job.ExecuteAsync(),
             "*/15 * * * *");
+        RecurringJob.AddOrUpdate<IExpiredPracticeSessionWatchdogJob>(
+            "expired-practice-sessions",
+            job => job.ExecuteAsync(),
+            "* * * * *");
 
         app.MapControllers();
         app.Run();

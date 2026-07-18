@@ -38,7 +38,7 @@ public class CandidatePracticeSessionsController : ControllerBase
         return SuccessResp.Ok(result);
     }
 
-    /// <summary>Thống kê luyện tập của Candidate hiện tại: tổng số phiên COMPLETED, điểm trung bình, điểm cao nhất, tổng thời gian luyện tập.</summary>
+    /// <summary>Thống kê luyện tập của Candidate hiện tại: tổng số phiên COMPLETED, điểm trung bình, điểm cao nhất, điểm bài gần nhất, tổng thời gian luyện tập.</summary>
     /// <param name="query">Lọc theo ngày: fromDate/toDate (khoảng cụ thể), hoặc year+month (1 tháng), hoặc chỉ year (cả năm) — bỏ trống để tính toàn bộ thời gian.</param>
     [HttpGet("stats")]
     public async Task<IActionResult> GetStats([FromQuery] PracticeSessionStatsQueryDto query)

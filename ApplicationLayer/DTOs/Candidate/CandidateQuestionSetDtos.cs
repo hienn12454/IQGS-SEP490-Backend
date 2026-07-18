@@ -26,10 +26,25 @@ public class CandidateQuestionSetListItemDto
     public string Title { get; set; } = string.Empty;
     public string CompanyName { get; set; } = string.Empty;
     public string? CompanyLogo { get; set; }
+
+    /// <summary>Mô tả bộ câu hỏi (question_sets.HrNote) — null nếu HR không nhập.</summary>
+    public string? Description { get; set; }
+
     public string Difficulty { get; set; } = string.Empty;
     public List<string> Skills { get; set; } = new();
     public int TotalQuestions { get; set; }
+
+    /// <summary>Thời gian làm bài hiển thị trên card: HR có đặt giới hạn thì lấy giới hạn đó, chưa đặt thì ước tính theo số câu.</summary>
     public int EstimatedTimeMinutes { get; set; }
+
+    /// <summary>Giới hạn thời gian làm bài HR đặt (phút) — null = không giới hạn, hết giờ hệ thống tự nộp bài.</summary>
+    public int? TimeLimitMinutes { get; set; }
+
+    /// <summary>Điểm trung bình các phiên luyện tập đã chấm (1 chữ số thập phân) — null khi chưa có phiên nào được chấm.</summary>
+    public double? Rating { get; set; }
+
+    /// <summary>Số lượt luyện tập trên bộ này.</summary>
+    public int AttemptCount { get; set; }
 }
 
 /// <summary>Chi tiết 1 bộ câu hỏi public — KHÔNG chứa sampleAnswer/evaluationCriteria (AC-04 SCRUM-269).</summary>
@@ -39,10 +54,26 @@ public class CandidateQuestionSetDetailDto
     public string Title { get; set; } = string.Empty;
     public string CompanyName { get; set; } = string.Empty;
     public string? CompanyLogo { get; set; }
+
+    /// <summary>Mô tả bộ câu hỏi (question_sets.HrNote) — null nếu HR không nhập.</summary>
+    public string? Description { get; set; }
+
     public string Difficulty { get; set; } = string.Empty;
     public List<string> Skills { get; set; } = new();
     public int TotalQuestions { get; set; }
+
+    /// <summary>Thời gian làm bài hiển thị: HR có đặt giới hạn thì lấy giới hạn đó, chưa đặt thì ước tính theo số câu.</summary>
     public int EstimatedTimeMinutes { get; set; }
+
+    /// <summary>Giới hạn thời gian làm bài HR đặt (phút) — null = không giới hạn, hết giờ hệ thống tự nộp bài.</summary>
+    public int? TimeLimitMinutes { get; set; }
+
+    /// <summary>Điểm trung bình các phiên luyện tập đã chấm (1 chữ số thập phân) — null khi chưa có phiên nào được chấm.</summary>
+    public double? Rating { get; set; }
+
+    /// <summary>Số lượt luyện tập trên bộ này.</summary>
+    public int AttemptCount { get; set; }
+
     public List<CandidateQuestionItemDto> Questions { get; set; } = new();
 }
 

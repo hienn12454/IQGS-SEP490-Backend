@@ -43,11 +43,16 @@ public class CandidateQuestionSetService : ICandidateQuestionSetService
             Id = detail.Id,
             Title = PublishedQuestionSetMapper.ResolveTitle(detail.Title, detail.CompanyName),
             CompanyName = detail.CompanyName,
-            CompanyLogo = detail.CompanyLogo,
+            CompanyLogo = CompanyLogoResolver.Resolve(detail.CompanyLogo, detail.CompanyWebsite, detail.CompanyName),
+            Description = detail.Description,
             Difficulty = detail.Difficulty,
             Skills = PublishedQuestionSetMapper.ParseJsonList<string>(detail.SkillsJson),
             TotalQuestions = detail.Questions.Count,
-            EstimatedTimeMinutes = detail.Questions.Count * PublishedQuestionSetMapper.EstimatedMinutesPerQuestion,
+            EstimatedTimeMinutes = detail.TimeLimitMinutes
+                ?? detail.Questions.Count * PublishedQuestionSetMapper.EstimatedMinutesPerQuestion,
+            TimeLimitMinutes = detail.TimeLimitMinutes,
+            Rating = PublishedQuestionSetMapper.RoundRating(detail.Rating),
+            AttemptCount = detail.AttemptCount,
             Questions = detail.Questions.Select(q => new CandidateQuestionItemDto
             {
                 Id = q.Id,

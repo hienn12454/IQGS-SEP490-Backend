@@ -20,15 +20,23 @@ internal static class PublishedQuestionSetMapper
         Id = row.Id,
         Title = ResolveTitle(row.Title, row.CompanyName),
         CompanyName = row.CompanyName,
-        CompanyLogo = row.CompanyLogo,
+        CompanyLogo = CompanyLogoResolver.Resolve(row.CompanyLogo, row.CompanyWebsite, row.CompanyName),
+        Description = row.Description,
         Difficulty = row.Difficulty,
         Skills = ParseJsonList<string>(row.SkillsJson),
         TotalQuestions = row.TotalQuestions,
-        EstimatedTimeMinutes = row.TotalQuestions * EstimatedMinutesPerQuestion
+        EstimatedTimeMinutes = row.TimeLimitMinutes ?? row.TotalQuestions * EstimatedMinutesPerQuestion,
+        TimeLimitMinutes = row.TimeLimitMinutes,
+        Rating = RoundRating(row.Rating),
+        AttemptCount = row.AttemptCount
     };
 
     public static string ResolveTitle(string? title, string companyName) =>
         string.IsNullOrWhiteSpace(title) ? companyName : title;
+
+    /// <summary>Làm tròn rating về 1 chữ số thập phân cho UI (vd 4.75 → 4.8) — giữ null khi chưa có dữ liệu.</summary>
+    public static double? RoundRating(double? rating) =>
+        rating is double r ? Math.Round(r, 1) : null;
 
     public static List<T> ParseJsonList<T>(string? json) =>
         string.IsNullOrWhiteSpace(json) ? new() : JsonSerializer.Deserialize<List<T>>(json, JsonOptions) ?? new();
