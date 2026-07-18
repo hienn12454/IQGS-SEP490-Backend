@@ -152,7 +152,10 @@ public class RecommendationService : IRecommendationService
     {
         var recommendation = await GetOwnedRecommendationAsync(id, hrUserId);
 
-        if (recommendation.Status == CandidateRecommendationStatus.Invited)
+        // Check trực tiếp bảng invitation thay vì chỉ tin vào Status — tránh đâm vào unique index (500)
+        // nếu lần mời trước đã tạo invitation nhưng cập nhật Status thất bại giữa chừng.
+        if (recommendation.Status == CandidateRecommendationStatus.Invited
+            || await _invitationRepository.GetByRecommendationIdAsync(recommendation.Id) is not null)
             throw new ConflictException("Recommendation này đã gửi lời mời trước đó.");
 
         if (recommendation.Status == CandidateRecommendationStatus.Dismissed)
