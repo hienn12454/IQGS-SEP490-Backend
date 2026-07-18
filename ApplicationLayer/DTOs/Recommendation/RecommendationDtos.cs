@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations;
+
 namespace ApplicationLayer.DTOs.Recommendation;
 
 /// <summary>Query danh sách recommendation trên dashboard HR (SCRUM-291).</summary>
@@ -61,6 +63,7 @@ public class RecommendationActionResponseDto
 public class InviteCandidateRequestDto
 {
     /// <summary>Lời nhắn gửi kèm lời mời (tùy chọn, tối đa 2000 ký tự).</summary>
+    [MaxLength(2000, ErrorMessage = "Lời nhắn tối đa 2000 ký tự.")]
     public string? Message { get; set; }
 }
 
