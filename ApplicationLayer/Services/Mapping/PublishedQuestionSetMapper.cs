@@ -25,7 +25,8 @@ internal static class PublishedQuestionSetMapper
         Difficulty = row.Difficulty,
         Skills = ParseJsonList<string>(row.SkillsJson),
         TotalQuestions = row.TotalQuestions,
-        EstimatedTimeMinutes = row.TotalQuestions * EstimatedMinutesPerQuestion,
+        EstimatedTimeMinutes = row.TimeLimitMinutes ?? row.TotalQuestions * EstimatedMinutesPerQuestion,
+        TimeLimitMinutes = row.TimeLimitMinutes,
         Rating = RoundRating(row.Rating),
         AttemptCount = row.AttemptCount
     };

@@ -126,6 +126,7 @@ public class QuestionSetService : IQuestionSetService
             Title = questionSet.Title,
             JobDescription = questionSet.JobDescription,
             HrNote = questionSet.HrNote,
+            TimeLimitMinutes = questionSet.TimeLimitMinutes,
             Plan = planObj,
             GeneratedAt = questionSet.GeneratedAt,
             SavedAt = questionSet.CreatedAt,
@@ -277,6 +278,25 @@ public class QuestionSetService : IQuestionSetService
             QuestionSetId = questionSet.Id,
             Status = questionSet.Status,
             PublishedAt = questionSet.PublishedAt
+        };
+    }
+
+    public async Task<SetTimeLimitResponseDto> SetTimeLimitAsync(
+        Guid questionSetId, Guid ownerId, SetTimeLimitRequestDto dto)
+    {
+        var questionSet = await EnsureOwnedQuestionSetAsync(questionSetId, ownerId);
+
+        if (questionSet.Status == QuestionSetStatus.Published)
+            throw new ConflictException("Bộ câu hỏi đang PUBLISHED — unpublish trước khi đổi giới hạn thời gian.");
+
+        questionSet.TimeLimitMinutes = dto.TimeLimitMinutes;
+        questionSet.UpdatedAt = DateTime.UtcNow;
+        await _questionSetRepository.UpdateAsync(questionSet);
+
+        return new SetTimeLimitResponseDto
+        {
+            QuestionSetId = questionSet.Id,
+            TimeLimitMinutes = questionSet.TimeLimitMinutes
         };
     }
 

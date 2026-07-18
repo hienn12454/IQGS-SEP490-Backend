@@ -45,6 +45,7 @@ public class CandidateMarketplaceRepository : ICandidateMarketplaceRepository
             Difficulty = x.QuestionSet.SourceJob.Difficulty,
             SkillsJson = x.QuestionSet.SourceJob.SkillsJson,
             TotalQuestions = x.QuestionSet.Questions.Count(q => q.IsActive),
+            TimeLimitMinutes = x.QuestionSet.TimeLimitMinutes,
             Description = x.QuestionSet.HrNote,
             Rating = _context.PracticeSessions
                 .Where(ps => ps.QuestionSetId == x.QuestionSet.Id && ps.IsActive)
@@ -101,6 +102,7 @@ public class CandidateMarketplaceRepository : ICandidateMarketplaceRepository
                 CompanyWebsite = x.Company.WebsiteUrl,
                 Difficulty = x.QuestionSet.SourceJob.Difficulty,
                 SkillsJson = x.QuestionSet.SourceJob.SkillsJson,
+                TimeLimitMinutes = x.QuestionSet.TimeLimitMinutes,
                 Description = x.QuestionSet.HrNote,
                 Rating = _context.PracticeSessions
                     .Where(ps => ps.QuestionSetId == x.QuestionSet.Id && ps.IsActive)

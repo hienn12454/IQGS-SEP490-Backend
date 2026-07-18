@@ -12,6 +12,9 @@ public class QuestionSet : BaseEntity
     public DateTime? GeneratedAt { get; set; }
     public DateTime? PublishedAt { get; set; }
 
+    /// <summary>Giới hạn thời gian làm bài practice (phút) do HR đặt — null = không giới hạn. Hết giờ hệ thống tự nộp bài.</summary>
+    public int? TimeLimitMinutes { get; set; }
+
     public QuestionGenerationJob SourceJob { get; set; } = null!;
     public ICollection<QuestionSetQuestion> Questions { get; set; } = new List<QuestionSetQuestion>();
 }

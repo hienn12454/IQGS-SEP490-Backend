@@ -48,7 +48,9 @@ public class CandidateQuestionSetService : ICandidateQuestionSetService
             Difficulty = detail.Difficulty,
             Skills = PublishedQuestionSetMapper.ParseJsonList<string>(detail.SkillsJson),
             TotalQuestions = detail.Questions.Count,
-            EstimatedTimeMinutes = detail.Questions.Count * PublishedQuestionSetMapper.EstimatedMinutesPerQuestion,
+            EstimatedTimeMinutes = detail.TimeLimitMinutes
+                ?? detail.Questions.Count * PublishedQuestionSetMapper.EstimatedMinutesPerQuestion,
+            TimeLimitMinutes = detail.TimeLimitMinutes,
             Rating = PublishedQuestionSetMapper.RoundRating(detail.Rating),
             AttemptCount = detail.AttemptCount,
             Questions = detail.Questions.Select(q => new CandidateQuestionItemDto
