@@ -141,6 +141,14 @@ namespace InfrastructureLayer.Migrations
                     b.Property<DateTime?>("RespondedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("ResponseMessage")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<string>("SharedPhoneNumber")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(20)
