@@ -18,11 +18,14 @@ public static class PlanJsonSummaryReader
             using var doc = JsonDocument.Parse(plan.PlanJson);
             var root = doc.RootElement;
 
-            if (TryGetStringAny(root, out var roleTitle, "roleTitle", "role_title")
-                && !string.IsNullOrWhiteSpace(roleTitle))
+            // Role = tiêu đề vị trí thật — KHÔNG dùng skills join (gây chuỗi dài trên Insights/KPI).
+            if (TryGetStringAny(root, out var roleTitle,
+                    "roleTitle", "role_title", "jobTitle", "job_title", "title", "detectedRole", "detected_role")
+                && !string.IsNullOrWhiteSpace(roleTitle)
+                && !LooksLikeSkillsList(roleTitle))
             {
-                summary.JobTitle = roleTitle;
-                summary.Role = roleTitle;
+                summary.JobTitle = roleTitle.Trim();
+                summary.Role = roleTitle.Trim();
             }
 
             if (TryGetString(root, "level", out var level) && !string.IsNullOrWhiteSpace(level))
@@ -54,6 +57,17 @@ public static class PlanJsonSummaryReader
         }
 
         return summary;
+    }
+
+    /// <summary>
+    /// Chuỗi kiểu ".NET, C#, Azure, Docker..." không phải role title — bỏ qua khi gán Role.
+    /// </summary>
+    internal static bool LooksLikeSkillsList(string value)
+    {
+        var trimmed = value.Trim();
+        if (trimmed.Length > 80) return true;
+        var commaCount = trimmed.Count(c => c == ',');
+        return commaCount >= 2;
     }
 
     private static bool TryGetString(JsonElement root, string propertyName, out string? value)
