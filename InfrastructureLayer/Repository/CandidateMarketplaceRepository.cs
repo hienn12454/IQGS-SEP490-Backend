@@ -39,11 +39,18 @@ public class CandidateMarketplaceRepository : ICandidateMarketplaceRepository
         {
             Id = x.QuestionSet.Id,
             Title = x.QuestionSet.Title,
+            CompanyId = x.Company.Id,
             CompanyName = x.Company.Name,
             CompanyLogo = x.Company.LogoUrl,
             CompanyWebsite = x.Company.WebsiteUrl,
             Difficulty = x.QuestionSet.SourceJob.Difficulty,
             SkillsJson = x.QuestionSet.SourceJob.SkillsJson,
+            QuestionSkills = x.QuestionSet.Questions
+                .Where(q => q.IsActive && q.Skill != null && q.Skill != "")
+                .Select(q => q.Skill!)
+                .Distinct()
+                .OrderBy(s => s)
+                .ToList(),
             TotalQuestions = x.QuestionSet.Questions.Count(q => q.IsActive),
             TimeLimitMinutes = x.QuestionSet.TimeLimitMinutes,
             Description = x.QuestionSet.HrNote,
@@ -97,6 +104,7 @@ public class CandidateMarketplaceRepository : ICandidateMarketplaceRepository
             {
                 Id = x.QuestionSet.Id,
                 Title = x.QuestionSet.Title,
+                CompanyId = x.Company.Id,
                 CompanyName = x.Company.Name,
                 CompanyLogo = x.Company.LogoUrl,
                 CompanyWebsite = x.Company.WebsiteUrl,

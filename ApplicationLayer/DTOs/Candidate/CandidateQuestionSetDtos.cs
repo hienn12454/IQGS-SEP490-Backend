@@ -24,6 +24,10 @@ public class CandidateQuestionSetListItemDto
 {
     public Guid Id { get; set; }
     public string Title { get; set; } = string.Empty;
+
+    /// <summary>Id công ty — FE dùng cho chip filter companyId.</summary>
+    public Guid CompanyId { get; set; }
+
     public string CompanyName { get; set; } = string.Empty;
     public string? CompanyLogo { get; set; }
 
@@ -52,6 +56,10 @@ public class CandidateQuestionSetDetailDto
 {
     public Guid Id { get; set; }
     public string Title { get; set; } = string.Empty;
+
+    /// <summary>Id công ty — FE dùng cho chip filter companyId.</summary>
+    public Guid CompanyId { get; set; }
+
     public string CompanyName { get; set; } = string.Empty;
     public string? CompanyLogo { get; set; }
 

@@ -75,11 +75,15 @@ public class PublishedQuestionSetRow
 {
     public Guid Id { get; set; }
     public string? Title { get; set; }
+    public Guid CompanyId { get; set; }
     public string CompanyName { get; set; } = string.Empty;
     public string? CompanyLogo { get; set; }
     public string? CompanyWebsite { get; set; }
     public string Difficulty { get; set; } = string.Empty;
     public string SkillsJson { get; set; } = "[]";
+
+    /// <summary>Skill thực tế gộp distinct từ các câu hỏi active của bộ — nguồn chính cho chip filter (SkillsJson của job chỉ là fallback).</summary>
+    public List<string> QuestionSkills { get; set; } = new();
     public int TotalQuestions { get; set; }
 
     /// <summary>Giới hạn thời gian làm bài HR đặt (phút) — null = không giới hạn.</summary>
@@ -100,6 +104,7 @@ public class PublishedQuestionSetDetail
 {
     public Guid Id { get; set; }
     public string? Title { get; set; }
+    public Guid CompanyId { get; set; }
     public string CompanyName { get; set; } = string.Empty;
     public string? CompanyLogo { get; set; }
     public string? CompanyWebsite { get; set; }
