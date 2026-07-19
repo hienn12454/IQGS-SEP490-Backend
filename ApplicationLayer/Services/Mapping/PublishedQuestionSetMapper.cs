@@ -19,11 +19,12 @@ internal static class PublishedQuestionSetMapper
     {
         Id = row.Id,
         Title = ResolveTitle(row.Title, row.CompanyName),
+        CompanyId = row.CompanyId,
         CompanyName = row.CompanyName,
         CompanyLogo = CompanyLogoResolver.Resolve(row.CompanyLogo, row.CompanyWebsite, row.CompanyName),
         Description = row.Description,
         Difficulty = row.Difficulty,
-        Skills = ParseJsonList<string>(row.SkillsJson),
+        Skills = MergeSkills(row.QuestionSkills, row.SkillsJson),
         TotalQuestions = row.TotalQuestions,
         EstimatedTimeMinutes = row.TimeLimitMinutes ?? row.TotalQuestions * EstimatedMinutesPerQuestion,
         TimeLimitMinutes = row.TimeLimitMinutes,
@@ -40,4 +41,23 @@ internal static class PublishedQuestionSetMapper
 
     public static List<T> ParseJsonList<T>(string? json) =>
         string.IsNullOrWhiteSpace(json) ? new() : JsonSerializer.Deserialize<List<T>>(json, JsonOptions) ?? new();
+
+    /// <summary>
+    /// Gộp skill cho chip filter: skill thực tế của các câu hỏi (nguồn chính) + skill HR nhập trên job (fallback/bổ sung),
+    /// khử trùng lặp không phân biệt hoa thường — vì SkillsJson của job là optional, HR bỏ trống sẽ rỗng.
+    /// </summary>
+    public static List<string> MergeSkills(IEnumerable<string>? questionSkills, string? skillsJson)
+    {
+        var merged = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var skill in (questionSkills ?? Enumerable.Empty<string>()).Concat(ParseJsonList<string>(skillsJson)))
+        {
+            var trimmed = skill?.Trim();
+            if (!string.IsNullOrEmpty(trimmed) && seen.Add(trimmed))
+                merged.Add(trimmed);
+        }
+
+        return merged;
+    }
 }
