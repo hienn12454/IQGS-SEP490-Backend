@@ -24,3 +24,9 @@ public interface IStuckQuestionGenerationWatchdogJob
 {
     Task ExecuteAsync();
 }
+
+/// <summary>Tự nộp các phiên practice IN_PROGRESS đã hết giới hạn thời gian (cả khi candidate thoát app).</summary>
+public interface IExpiredPracticeSessionWatchdogJob
+{
+    Task ExecuteAsync();
+}

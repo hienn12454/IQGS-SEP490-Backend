@@ -49,6 +49,16 @@ public class CompanyController : ControllerBase
         return SuccessResp.Created(result);
     }
 
+    /// <summary>Tạo nhiều công ty trong 1 request (HR/Admin) — client bấm dấu + thêm nhiều form rồi gửi cả danh sách (tối đa 50). All-or-nothing: 1 phần tử không hợp lệ thì không công ty nào được tạo. 400 nếu có tên trùng nhau trong danh sách.</summary>
+    /// <param name="dto">companies: mảng công ty, mỗi phần tử gồm name (bắt buộc), logoUrl, websiteUrl, description — validate y hệt API tạo lẻ.</param>
+    [Authorize(Roles = "HR,Admin")]
+    [HttpPost("bulk")]
+    public async Task<IActionResult> CreateBulk([FromBody] BulkCreateCompaniesDto dto)
+    {
+        var result = await _companyService.CreateManyAsync(dto);
+        return SuccessResp.Created(result);
+    }
+
     /// <summary>Cập nhật công ty (Admin, hoặc HR thuộc chính công ty đó).</summary>
     [Authorize(Roles = "HR,Admin")]
     [HttpPut("{id:guid}")]

@@ -83,6 +83,16 @@ public class HrQuestionSetsController : ControllerBase
         return SuccessResp.Ok(result);
     }
 
+    /// <summary>Đặt giới hạn thời gian làm bài practice cho bộ câu hỏi (1–480 phút, truyền null để bỏ giới hạn). Candidate hết giờ sẽ bị tự động nộp bài. Không đổi được khi bộ đang PUBLISHED — phải unpublish trước.</summary>
+    /// <param name="id">Id bộ câu hỏi.</param>
+    /// <param name="dto">timeLimitMinutes: 1–480, hoặc null = không giới hạn.</param>
+    [HttpPut("{id:guid}/time-limit")]
+    public async Task<IActionResult> SetTimeLimit(Guid id, [FromBody] SetTimeLimitRequestDto dto)
+    {
+        var result = await _service.SetTimeLimitAsync(id, GetCurrentUserId(), dto);
+        return SuccessResp.Ok(result);
+    }
+
     /// <summary>Publish bộ câu hỏi lên marketplace cho Candidate xem (DRAFT → PUBLISHED). Yêu cầu tối thiểu 10 câu hỏi, chỉ HR chủ sở hữu mới publish được.</summary>
     /// <param name="id">Id bộ câu hỏi.</param>
     [HttpPost("{id:guid}/publish")]

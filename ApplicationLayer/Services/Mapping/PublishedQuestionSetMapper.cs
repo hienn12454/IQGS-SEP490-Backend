@@ -19,17 +19,45 @@ internal static class PublishedQuestionSetMapper
     {
         Id = row.Id,
         Title = ResolveTitle(row.Title, row.CompanyName),
+        CompanyId = row.CompanyId,
         CompanyName = row.CompanyName,
-        CompanyLogo = row.CompanyLogo,
+        CompanyLogo = CompanyLogoResolver.Resolve(row.CompanyLogo, row.CompanyWebsite, row.CompanyName),
+        Description = row.Description,
         Difficulty = row.Difficulty,
-        Skills = ParseJsonList<string>(row.SkillsJson),
+        Skills = MergeSkills(row.QuestionSkills, row.SkillsJson),
         TotalQuestions = row.TotalQuestions,
-        EstimatedTimeMinutes = row.TotalQuestions * EstimatedMinutesPerQuestion
+        EstimatedTimeMinutes = row.TimeLimitMinutes ?? row.TotalQuestions * EstimatedMinutesPerQuestion,
+        TimeLimitMinutes = row.TimeLimitMinutes,
+        Rating = RoundRating(row.Rating),
+        AttemptCount = row.AttemptCount
     };
 
     public static string ResolveTitle(string? title, string companyName) =>
         string.IsNullOrWhiteSpace(title) ? companyName : title;
 
+    /// <summary>Làm tròn rating về 1 chữ số thập phân cho UI (vd 4.75 → 4.8) — giữ null khi chưa có dữ liệu.</summary>
+    public static double? RoundRating(double? rating) =>
+        rating is double r ? Math.Round(r, 1) : null;
+
     public static List<T> ParseJsonList<T>(string? json) =>
         string.IsNullOrWhiteSpace(json) ? new() : JsonSerializer.Deserialize<List<T>>(json, JsonOptions) ?? new();
+
+    /// <summary>
+    /// Gộp skill cho chip filter: skill thực tế của các câu hỏi (nguồn chính) + skill HR nhập trên job (fallback/bổ sung),
+    /// khử trùng lặp không phân biệt hoa thường — vì SkillsJson của job là optional, HR bỏ trống sẽ rỗng.
+    /// </summary>
+    public static List<string> MergeSkills(IEnumerable<string>? questionSkills, string? skillsJson)
+    {
+        var merged = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var skill in (questionSkills ?? Enumerable.Empty<string>()).Concat(ParseJsonList<string>(skillsJson)))
+        {
+            var trimmed = skill?.Trim();
+            if (!string.IsNullOrEmpty(trimmed) && seen.Add(trimmed))
+                merged.Add(trimmed);
+        }
+
+        return merged;
+    }
 }
