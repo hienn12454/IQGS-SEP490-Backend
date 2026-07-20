@@ -259,6 +259,7 @@ public class Program
         builder.Services.AddScoped<IQuestionSetBookmarkRepository, QuestionSetBookmarkRepository>();
         builder.Services.AddScoped<IPracticeSessionRepository, PracticeSessionRepository>();
         builder.Services.AddScoped<ICandidateAnswerRepository, CandidateAnswerRepository>();
+        builder.Services.AddScoped<IAiFeedbackRepository, AiFeedbackRepository>();
         builder.Services.AddScoped<ICandidateMarketplaceRepository, CandidateMarketplaceRepository>();
         builder.Services.AddScoped<ICandidateRecommendationRepository, CandidateRecommendationRepository>();
         builder.Services.AddScoped<ICandidateInvitationRepository, CandidateInvitationRepository>();

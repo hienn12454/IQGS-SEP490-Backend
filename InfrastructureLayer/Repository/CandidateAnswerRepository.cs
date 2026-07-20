@@ -34,4 +34,10 @@ public class CandidateAnswerRepository : ICandidateAnswerRepository
             .AsNoTracking()
             .Where(a => a.PracticeSessionId == practiceSessionId)
             .ToDictionaryAsync(a => a.QuestionSetQuestionId, a => a.AnswerText);
+
+    public async Task<IReadOnlyList<CandidateAnswer>> GetEntitiesBySessionIdAsync(Guid practiceSessionId)
+        => await _context.CandidateAnswers
+            .AsNoTracking()
+            .Where(a => a.PracticeSessionId == practiceSessionId)
+            .ToListAsync();
 }
