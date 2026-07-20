@@ -11,6 +11,8 @@ public interface IAiFeedbackRepository
     /// <summary>Lấy toàn bộ feedback của các answer thuộc 1 practice session.</summary>
     Task<IReadOnlyList<AiFeedback>> GetBySessionIdAsync(Guid practiceSessionId);
 
-    /// <summary>Trung bình Score của các feedback Succeeded trong session (null nếu chưa có).</summary>
-    Task<double?> GetAverageSucceededScoreAsync(Guid practiceSessionId);
+    /// <summary>
+    /// Danh sách Score các feedback Succeeded (dùng tính overall = sum / tổng câu trong bộ — SCRUM-304).
+    /// </summary>
+    Task<IReadOnlyList<double>> GetSucceededScoresAsync(Guid practiceSessionId);
 }

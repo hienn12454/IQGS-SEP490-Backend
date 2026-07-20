@@ -118,7 +118,39 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
             answer = existing;
         }
 
-        // 2) Gọi RAG evaluate sync (SCRUM-282) — lỗi → lưu Failed, không throw ra FE
+        // 2) Gate: câu trống / "không biết" / spam → score 0 Succeeded, không gọi RAG (tiết kiệm token)
+        if (AnswerEvaluationGate.TrySkip(answerText, out var skipReason))
+        {
+            _logger.LogInformation(
+                "Bỏ qua RAG evaluate cho answer {AnswerId}: {Reason}",
+                answer.Id, skipReason);
+
+            await UpsertFeedbackAsync(
+                answer.Id,
+                AiFeedbackEvaluationStatus.Succeeded,
+                score: 0,
+                strengths: [],
+                improvements: [skipReason],
+                suggestion: skipReason,
+                dimensionScores: null,
+                errorMessage: null);
+
+            return new SubmitAnswerResponseDto
+            {
+                QuestionId = dto.QuestionId,
+                AnswerText = answerText,
+                SubmittedAt = submittedAt,
+                EvaluationStatus = AiFeedbackEvaluationStatus.Succeeded,
+                Score = 0,
+                Strengths = [],
+                Improvements = [skipReason],
+                Suggestion = skipReason,
+                DimensionScores = null,
+                EvaluationError = null
+            };
+        }
+
+        // 3) Gọi RAG evaluate sync (SCRUM-282) — lỗi → lưu Failed, không throw ra FE
         var evaluation = await EvaluateAndPersistAsync(answer, dto.QuestionId);
 
         return new SubmitAnswerResponseDto
@@ -148,8 +180,8 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
 
             session.Status = PracticeSessionStatus.Completed;
             session.CompletedAt = DateTime.UtcNow;
-            // OverallScore = trung bình các feedback Succeeded (null nếu chưa evaluate được câu nào)
-            session.OverallScore = await _feedbackRepository.GetAverageSucceededScoreAsync(sessionId);
+            // SCRUM-304: overall = tổng điểm Succeeded / tổng số câu trong bộ (câu chưa làm = 0)
+            session.OverallScore = await ComputeSessionOverallScoreAsync(session);
             await _sessionRepository.UpdateAsync(session);
             await TryGenerateRecommendationAsync(session);
         }
@@ -218,9 +250,13 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
         double? overall = session.OverallScore;
         if (overall is null)
         {
-            var scored = items.Where(i => i.Score.HasValue).Select(i => i.Score!.Value).ToList();
-            if (scored.Count > 0)
-                overall = Math.Round(scored.Average(), 2);
+            // Fallback (phiên chưa complete): cùng công thức SCRUM-304
+            var succeededScores = items
+                .Where(i =>
+                    i.EvaluationStatus == AiFeedbackEvaluationStatus.Succeeded
+                    && i.Score.HasValue)
+                .Select(i => i.Score!.Value);
+            overall = PracticeOverallScoreCalculator.Compute(succeededScores, questions.Count);
         }
 
         return new PracticeSessionFeedbackDto
@@ -415,10 +451,18 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
         session.Status = PracticeSessionStatus.Completed;
         session.CompletedAt = expiresAt;
         session.UpdatedAt = DateTime.UtcNow;
-        session.OverallScore = await _feedbackRepository.GetAverageSucceededScoreAsync(session.Id);
+        session.OverallScore = await ComputeSessionOverallScoreAsync(session);
         await _sessionRepository.UpdateAsync(session);
         await TryGenerateRecommendationAsync(session);
         return true;
+    }
+
+    /// <summary>SCRUM-304 — overallScore = tổng Score Succeeded / số câu trong bộ.</summary>
+    private async Task<double?> ComputeSessionOverallScoreAsync(PracticeSession session)
+    {
+        var questions = await _marketplaceRepository.GetQuestionsSnapshotAsync(session.QuestionSetId);
+        var scores = await _feedbackRepository.GetSucceededScoresAsync(session.Id);
+        return PracticeOverallScoreCalculator.Compute(scores, questions.Count);
     }
 
     /// <summary>Rule MVP SCRUM-291 — lỗi ở bước này không được làm fail việc nộp bài (phiên đã COMPLETED thành công).</summary>

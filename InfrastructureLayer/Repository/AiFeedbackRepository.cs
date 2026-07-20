@@ -39,9 +39,9 @@ public class AiFeedbackRepository : IAiFeedbackRepository
             .ToListAsync();
     }
 
-    public async Task<double?> GetAverageSucceededScoreAsync(Guid practiceSessionId)
+    public async Task<IReadOnlyList<double>> GetSucceededScoresAsync(Guid practiceSessionId)
     {
-        var scores = await _context.AiFeedbacks
+        return await _context.AiFeedbacks
             .AsNoTracking()
             .Where(f =>
                 f.CandidateAnswer.PracticeSessionId == practiceSessionId
@@ -49,10 +49,5 @@ public class AiFeedbackRepository : IAiFeedbackRepository
                 && f.Score != null)
             .Select(f => f.Score!.Value)
             .ToListAsync();
-
-        if (scores.Count == 0)
-            return null;
-
-        return Math.Round(scores.Average(), 2);
     }
 }
