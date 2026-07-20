@@ -6,7 +6,7 @@ using WebAPI.Extensions;
 
 namespace WebAPI.Controllers.Candidate;
 
-/// <summary>CV của Candidate — upload để AI trích kỹ năng (skills) và tự động cập nhật TechStack trên hồ sơ. Mỗi Candidate chỉ giữ đúng 1 CV.</summary>
+/// <summary>CV của Candidate — upload (PDF/DOCX/JPG/JPEG/PNG) để AI trích kỹ năng (skills) và tự động cập nhật TechStack trên hồ sơ. Mỗi Candidate chỉ giữ đúng 1 CV.</summary>
 [ApiController]
 [Route("api/candidate/cv")]
 [Authorize(Roles = "Candidate")]
@@ -19,7 +19,7 @@ public class CandidateCvController : ControllerBase
         _service = service;
     }
 
-    /// <summary>Tải lên CV (PDF/DOCX, tối đa theo cấu hình Cv:MaxFileSizeMb) — lưu file, gọi AI phân tích kỹ năng, tự động ghi đè TechStack trên hồ sơ. Upload mới sẽ thay thế CV cũ.</summary>
+    /// <summary>Tải lên CV (PDF/DOCX/JPG/JPEG/PNG, tối đa theo cấu hình Cv:MaxFileSizeMb) — lưu file, gọi AI phân tích kỹ năng, tự động ghi đè TechStack trên hồ sơ. Upload mới sẽ thay thế CV cũ.</summary>
     /// <remarks>
     /// 400 nếu sai định dạng/quá dung lượng. Nếu bước phân tích AI lỗi/timeout, request trả lỗi rõ ràng nhưng file CV đã lưu vẫn được giữ nguyên, TechStack cũ không bị mất.
     /// </remarks>
@@ -58,6 +58,6 @@ public class CandidateCvController : ControllerBase
 
 public class CandidateCvUploadForm
 {
-    /// <summary>File CV, định dạng PDF hoặc DOCX.</summary>
+    /// <summary>File CV, định dạng PDF, DOCX, JPG, JPEG hoặc PNG.</summary>
     public IFormFile File { get; set; } = null!;
 }
