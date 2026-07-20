@@ -13,6 +13,13 @@ public class PracticeSessionResponseDto
     public DateTime? StartedAt { get; set; }
     public DateTime? CompletedAt { get; set; }
     public double? OverallScore { get; set; }
+
+    /// <summary>Giới hạn thời gian làm bài (phút) HR đặt — null = không giới hạn.</summary>
+    public int? TimeLimitMinutes { get; set; }
+
+    /// <summary>Hạn chót nộp bài (StartedAt + TimeLimitMinutes) — FE dùng để đếm ngược; null nếu không giới hạn. Quá mốc này hệ thống tự nộp bài.</summary>
+    public DateTime? ExpiresAt { get; set; }
+
     public List<PracticeSessionQuestionDto> Questions { get; set; } = new();
 }
 
@@ -86,6 +93,10 @@ public class PracticeSessionStatsDto
     public int TotalSessions { get; set; }
     public double? AverageScore { get; set; }
     public double? BestScore { get; set; }
+
+    /// <summary>Điểm của phiên hoàn thành gần nhất có điểm (theo CompletedAt) — null khi chưa có phiên nào được chấm.</summary>
+    public double? LatestScore { get; set; }
+
     public long TotalDurationSeconds { get; set; }
 }
 

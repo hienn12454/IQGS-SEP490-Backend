@@ -42,6 +42,32 @@ public class CompanyService : ICompanyService
         return MapToDto(company);
     }
 
+    public async Task<List<CompanyDto>> CreateManyAsync(BulkCreateCompaniesDto dto)
+    {
+        var duplicateNames = dto.Companies
+            .GroupBy(c => c.Name.Trim(), StringComparer.OrdinalIgnoreCase)
+            .Where(g => g.Count() > 1)
+            .Select(g => g.Key)
+            .ToList();
+
+        if (duplicateNames.Count > 0)
+            throw new BadRequestException(
+                $"Tên công ty bị trùng trong danh sách: {string.Join(", ", duplicateNames)}.");
+
+        var companies = dto.Companies.Select(d => new Company
+        {
+            Name = d.Name.Trim(),
+            LogoUrl = d.LogoUrl,
+            WebsiteUrl = d.WebsiteUrl,
+            Description = d.Description
+        }).ToList();
+
+        // All-or-nothing: 1 SaveChanges duy nhất — lỗi giữa chừng thì không công ty nào được tạo.
+        await _companyRepo.AddRangeAsync(companies);
+
+        return companies.Select(MapToDto).ToList();
+    }
+
     public async Task<CompanyDto> UpdateAsync(Guid id, UpdateCompanyDto dto, Guid currentUserId, bool isAdmin)
     {
         var company = await EnsureCanManageAsync(id, currentUserId, isAdmin);

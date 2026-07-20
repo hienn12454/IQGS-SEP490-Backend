@@ -24,4 +24,10 @@ public class CompanyRepository : BaseRepository<Company>, ICompanyRepository
 
         return await q.OrderBy(c => c.Name).Take(limit).ToListAsync();
     }
+
+    public async Task AddRangeAsync(IReadOnlyList<Company> companies)
+    {
+        await _dbSet.AddRangeAsync(companies);
+        await _context.SaveChangesAsync();
+    }
 }

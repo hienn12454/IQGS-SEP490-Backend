@@ -17,4 +17,5 @@ public interface IQuestionSetService
         Guid questionSetId, Guid ownerId, ReorderQuestionsRequestDto dto);
     Task<QuestionSetActionResponseDto> PublishAsync(Guid questionSetId, Guid ownerId);
     Task<QuestionSetActionResponseDto> UnpublishAsync(Guid questionSetId, Guid ownerId);
+    Task<SetTimeLimitResponseDto> SetTimeLimitAsync(Guid questionSetId, Guid ownerId, SetTimeLimitRequestDto dto);
 }
