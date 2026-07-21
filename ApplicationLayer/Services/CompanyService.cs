@@ -1,6 +1,7 @@
 using ApplicationLayer.DTOs.Company;
 using ApplicationLayer.Interfaces.Services;
 using ApplicationLayer.Interfaces.Repositories;
+using ApplicationLayer.Services.Mapping;
 using DomainLayer.Entities;
 using DomainLayer.Exceptions;
 
@@ -106,7 +107,7 @@ public class CompanyService : ICompanyService
     {
         Id = c.Id,
         Name = c.Name,
-        LogoUrl = c.LogoUrl,
+        LogoUrl = CompanyLogoResolver.Resolve(c.LogoUrl, c.WebsiteUrl, c.Name),
         WebsiteUrl = c.WebsiteUrl,
         Description = c.Description,
         CreatedAt = c.CreatedAt

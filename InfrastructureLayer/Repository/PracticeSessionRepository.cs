@@ -98,6 +98,8 @@ public class PracticeSessionRepository : IPracticeSessionRepository
                 QuestionSetId = x.qs.Id,
                 SetTitle = x.qs.Title,
                 CompanyName = x.Company.Name,
+                CompanyLogo = x.Company.LogoUrl,
+                CompanyWebsite = x.Company.WebsiteUrl,
                 Status = x.s.Status,
                 Score = x.s.OverallScore,
                 StartedAt = x.s.StartedAt,

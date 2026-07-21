@@ -5,6 +5,7 @@ using ApplicationLayer.DTOs.Rag;
 using ApplicationLayer.Helpers;
 using ApplicationLayer.Interfaces.Repositories;
 using ApplicationLayer.Interfaces.Services;
+using ApplicationLayer.Services.Mapping;
 using DomainLayer.Constants;
 using DomainLayer.Entities;
 using DomainLayer.Exceptions;
@@ -286,6 +287,7 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
             QuestionSetId = r.QuestionSetId,
             SetTitle = string.IsNullOrWhiteSpace(r.SetTitle) ? r.CompanyName : r.SetTitle,
             CompanyName = r.CompanyName,
+            CompanyLogo = CompanyLogoResolver.Resolve(r.CompanyLogo, r.CompanyWebsite, r.CompanyName),
             Status = r.Status,
             Score = r.Score,
             DurationSeconds = ComputeDurationSeconds(r.StartedAt, r.CompletedAt),
