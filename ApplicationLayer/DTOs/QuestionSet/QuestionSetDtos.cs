@@ -18,6 +18,13 @@ public class QuestionSetListItemDto
 
     public string? Title { get; set; }
     public string Status { get; set; } = string.Empty;
+
+    /// <summary>Tên công ty của HR sở hữu bộ này — chính là công ty candidate sẽ thấy trên marketplace sau khi publish.</summary>
+    public string CompanyName { get; set; } = string.Empty;
+
+    /// <summary>Luôn có giá trị: logo thật nếu công ty đã upload, không thì fallback theo domain website hoặc tự vẽ từ tên công ty.</summary>
+    public string CompanyLogo { get; set; } = string.Empty;
+
     public DateTime SavedAt { get; set; }
     public DateTime? PublishedAt { get; set; }
 }
@@ -29,6 +36,12 @@ public class SaveDraftResponseDto
     public Guid SourceJobId { get; set; }
     public int QuestionCount { get; set; }
     public DateTime SavedAt { get; set; }
+
+    /// <summary>Tên công ty của HR sở hữu bộ này — chính là công ty candidate sẽ thấy trên marketplace sau khi publish.</summary>
+    public string CompanyName { get; set; } = string.Empty;
+
+    /// <summary>Luôn có giá trị: logo thật nếu công ty đã upload, không thì fallback theo domain website hoặc tự vẽ từ tên công ty.</summary>
+    public string CompanyLogo { get; set; } = string.Empty;
 }
 
 public class QuestionSetDetailResponseDto
@@ -37,6 +50,13 @@ public class QuestionSetDetailResponseDto
     public string Status { get; set; } = string.Empty;
     public Guid SourceJobId { get; set; }
     public string? Title { get; set; }
+
+    /// <summary>Tên công ty của HR sở hữu bộ này — chính là công ty candidate sẽ thấy trên marketplace sau khi publish.</summary>
+    public string CompanyName { get; set; } = string.Empty;
+
+    /// <summary>Luôn có giá trị: logo thật nếu công ty đã upload, không thì fallback theo domain website hoặc tự vẽ từ tên công ty.</summary>
+    public string CompanyLogo { get; set; } = string.Empty;
+
     public string JobDescription { get; set; } = string.Empty;
     public string? HrNote { get; set; }
 

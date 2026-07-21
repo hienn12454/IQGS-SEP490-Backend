@@ -73,6 +73,10 @@ public class PracticeSessionListItemDto
     public Guid QuestionSetId { get; set; }
     public string SetTitle { get; set; } = string.Empty;
     public string CompanyName { get; set; } = string.Empty;
+
+    /// <summary>Luôn có giá trị: logo thật nếu công ty đã upload, không thì fallback theo domain website hoặc tự vẽ từ tên công ty.</summary>
+    public string CompanyLogo { get; set; } = string.Empty;
+
     public string Status { get; set; } = string.Empty;
     public double? Score { get; set; }
     public int? DurationSeconds { get; set; }
@@ -107,6 +111,8 @@ public class PracticeSessionRow
     public Guid QuestionSetId { get; set; }
     public string? SetTitle { get; set; }
     public string CompanyName { get; set; } = string.Empty;
+    public string? CompanyLogo { get; set; }
+    public string? CompanyWebsite { get; set; }
     public string Status { get; set; } = string.Empty;
     public double? Score { get; set; }
     public DateTime? StartedAt { get; set; }

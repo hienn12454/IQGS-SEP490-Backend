@@ -2,6 +2,7 @@ using ApplicationLayer.DTOs.Admin;
 using ApplicationLayer.DTOs.Profile;
 using ApplicationLayer.Interfaces.Repositories;
 using ApplicationLayer.Interfaces.Services;
+using ApplicationLayer.Services.Mapping;
 using DomainLayer.Constants;
 using DomainLayer.Entities;
 using DomainLayer.Exceptions;
@@ -270,6 +271,8 @@ public class UserService : IUserService
                 {
                     CompanyId = hr.CompanyId,
                     CompanyName = company?.Name ?? string.Empty,
+                    CompanyLogo = CompanyLogoResolver.Resolve(
+                        company?.LogoUrl, company?.WebsiteUrl, company?.Name ?? string.Empty),
                     JobTitle = hr.JobTitle,
                     PhoneNumber = hr.PhoneNumber,
                     LinkedInUrl = hr.LinkedInUrl,

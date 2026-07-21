@@ -22,6 +22,10 @@ public class HRProfileDto
 {
     public Guid CompanyId { get; set; }
     public string CompanyName { get; set; } = string.Empty;  // đọc từ Company navigation
+
+    /// <summary>Luôn có giá trị: logo thật nếu công ty đã upload, không thì fallback theo domain website hoặc tự vẽ từ tên công ty.</summary>
+    public string CompanyLogo { get; set; } = string.Empty;
+
     public string? JobTitle { get; set; }
     public string? PhoneNumber { get; set; }
     public string? LinkedInUrl { get; set; }
