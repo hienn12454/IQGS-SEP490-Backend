@@ -92,7 +92,11 @@ public class PublishedQuestionSetRow
     /// <summary>Mô tả bộ câu hỏi hiển thị trên card — lấy từ question_sets.HrNote.</summary>
     public string? Description { get; set; }
 
-    /// <summary>Điểm trung bình OverallScore các phiên luyện tập đã chấm — null khi chưa có phiên nào được chấm.</summary>
+    /// <summary>
+    /// OverallScore trung bình các phiên luyện tập đã chấm — RAW, thang 0-100 (SCRUM-304).
+    /// Không phải rating sao hiển thị cho candidate — PublishedQuestionSetMapper.RoundRating quy đổi sang thang 0-5 trước khi trả ra API.
+    /// Null khi chưa có phiên nào được chấm.
+    /// </summary>
     public double? Rating { get; set; }
 
     /// <summary>Số phiên luyện tập đã tạo trên bộ này.</summary>
@@ -112,7 +116,10 @@ public class PublishedQuestionSetDetail
     public string SkillsJson { get; set; } = "[]";
     public int? TimeLimitMinutes { get; set; }
     public string? Description { get; set; }
+
+    /// <summary>OverallScore trung bình RAW, thang 0-100 — xem ghi chú ở PublishedQuestionSetRow.Rating.</summary>
     public double? Rating { get; set; }
+
     public int AttemptCount { get; set; }
     public List<PublishedQuestionRow> Questions { get; set; } = new();
 }

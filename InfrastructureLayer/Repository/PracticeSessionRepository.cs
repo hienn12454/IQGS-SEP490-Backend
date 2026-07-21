@@ -129,17 +129,20 @@ public class PracticeSessionRepository : IPracticeSessionRepository
         if (totalSessions == 0)
             return new PracticeSessionStatsDto { TotalSessions = 0 };
 
+        // Làm tròn 2 chữ số thập phân (vd 3.17) — AVG() trên Postgres trả về số thập phân dài (vd 51.0739292829),
+        // giới hạn về đúng độ chính xác hiển thị cho candidate, khớp với OverallScore mỗi phiên (PracticeOverallScoreCalculator).
         var scoredQuery = query.Where(s => s.OverallScore != null);
         var averageScore = await scoredQuery.AnyAsync()
-            ? await scoredQuery.AverageAsync(s => s.OverallScore)
+            ? Math.Round(await scoredQuery.AverageAsync(s => s.OverallScore!.Value), 2)
             : (double?)null;
         var bestScore = await scoredQuery.AnyAsync()
-            ? await scoredQuery.MaxAsync(s => s.OverallScore)
+            ? Math.Round(await scoredQuery.MaxAsync(s => s.OverallScore!.Value), 2)
             : (double?)null;
-        var latestScore = await scoredQuery
+        var latestScoreRaw = await scoredQuery
             .OrderByDescending(s => s.CompletedAt)
             .Select(s => s.OverallScore)
             .FirstOrDefaultAsync();
+        var latestScore = latestScoreRaw.HasValue ? Math.Round(latestScoreRaw.Value, 2) : (double?)null;
 
         // Postgres/Npgsql không hỗ trợ EF.Functions.DateDiff* — lấy 2 mốc thời gian rồi trừ ở client.
         var timestamps = await query

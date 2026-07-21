@@ -82,7 +82,7 @@ public class CandidatePracticeSessionsController : ControllerBase
         return SuccessResp.Ok(result);
     }
 
-    /// <summary>Đánh dấu phiên luyện tập đã hoàn thành (IN_PROGRESS → COMPLETED), tính overall_score = tổng điểm Succeeded / tổng số câu trong bộ (câu chưa làm = 0).</summary>
+    /// <summary>Đánh dấu phiên luyện tập đã hoàn thành (IN_PROGRESS → COMPLETED), tính overall_score = tổng điểm Succeeded / tổng số câu trong bộ (câu chưa làm = 0), làm tròn 2 chữ số thập phân.</summary>
     /// <remarks>Chỉ hoàn thành được phiên đang IN_PROGRESS — 400 nếu phiên đã COMPLETED/ABANDONED. Ví dụ bộ 30 câu, 1 câu 95 điểm → overall ≈ 3.17.</remarks>
     /// <param name="id">Id phiên luyện tập.</param>
     [HttpPost("{id:guid}/complete")]

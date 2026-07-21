@@ -28,6 +28,7 @@ public class AppDbContext : DbContext
     public DbSet<AiFeedback> AiFeedbacks { get; set; }
     public DbSet<CandidateRecommendation> CandidateRecommendations { get; set; }
     public DbSet<CandidateInvitation> CandidateInvitations { get; set; }
+    public DbSet<DomainLayer.Entities.PlatformSettings> PlatformSettings { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -415,6 +416,23 @@ public class AppDbContext : DbContext
 
             entity.HasIndex(i => i.RecommendationId).IsUnique();
             entity.HasIndex(i => new { i.CandidateUserId, i.Status });
+        });
+
+        // ── PlatformSettings (singleton — Admin runtime config) ─────
+        modelBuilder.Entity<DomainLayer.Entities.PlatformSettings>(entity =>
+        {
+            entity.ToTable("platform_settings");
+            entity.HasKey(p => p.Id);
+            entity.Property(p => p.MinQuestionsToPublish).IsRequired().HasDefaultValue(10);
+
+            // Seed đúng 1 dòng cố định — repository luôn đọc/ghi dòng này, không tự tạo mới.
+            entity.HasData(new DomainLayer.Entities.PlatformSettings
+            {
+                Id = DomainLayer.Entities.PlatformSettings.SingletonId,
+                MinQuestionsToPublish = 10,
+                CreatedAt = new DateTime(2026, 7, 21, 0, 0, 0, DateTimeKind.Utc),
+                IsActive = true
+            });
         });
     }
 }
