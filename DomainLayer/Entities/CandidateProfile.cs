@@ -16,6 +16,7 @@ public class CandidateProfile : BaseEntity
     public string? LinkedInUrl { get; set; }
     public string? GithubUrl { get; set; }
     public string? Bio { get; set; }
+    public string? Address { get; set; }
 
     public string? CvFileName { get; set; }
     public string? CvBlobPath { get; set; }
@@ -30,4 +31,12 @@ public class CandidateProfile : BaseEntity
 
     /// <summary>Consent cho phép hệ thống đề xuất hồ sơ này cho HR khi đạt điều kiện (SCRUM-293) — mặc định tắt.</summary>
     public bool AllowRecruiterRecommendation { get; set; }
+
+    /// <summary>
+    /// Bật: mỗi lần upload CV mới, hệ thống tự ghi đè họ tên/SĐT/địa chỉ/GitHub/LinkedIn trên profile
+    /// bằng dữ liệu CV vừa trích xuất được (field CV không trích được thì giữ nguyên giá trị cũ).
+    /// Tắt: upload CV chỉ cập nhật TechStack như cũ, không đụng các field cá nhân — profile do candidate tự
+    /// chỉnh tay được giữ nguyên qua các lần upload sau. Mặc định bật.
+    /// </summary>
+    public bool AutoSyncProfileFromCv { get; set; } = true;
 }

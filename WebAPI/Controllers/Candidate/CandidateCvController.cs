@@ -1,3 +1,4 @@
+using ApplicationLayer.DTOs.Candidate;
 using ApplicationLayer.Interfaces.Services;
 using ApplicationLayer.ResponseCode;
 using Microsoft.AspNetCore.Authorization;
@@ -6,7 +7,11 @@ using WebAPI.Extensions;
 
 namespace WebAPI.Controllers.Candidate;
 
-/// <summary>CV của Candidate — upload (PDF/DOCX/JPG/JPEG/PNG) để AI trích kỹ năng (skills) và tự động cập nhật TechStack trên hồ sơ. Mỗi Candidate chỉ giữ đúng 1 CV.</summary>
+/// <summary>
+/// CV của Candidate — upload (PDF/DOCX/JPG/JPEG/PNG) để AI trích kỹ năng (skills) và tự động cập nhật TechStack trên hồ sơ.
+/// Mỗi Candidate chỉ giữ đúng 1 CV. Khi bật AutoSyncProfileFromCv (mặc định bật), upload CV còn tự áp họ tên/SĐT/địa chỉ/
+/// GitHub/LinkedIn trích xuất được vào profile — candidate luôn có thể vào profile chỉnh tay lại tùy ý sau đó.
+/// </summary>
 [ApiController]
 [Route("api/candidate/cv")]
 [Authorize(Roles = "Candidate")]
@@ -22,6 +27,8 @@ public class CandidateCvController : ControllerBase
     /// <summary>Tải lên CV (PDF/DOCX/JPG/JPEG/PNG, tối đa theo cấu hình Cv:MaxFileSizeMb) — lưu file, gọi AI phân tích kỹ năng, tự động ghi đè TechStack trên hồ sơ. Upload mới sẽ thay thế CV cũ.</summary>
     /// <remarks>
     /// 400 nếu sai định dạng/quá dung lượng. Nếu bước phân tích AI lỗi/timeout, request trả lỗi rõ ràng nhưng file CV đã lưu vẫn được giữ nguyên, TechStack cũ không bị mất.
+    /// Nếu đang bật AutoSyncProfileFromCv (xem GET/PUT sync-settings), response còn trả profileFieldsSynced — tên các field
+    /// (họ tên/SĐT/địa chỉ/GitHub/LinkedIn) vừa được ghi đè trên profile từ CV này; field CV không trích được thì giữ nguyên giá trị cũ.
     /// </remarks>
     [HttpPost]
     [Consumes("multipart/form-data")]
@@ -53,6 +60,23 @@ public class CandidateCvController : ControllerBase
     {
         await _service.DeleteAsync(User.GetUserId());
         return SuccessResp.NoContent();
+    }
+
+    /// <summary>Xem cài đặt tự đồng bộ thông tin cá nhân (họ tên, SĐT, địa chỉ, GitHub, LinkedIn) từ CV vào profile — mặc định bật (true) nếu chưa từng đổi.</summary>
+    [HttpGet("sync-settings")]
+    public async Task<IActionResult> GetSyncSettings()
+    {
+        var result = await _service.GetSyncSettingsAsync(User.GetUserId());
+        return SuccessResp.Ok(result);
+    }
+
+    /// <summary>Bật/tắt tự đồng bộ thông tin cá nhân từ CV vào profile cho các lần upload sau. Tắt: upload CV chỉ cập nhật TechStack như cũ — thông tin candidate đã tự chỉnh trong profile được giữ nguyên qua các lần upload sau.</summary>
+    /// <param name="dto">autoSyncProfileFromCv: true/false.</param>
+    [HttpPut("sync-settings")]
+    public async Task<IActionResult> UpdateSyncSettings([FromBody] CvSyncSettingsDto dto)
+    {
+        var result = await _service.UpdateSyncSettingsAsync(User.GetUserId(), dto);
+        return SuccessResp.Ok(result);
     }
 }
 
