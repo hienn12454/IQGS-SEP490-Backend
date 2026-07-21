@@ -36,4 +36,7 @@ public class UpdateCandidateProfileDto
 
     [MaxLength(1000, ErrorMessage = "Giới thiệu bản thân không được vượt quá 1000 ký tự.")]
     public string? Bio { get; set; }
+
+    [MaxLength(500, ErrorMessage = "Địa chỉ không được vượt quá 500 ký tự.")]
+    public string? Address { get; set; }
 }

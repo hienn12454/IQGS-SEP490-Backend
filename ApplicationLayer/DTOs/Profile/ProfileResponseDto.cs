@@ -38,6 +38,10 @@ public class CandidateProfileDto
     public string? LinkedInUrl { get; set; }
     public string? GithubUrl { get; set; }
     public string? Bio { get; set; }
+    public string? Address { get; set; }
     public string? CvFileName { get; set; }
     public DateTime? CvUploadedAt { get; set; }
+
+    /// <summary>Có đang bật tự đồng bộ thông tin cá nhân từ CV vào profile hay không — đổi qua PUT /api/candidate/cv/sync-settings.</summary>
+    public bool AutoSyncProfileFromCv { get; set; }
 }
