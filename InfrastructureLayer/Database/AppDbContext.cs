@@ -327,6 +327,10 @@ public class AppDbContext : DbContext
             entity.ToTable("practice_sessions");
             entity.HasKey(s => s.Id);
             entity.Property(s => s.Status).IsRequired().HasMaxLength(20);
+            // SCRUM-305: AI Insight song ngữ + skillsToImprove
+            entity.Property(s => s.AiInsightVi).HasMaxLength(2000);
+            entity.Property(s => s.AiInsightEn).HasMaxLength(2000);
+            entity.Property(s => s.SkillsToImproveJson);
 
             entity.HasOne(s => s.QuestionSet)
                   .WithMany()

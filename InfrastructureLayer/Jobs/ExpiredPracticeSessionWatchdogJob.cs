@@ -1,7 +1,6 @@
 using ApplicationLayer.Interfaces.Jobs;
 using ApplicationLayer.Interfaces.Repositories;
 using ApplicationLayer.Interfaces.Services;
-using DomainLayer.Constants;
 using Hangfire;
 using Microsoft.Extensions.Logging;
 
@@ -10,21 +9,21 @@ namespace InfrastructureLayer.Jobs;
 /// <summary>
 /// Quét các phiên practice IN_PROGRESS thuộc bộ có giới hạn thời gian và tự nộp bài khi hết giờ —
 /// bọc case candidate thoát app/mất mạng nên không còn request nào chạm vào phiên để trigger auto-submit lazy.
-/// CompletedAt ghi đúng deadline (StartedAt + limit), không tính thời gian trễ do watchdog quét theo chu kỳ.
+/// CompletedAt ghi đúng deadline (StartedAt + limit). OverallScore + AI Insight qua FinalizeExpiredByWatchdogAsync (SCRUM-305).
 /// </summary>
 public class ExpiredPracticeSessionWatchdogJob : IExpiredPracticeSessionWatchdogJob
 {
     private readonly IPracticeSessionRepository _sessionRepository;
-    private readonly IRecommendationService _recommendationService;
+    private readonly ICandidatePracticeSessionService _practiceSessionService;
     private readonly ILogger<ExpiredPracticeSessionWatchdogJob> _logger;
 
     public ExpiredPracticeSessionWatchdogJob(
         IPracticeSessionRepository sessionRepository,
-        IRecommendationService recommendationService,
+        ICandidatePracticeSessionService practiceSessionService,
         ILogger<ExpiredPracticeSessionWatchdogJob> logger)
     {
         _sessionRepository = sessionRepository;
-        _recommendationService = recommendationService;
+        _practiceSessionService = practiceSessionService;
         _logger = logger;
     }
 
@@ -40,22 +39,16 @@ public class ExpiredPracticeSessionWatchdogJob : IExpiredPracticeSessionWatchdog
             if (now < expiresAt)
                 continue;
 
-            session.Status = PracticeSessionStatus.Completed;
-            session.CompletedAt = expiresAt;
-            session.UpdatedAt = now;
-            await _sessionRepository.UpdateAsync(session);
-
-            _logger.LogInformation(
-                "Watchdog tự nộp phiên practice {SessionId} (candidate {CandidateUserId}) — hết giờ lúc {ExpiresAt:O}.",
-                session.Id, session.CandidateUserId, expiresAt);
-
             try
             {
-                await _recommendationService.GenerateForCompletedSessionAsync(session);
+                await _practiceSessionService.FinalizeExpiredByWatchdogAsync(session.Id);
+                _logger.LogInformation(
+                    "Watchdog tự nộp phiên practice {SessionId} (candidate {CandidateUserId}) — hết giờ lúc {ExpiresAt:O}.",
+                    session.Id, session.CandidateUserId, expiresAt);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Tạo recommendation thất bại cho session {SessionId}.", session.Id);
+                _logger.LogError(ex, "Watchdog finalize thất bại cho session {SessionId}.", session.Id);
             }
         }
     }
