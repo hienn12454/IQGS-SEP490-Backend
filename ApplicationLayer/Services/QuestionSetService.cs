@@ -12,10 +12,9 @@ namespace ApplicationLayer.Services;
 
 public class QuestionSetService : IQuestionSetService
 {
-    private const int MinQuestionsToPublish = 10;
-
     private readonly IQuestionSetRepository _questionSetRepository;
     private readonly IQuestionGenerationJobRepository _jobRepository;
+    private readonly IPlatformSettingsRepository _platformSettingsRepository;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -25,10 +24,12 @@ public class QuestionSetService : IQuestionSetService
 
     public QuestionSetService(
         IQuestionSetRepository questionSetRepository,
-        IQuestionGenerationJobRepository jobRepository)
+        IQuestionGenerationJobRepository jobRepository,
+        IPlatformSettingsRepository platformSettingsRepository)
     {
         _questionSetRepository = questionSetRepository;
         _jobRepository = jobRepository;
+        _platformSettingsRepository = platformSettingsRepository;
     }
 
     public async Task<SaveDraftResponseDto> SaveDraftFromJobAsync(Guid jobId, Guid ownerId)
@@ -262,10 +263,11 @@ public class QuestionSetService : IQuestionSetService
         if (questionSet.Status == QuestionSetStatus.Published)
             throw new ConflictException("Bộ câu hỏi đã được publish trước đó.");
 
+        var minQuestionsToPublish = (await _platformSettingsRepository.GetAsync()).MinQuestionsToPublish;
         var activeQuestionCount = questionSet.Questions.Count(q => q.IsActive);
-        if (activeQuestionCount < MinQuestionsToPublish)
+        if (activeQuestionCount < minQuestionsToPublish)
             throw new BadRequestException(
-                $"Bộ câu hỏi cần tối thiểu {MinQuestionsToPublish} câu hỏi để publish (hiện có {activeQuestionCount}).");
+                $"Bộ câu hỏi cần tối thiểu {minQuestionsToPublish} câu hỏi để publish (hiện có {activeQuestionCount}).");
 
         questionSet.Status = QuestionSetStatus.Published;
         questionSet.PublishedAt = DateTime.UtcNow;
