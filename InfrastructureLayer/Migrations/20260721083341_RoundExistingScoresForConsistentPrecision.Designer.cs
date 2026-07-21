@@ -13,8 +13,8 @@ using Pgvector;
 namespace InfrastructureLayer.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20260721082927_RoundExistingScoresToWholeNumbers")]
-    partial class RoundExistingScoresToWholeNumbers
+    [Migration("20260721083341_RoundExistingScoresForConsistentPrecision")]
+    partial class RoundExistingScoresForConsistentPrecision
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
