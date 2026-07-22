@@ -1,4 +1,4 @@
-using ApplicationLayer.Interfaces.Jobs;
+﻿using ApplicationLayer.Interfaces.Jobs;
 using ApplicationLayer.Interfaces.Repositories;
 using ApplicationLayer.Interfaces.Services;
 using Hangfire;
@@ -9,7 +9,8 @@ namespace InfrastructureLayer.Jobs;
 /// <summary>
 /// Quét các phiên practice IN_PROGRESS thuộc bộ có giới hạn thời gian và tự nộp bài khi hết giờ —
 /// bọc case candidate thoát app/mất mạng nên không còn request nào chạm vào phiên để trigger auto-submit lazy.
-/// CompletedAt ghi đúng deadline (StartedAt + limit). OverallScore + AI Insight qua FinalizeExpiredByWatchdogAsync (SCRUM-305).
+/// CompletedAt ghi đúng deadline (StartedAt + limit); overallScore + AI Insight
+/// được xử lý tập trung qua FinalizeExpiredByWatchdogAsync (SCRUM-304/SCRUM-305).
 /// </summary>
 public class ExpiredPracticeSessionWatchdogJob : IExpiredPracticeSessionWatchdogJob
 {

@@ -16,6 +16,7 @@ public static class PracticeOverallScoreCalculator
             return null;
 
         var sum = succeededScores.Sum();
+        // Làm tròn 2 chữ số thập phân (vd 3.17) — trực quan hơn số nguyên khi overall là 1 phân số nhỏ trên tổng số câu.
         return Math.Round(sum / totalQuestionCount, 2);
     }
 }

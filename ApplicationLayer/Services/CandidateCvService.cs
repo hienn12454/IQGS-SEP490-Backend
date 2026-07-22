@@ -14,6 +14,7 @@ namespace ApplicationLayer.Services;
 public class CandidateCvService : ICandidateCvService
 {
     private readonly ICandidateProfileRepository _candidateProfileRepository;
+    private readonly IUserRepository _userRepository;
     private readonly IBlobStorageService _blobStorage;
     private readonly IRagService _ragService;
     private readonly CvSettings _cvSettings;
@@ -27,12 +28,14 @@ public class CandidateCvService : ICandidateCvService
 
     public CandidateCvService(
         ICandidateProfileRepository candidateProfileRepository,
+        IUserRepository userRepository,
         IBlobStorageService blobStorage,
         IRagService ragService,
         IOptions<CvSettings> cvSettings,
         IOptions<BlobStorageSettings> blobSettings)
     {
         _candidateProfileRepository = candidateProfileRepository;
+        _userRepository = userRepository;
         _blobStorage = blobStorage;
         _ragService = ragService;
         _cvSettings = cvSettings.Value;
@@ -87,6 +90,8 @@ public class CandidateCvService : ICandidateCvService
         profile.CvEvaluationJson = JsonSerializer.Serialize(
             new { skills = parseResult.Skills, summary = parseResult.Summary }, JsonOptions);
         profile.CvParsedAt = DateTime.UtcNow;
+
+        var syncedFields = await ApplyCvProfileSyncAsync(profile, parseResult, userId);
         await _candidateProfileRepository.UpdateAsync(profile);
 
         var downloadUrl = await _blobStorage.GenerateReadSasUrlAsync(
@@ -100,7 +105,9 @@ public class CandidateCvService : ICandidateCvService
             TechStack = profile.TechStack.ToList(),
             ParsedAt = profile.CvParsedAt,
             UploadedAt = profile.CvUploadedAt,
-            DownloadUrl = downloadUrl
+            DownloadUrl = downloadUrl,
+            AutoSyncProfileFromCv = profile.AutoSyncProfileFromCv,
+            ProfileFieldsSynced = syncedFields
         };
     }
 
@@ -123,7 +130,8 @@ public class CandidateCvService : ICandidateCvService
             TechStack = profile.TechStack.ToList(),
             ParsedAt = profile.CvParsedAt,
             UploadedAt = profile.CvUploadedAt,
-            DownloadUrl = downloadUrl
+            DownloadUrl = downloadUrl,
+            AutoSyncProfileFromCv = profile.AutoSyncProfileFromCv
         };
     }
 
@@ -142,6 +150,90 @@ public class CandidateCvService : ICandidateCvService
         profile.CvParsedAt = null;
         profile.CvEvaluationJson = null;
         await _candidateProfileRepository.UpdateAsync(profile);
+    }
+
+    public async Task<CvSyncSettingsDto> GetSyncSettingsAsync(Guid userId)
+    {
+        var profile = await _candidateProfileRepository.GetByUserIdAsync(userId);
+        return new CvSyncSettingsDto { AutoSyncProfileFromCv = profile?.AutoSyncProfileFromCv ?? true };
+    }
+
+    public async Task<CvSyncSettingsDto> UpdateSyncSettingsAsync(Guid userId, CvSyncSettingsDto dto)
+    {
+        var profile = await _candidateProfileRepository.GetByUserIdAsync(userId);
+        if (profile is null)
+        {
+            await _candidateProfileRepository.AddAsync(new CandidateProfile
+            {
+                UserId = userId,
+                AutoSyncProfileFromCv = dto.AutoSyncProfileFromCv
+            });
+        }
+        else
+        {
+            profile.AutoSyncProfileFromCv = dto.AutoSyncProfileFromCv;
+            await _candidateProfileRepository.UpdateAsync(profile);
+        }
+
+        return new CvSyncSettingsDto { AutoSyncProfileFromCv = dto.AutoSyncProfileFromCv };
+    }
+
+    /// <summary>
+    /// Feature "CV auto-apply profile": khi bật AutoSyncProfileFromCv, ghi đè họ tên/SĐT/địa chỉ/GitHub/LinkedIn
+    /// trên User + CandidateProfile bằng dữ liệu CV vừa trích xuất. Chỉ ghi đè field nào CV thực sự có giá trị —
+    /// field CV không trích được (null/rỗng) thì giữ nguyên giá trị đang có trên profile (không xóa dữ liệu tốt
+    /// bằng dữ liệu thiếu). Trả về danh sách tên field vừa được áp dụng để FE hiển thị cho candidate biết.
+    /// </summary>
+    private async Task<List<string>> ApplyCvProfileSyncAsync(
+        CandidateProfile profile, ParseCvResult parseResult, Guid userId)
+    {
+        var applied = new List<string>();
+        if (!profile.AutoSyncProfileFromCv)
+            return applied;
+
+        User? user = null;
+
+        if (!string.IsNullOrWhiteSpace(parseResult.FullName))
+        {
+            user = await _userRepository.GetByIdAsync(userId);
+            if (user is not null)
+            {
+                user.FullName = parseResult.FullName.Trim();
+                applied.Add(nameof(User.FullName));
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(parseResult.PhoneNumber))
+        {
+            user ??= await _userRepository.GetByIdAsync(userId);
+            if (user is not null)
+                user.PhoneNumber = parseResult.PhoneNumber.Trim();
+            profile.PhoneNumber = parseResult.PhoneNumber.Trim();
+            applied.Add(nameof(CandidateProfile.PhoneNumber));
+        }
+
+        if (!string.IsNullOrWhiteSpace(parseResult.Address))
+        {
+            profile.Address = parseResult.Address.Trim();
+            applied.Add(nameof(CandidateProfile.Address));
+        }
+
+        if (!string.IsNullOrWhiteSpace(parseResult.GithubUrl))
+        {
+            profile.GithubUrl = parseResult.GithubUrl.Trim();
+            applied.Add(nameof(CandidateProfile.GithubUrl));
+        }
+
+        if (!string.IsNullOrWhiteSpace(parseResult.LinkedInUrl))
+        {
+            profile.LinkedInUrl = parseResult.LinkedInUrl.Trim();
+            applied.Add(nameof(CandidateProfile.LinkedInUrl));
+        }
+
+        if (user is not null)
+            await _userRepository.UpdateAsync(user);
+
+        return applied;
     }
 
     private static (List<string> Skills, string? Summary) ParseEvaluation(string? evaluationJson)

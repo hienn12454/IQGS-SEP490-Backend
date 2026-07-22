@@ -44,7 +44,7 @@ public class CandidateQuestionSetListItemDto
     /// <summary>Giới hạn thời gian làm bài HR đặt (phút) — null = không giới hạn, hết giờ hệ thống tự nộp bài.</summary>
     public int? TimeLimitMinutes { get; set; }
 
-    /// <summary>Điểm trung bình các phiên luyện tập đã chấm (1 chữ số thập phân) — null khi chưa có phiên nào được chấm.</summary>
+    /// <summary>Rating sao trên thang 0-5 (vd 4.8), quy đổi từ OverallScore trung bình các phiên đã chấm — null khi chưa có phiên nào được chấm.</summary>
     public double? Rating { get; set; }
 
     /// <summary>Số lượt luyện tập trên bộ này.</summary>
@@ -76,7 +76,7 @@ public class CandidateQuestionSetDetailDto
     /// <summary>Giới hạn thời gian làm bài HR đặt (phút) — null = không giới hạn, hết giờ hệ thống tự nộp bài.</summary>
     public int? TimeLimitMinutes { get; set; }
 
-    /// <summary>Điểm trung bình các phiên luyện tập đã chấm (1 chữ số thập phân) — null khi chưa có phiên nào được chấm.</summary>
+    /// <summary>Rating sao trên thang 0-5 (vd 4.8), quy đổi từ OverallScore trung bình các phiên đã chấm — null khi chưa có phiên nào được chấm.</summary>
     public double? Rating { get; set; }
 
     /// <summary>Số lượt luyện tập trên bộ này.</summary>

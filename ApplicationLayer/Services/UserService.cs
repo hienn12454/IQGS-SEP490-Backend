@@ -2,6 +2,7 @@ using ApplicationLayer.DTOs.Admin;
 using ApplicationLayer.DTOs.Profile;
 using ApplicationLayer.Interfaces.Repositories;
 using ApplicationLayer.Interfaces.Services;
+using ApplicationLayer.Services.Mapping;
 using DomainLayer.Constants;
 using DomainLayer.Entities;
 using DomainLayer.Exceptions;
@@ -192,7 +193,8 @@ public class UserService : IUserService
                 PhoneNumber = dto.PhoneNumber,
                 LinkedInUrl = dto.LinkedInUrl,
                 GithubUrl = dto.GithubUrl,
-                Bio = dto.Bio
+                Bio = dto.Bio,
+                Address = dto.Address
             });
         }
         else
@@ -204,6 +206,7 @@ public class UserService : IUserService
             profile.LinkedInUrl = dto.LinkedInUrl;
             profile.GithubUrl = dto.GithubUrl;
             profile.Bio = dto.Bio;
+            profile.Address = dto.Address;
             await _candidateProfileRepo.UpdateAsync(profile);
         }
 
@@ -268,6 +271,8 @@ public class UserService : IUserService
                 {
                     CompanyId = hr.CompanyId,
                     CompanyName = company?.Name ?? string.Empty,
+                    CompanyLogo = CompanyLogoResolver.Resolve(
+                        company?.LogoUrl, company?.WebsiteUrl, company?.Name ?? string.Empty),
                     JobTitle = hr.JobTitle,
                     PhoneNumber = hr.PhoneNumber,
                     LinkedInUrl = hr.LinkedInUrl,
@@ -289,8 +294,10 @@ public class UserService : IUserService
                     LinkedInUrl = c.LinkedInUrl,
                     GithubUrl = c.GithubUrl,
                     Bio = c.Bio,
+                    Address = c.Address,
                     CvFileName = c.CvFileName,
-                    CvUploadedAt = c.CvUploadedAt
+                    CvUploadedAt = c.CvUploadedAt,
+                    AutoSyncProfileFromCv = c.AutoSyncProfileFromCv
                 };
         }
     }

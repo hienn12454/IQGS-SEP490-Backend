@@ -72,6 +72,17 @@ public class ParseCvResult
     public List<string> Skills { get; set; } = new();
     public string? Summary { get; set; }
     public string? FileName { get; set; }
+
+    // Thông tin cá nhân trích xuất từ CV — dùng để tự đồng bộ vào profile (feature "CV auto-apply profile").
+    // Optional/nullable: phụ thuộc RAG service có hỗ trợ trích xuất hay chưa. Nếu RAG chưa trả các field này,
+    // JSON deserialize để null — code gọi (CandidateCvService) coi null là "CV không có thông tin này", giữ nguyên
+    // giá trị cũ trên profile, không lỗi, không mất dữ liệu.
+    public string? FullName { get; set; }
+    public string? PhoneNumber { get; set; }
+    public string? Address { get; set; }
+    public string? GithubUrl { get; set; }
+    public string? LinkedInUrl { get; set; }
+
     public List<string> Warnings { get; set; } = new();
     public string? Error { get; set; }
     public string? Detail { get; set; }

@@ -4,6 +4,7 @@ using ApplicationLayer.DTOs.QuestionGeneration;
 using ApplicationLayer.Helpers;
 using ApplicationLayer.Interfaces.Repositories;
 using ApplicationLayer.Interfaces.Services;
+using ApplicationLayer.Services.Mapping;
 using DomainLayer.Constants;
 using DomainLayer.Entities;
 using DomainLayer.Exceptions;
@@ -12,10 +13,11 @@ namespace ApplicationLayer.Services;
 
 public class QuestionSetService : IQuestionSetService
 {
-    private const int MinQuestionsToPublish = 10;
-
     private readonly IQuestionSetRepository _questionSetRepository;
     private readonly IQuestionGenerationJobRepository _jobRepository;
+    private readonly IPlatformSettingsRepository _platformSettingsRepository;
+    private readonly IHRProfileRepository _hrProfileRepository;
+    private readonly ICompanyRepository _companyRepository;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -25,10 +27,28 @@ public class QuestionSetService : IQuestionSetService
 
     public QuestionSetService(
         IQuestionSetRepository questionSetRepository,
-        IQuestionGenerationJobRepository jobRepository)
+        IQuestionGenerationJobRepository jobRepository,
+        IPlatformSettingsRepository platformSettingsRepository,
+        IHRProfileRepository hrProfileRepository,
+        ICompanyRepository companyRepository)
     {
         _questionSetRepository = questionSetRepository;
         _jobRepository = jobRepository;
+        _platformSettingsRepository = platformSettingsRepository;
+        _hrProfileRepository = hrProfileRepository;
+        _companyRepository = companyRepository;
+    }
+
+    /// <summary>Lấy tên + logo công ty của HR sở hữu (qua HRProfile.CompanyId) — dùng gán vào response question set cho HR.</summary>
+    private async Task<(string Name, string Logo)> GetOwnerCompanyInfoAsync(Guid ownerId)
+    {
+        var hrProfile = await _hrProfileRepository.GetByUserIdAsync(ownerId);
+        if (hrProfile is null)
+            return (string.Empty, CompanyLogoResolver.Resolve(null, null, string.Empty));
+
+        var company = await _companyRepository.GetByIdAsync(hrProfile.CompanyId);
+        var name = company?.Name ?? string.Empty;
+        return (name, CompanyLogoResolver.Resolve(company?.LogoUrl, company?.WebsiteUrl, name));
     }
 
     public async Task<SaveDraftResponseDto> SaveDraftFromJobAsync(Guid jobId, Guid ownerId)
@@ -80,13 +100,17 @@ public class QuestionSetService : IQuestionSetService
 
         await _questionSetRepository.AddAsync(questionSet, snapshotQuestions);
 
+        var (companyName, companyLogo) = await GetOwnerCompanyInfoAsync(ownerId);
+
         return new SaveDraftResponseDto
         {
             QuestionSetId = questionSet.Id,
             Status = questionSet.Status,
             SourceJobId = jobId,
             QuestionCount = snapshotQuestions.Count,
-            SavedAt = questionSet.CreatedAt
+            SavedAt = questionSet.CreatedAt,
+            CompanyName = companyName,
+            CompanyLogo = companyLogo
         };
     }
 
@@ -95,12 +119,17 @@ public class QuestionSetService : IQuestionSetService
     {
         var questionSets = await _questionSetRepository.ListByOwnerAsync(ownerId, query.JobId);
 
+        // Cùng 1 ownerId -> cùng 1 công ty cho mọi item trong list — chỉ cần lookup 1 lần, tránh N+1 query.
+        var (companyName, companyLogo) = await GetOwnerCompanyInfoAsync(ownerId);
+
         return questionSets.Select(qs => new QuestionSetListItemDto
         {
             QuestionSetId = qs.Id,
             JobId = qs.SourceJobId,
             Title = qs.Title,
             Status = qs.Status,
+            CompanyName = companyName,
+            CompanyLogo = companyLogo,
             SavedAt = qs.CreatedAt,
             PublishedAt = qs.PublishedAt
         }).ToList();
@@ -118,12 +147,16 @@ public class QuestionSetService : IQuestionSetService
         if (!string.IsNullOrWhiteSpace(questionSet.PlanJson))
             planObj = JsonSerializer.Deserialize<object>(questionSet.PlanJson, JsonOptions);
 
+        var (companyName, companyLogo) = await GetOwnerCompanyInfoAsync(ownerId);
+
         return new QuestionSetDetailResponseDto
         {
             QuestionSetId = questionSet.Id,
             Status = questionSet.Status,
             SourceJobId = questionSet.SourceJobId,
             Title = questionSet.Title,
+            CompanyName = companyName,
+            CompanyLogo = companyLogo,
             JobDescription = questionSet.JobDescription,
             HrNote = questionSet.HrNote,
             TimeLimitMinutes = questionSet.TimeLimitMinutes,
@@ -262,10 +295,11 @@ public class QuestionSetService : IQuestionSetService
         if (questionSet.Status == QuestionSetStatus.Published)
             throw new ConflictException("Bộ câu hỏi đã được publish trước đó.");
 
+        var minQuestionsToPublish = (await _platformSettingsRepository.GetAsync()).MinQuestionsToPublish;
         var activeQuestionCount = questionSet.Questions.Count(q => q.IsActive);
-        if (activeQuestionCount < MinQuestionsToPublish)
+        if (activeQuestionCount < minQuestionsToPublish)
             throw new BadRequestException(
-                $"Bộ câu hỏi cần tối thiểu {MinQuestionsToPublish} câu hỏi để publish (hiện có {activeQuestionCount}).");
+                $"Bộ câu hỏi cần tối thiểu {minQuestionsToPublish} câu hỏi để publish (hiện có {activeQuestionCount}).");
 
         questionSet.Status = QuestionSetStatus.Published;
         questionSet.PublishedAt = DateTime.UtcNow;

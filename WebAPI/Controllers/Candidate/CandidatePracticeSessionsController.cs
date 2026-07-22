@@ -1,4 +1,4 @@
-using ApplicationLayer.DTOs.Candidate;
+﻿using ApplicationLayer.DTOs.Candidate;
 using ApplicationLayer.Interfaces.Services;
 using ApplicationLayer.ResponseCode;
 using Microsoft.AspNetCore.Authorization;
@@ -7,7 +7,7 @@ using WebAPI.Extensions;
 
 namespace WebAPI.Controllers.Candidate;
 
-/// <summary>Vòng đời phiên luyện tập phỏng vấn của Candidate: bắt đầu/tiếp tục, trả lời từng câu, hoàn thành, xem lịch sử + thống kê + AI feedback.</summary>
+/// <summary>VÃ²ng Ä‘á»i phiÃªn luyá»‡n táº­p phá»ng váº¥n cá»§a Candidate: báº¯t Ä‘áº§u/tiáº¿p tá»¥c, tráº£ lá»i tá»«ng cÃ¢u, hoÃ n thÃ nh, xem lá»‹ch sá»­ + thá»‘ng kÃª + AI feedback.</summary>
 [ApiController]
 [Route("api/candidate/practice-sessions")]
 [Authorize(Roles = "Candidate")]
@@ -20,8 +20,8 @@ public class CandidatePracticeSessionsController : ControllerBase
         _service = service;
     }
 
-    /// <summary>Bắt đầu phiên luyện tập mới từ 1 bộ câu hỏi PUBLISHED. Nếu đang có phiên IN_PROGRESS dở dang cho cùng bộ câu hỏi này, trả về phiên đó thay vì tạo mới (resume tự động).</summary>
-    /// <remarks>404 nếu questionSetId không tồn tại hoặc chưa publish.</remarks>
+    /// <summary>Báº¯t Ä‘áº§u phiÃªn luyá»‡n táº­p má»›i tá»« 1 bá»™ cÃ¢u há»i PUBLISHED. Náº¿u Ä‘ang cÃ³ phiÃªn IN_PROGRESS dá»Ÿ dang cho cÃ¹ng bá»™ cÃ¢u há»i nÃ y, tráº£ vá» phiÃªn Ä‘Ã³ thay vÃ¬ táº¡o má»›i (resume tá»± Ä‘á»™ng).</summary>
+    /// <remarks>404 náº¿u questionSetId khÃ´ng tá»“n táº¡i hoáº·c chÆ°a publish.</remarks>
     [HttpPost]
     public async Task<IActionResult> Start([FromBody] StartPracticeSessionDto dto)
     {
@@ -29,8 +29,8 @@ public class CandidatePracticeSessionsController : ControllerBase
         return SuccessResp.Ok(result);
     }
 
-    /// <summary>Danh sách phiên luyện tập của Candidate hiện tại — mặc định chỉ lấy COMPLETED, truyền status=IN_PROGRESS để lấy phiên đang làm dở. Hỗ trợ tìm theo keyword (tên bộ/công ty) và lọc theo ngày.</summary>
-    /// <param name="query">status (mặc định COMPLETED), questionSetId, keyword, page, pageSize, và lọc ngày: fromDate/toDate (khoảng cụ thể), hoặc year+month (1 tháng), hoặc chỉ year (cả năm).</param>
+    /// <summary>Danh sÃ¡ch phiÃªn luyá»‡n táº­p cá»§a Candidate hiá»‡n táº¡i â€” máº·c Ä‘á»‹nh chá»‰ láº¥y COMPLETED, truyá»n status=IN_PROGRESS Ä‘á»ƒ láº¥y phiÃªn Ä‘ang lÃ m dá»Ÿ. Há»— trá»£ tÃ¬m theo keyword (tÃªn bá»™/cÃ´ng ty) vÃ  lá»c theo ngÃ y.</summary>
+    /// <param name="query">status (máº·c Ä‘á»‹nh COMPLETED), questionSetId, keyword, page, pageSize, vÃ  lá»c ngÃ y: fromDate/toDate (khoáº£ng cá»¥ thá»ƒ), hoáº·c year+month (1 thÃ¡ng), hoáº·c chá»‰ year (cáº£ nÄƒm).</param>
     [HttpGet]
     public async Task<IActionResult> List([FromQuery] PracticeSessionListQueryDto query)
     {
@@ -38,8 +38,8 @@ public class CandidatePracticeSessionsController : ControllerBase
         return SuccessResp.Ok(result);
     }
 
-    /// <summary>Thống kê luyện tập của Candidate hiện tại: tổng số phiên COMPLETED, điểm trung bình, điểm cao nhất, điểm bài gần nhất, tổng thời gian luyện tập.</summary>
-    /// <param name="query">Lọc theo ngày: fromDate/toDate (khoảng cụ thể), hoặc year+month (1 tháng), hoặc chỉ year (cả năm) — bỏ trống để tính toàn bộ thời gian.</param>
+    /// <summary>Thá»‘ng kÃª luyá»‡n táº­p cá»§a Candidate hiá»‡n táº¡i: tá»•ng sá»‘ phiÃªn COMPLETED, Ä‘iá»ƒm trung bÃ¬nh, Ä‘iá»ƒm cao nháº¥t, Ä‘iá»ƒm bÃ i gáº§n nháº¥t, tá»•ng thá»i gian luyá»‡n táº­p.</summary>
+    /// <param name="query">Lá»c theo ngÃ y: fromDate/toDate (khoáº£ng cá»¥ thá»ƒ), hoáº·c year+month (1 thÃ¡ng), hoáº·c chá»‰ year (cáº£ nÄƒm) â€” bá» trá»‘ng Ä‘á»ƒ tÃ­nh toÃ n bá»™ thá»i gian.</param>
     [HttpGet("stats")]
     public async Task<IActionResult> GetStats([FromQuery] PracticeSessionStatsQueryDto query)
     {
@@ -47,9 +47,9 @@ public class CandidatePracticeSessionsController : ControllerBase
         return SuccessResp.Ok(result);
     }
 
-    /// <summary>Chi tiết 1 phiên luyện tập (đang chạy hoặc đã xong) — danh sách câu hỏi kèm câu trả lời candidate đã submit cho từng câu (null nếu chưa trả lời).</summary>
-    /// <remarks>Chỉ chủ phiên mới xem được — 403 nếu là candidate khác, 404 nếu không tồn tại.</remarks>
-    /// <param name="id">Id phiên luyện tập.</param>
+    /// <summary>Chi tiáº¿t 1 phiÃªn luyá»‡n táº­p (Ä‘ang cháº¡y hoáº·c Ä‘Ã£ xong) â€” danh sÃ¡ch cÃ¢u há»i kÃ¨m cÃ¢u tráº£ lá»i candidate Ä‘Ã£ submit cho tá»«ng cÃ¢u (null náº¿u chÆ°a tráº£ lá»i).</summary>
+    /// <remarks>Chá»‰ chá»§ phiÃªn má»›i xem Ä‘Æ°á»£c â€” 403 náº¿u lÃ  candidate khÃ¡c, 404 náº¿u khÃ´ng tá»“n táº¡i.</remarks>
+    /// <param name="id">Id phiÃªn luyá»‡n táº­p.</param>
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetById(Guid id)
     {
@@ -57,9 +57,9 @@ public class CandidatePracticeSessionsController : ControllerBase
         return SuccessResp.Ok(result);
     }
 
-    /// <summary>Lấy toàn bộ AI feedback của phiên (score từng câu + overall + aiInsight) — SCRUM-282 / SCRUM-305.</summary>
-    /// <remarks>Chỉ chủ phiên xem được. FE dùng cho màn result. aiInsight gồm nhận xét tổng quan + skillsToImprove song ngữ.</remarks>
-    /// <param name="id">Id phiên luyện tập.</param>
+    /// <summary>Láº¥y toÃ n bá»™ AI feedback cá»§a phiÃªn (score tá»«ng cÃ¢u + overall + aiInsight) â€” SCRUM-282 / SCRUM-305.</summary>
+    /// <remarks>Chá»‰ chá»§ phiÃªn xem Ä‘Æ°á»£c. FE dÃ¹ng cho mÃ n result. aiInsight gá»“m nháº­n xÃ©t tá»•ng quan + skillsToImprove song ngá»¯.</remarks>
+    /// <param name="id">Id phiÃªn luyá»‡n táº­p.</param>
     [HttpGet("{id:guid}/feedback")]
     public async Task<IActionResult> GetFeedback(Guid id)
     {
@@ -67,14 +67,14 @@ public class CandidatePracticeSessionsController : ControllerBase
         return SuccessResp.Ok(result);
     }
 
-    /// <summary>Lưu câu trả lời cho 1 câu hỏi, sau đó gọi RAG evaluate sync và lưu ai_feedbacks (SCRUM-282).</summary>
+    /// <summary>LÆ°u cÃ¢u tráº£ lá»i cho 1 cÃ¢u há»i, sau Ä‘Ã³ gá»i RAG evaluate sync vÃ  lÆ°u ai_feedbacks (SCRUM-282).</summary>
     /// <remarks>
-    /// Upsert answer. Câu trả lời trống / quá ngắn / "không biết" / spam → score=0, evaluationStatus=Succeeded, không gọi AI.
-    /// Nếu RAG timeout/lỗi → answer vẫn được lưu, evaluationStatus=Failed (HTTP 200).
-    /// questionId phải thuộc đúng bộ câu hỏi của phiên này, nếu không → 400.
+    /// Upsert answer. CÃ¢u tráº£ lá»i trá»‘ng / quÃ¡ ngáº¯n / "khÃ´ng biáº¿t" / spam â†’ score=0, evaluationStatus=Succeeded, khÃ´ng gá»i AI.
+    /// Náº¿u RAG timeout/lá»—i â†’ answer váº«n Ä‘Æ°á»£c lÆ°u, evaluationStatus=Failed (HTTP 200).
+    /// questionId pháº£i thuá»™c Ä‘Ãºng bá»™ cÃ¢u há»i cá»§a phiÃªn nÃ y, náº¿u khÃ´ng â†’ 400.
     /// </remarks>
-    /// <param name="id">Id phiên luyện tập.</param>
-    /// <param name="dto">questionId và answerText.</param>
+    /// <param name="id">Id phiÃªn luyá»‡n táº­p.</param>
+    /// <param name="dto">questionId vÃ  answerText.</param>
     [HttpPost("{id:guid}/answers")]
     public async Task<IActionResult> SubmitAnswer(Guid id, [FromBody] SubmitAnswerDto dto)
     {
@@ -82,9 +82,13 @@ public class CandidatePracticeSessionsController : ControllerBase
         return SuccessResp.Ok(result);
     }
 
-    /// <summary>Đánh dấu phiên luyện tập đã hoàn thành (IN_PROGRESS → COMPLETED), tính overall_score = tổng điểm Succeeded / tổng số câu trong bộ (câu chưa làm = 0), sinh aiInsight song ngữ + skillsToImprove.</summary>
-    /// <remarks>Chỉ hoàn thành được phiên đang IN_PROGRESS — 400 nếu phiên đã COMPLETED/ABANDONED. Ví dụ bộ 30 câu, 1 câu 95 điểm → overall ≈ 3.17. RAG insight lỗi → complete vẫn 200, aiInsight=null.</remarks>
-    /// <param name="id">Id phiên luyện tập.</param>
+    /// <summary>ÄÃ¡nh dáº¥u phiÃªn luyá»‡n táº­p Ä‘Ã£ hoÃ n thÃ nh (IN_PROGRESS â†’ COMPLETED), tÃ­nh overall_score = tá»•ng Ä‘iá»ƒm Succeeded / tá»•ng sá»‘ cÃ¢u trong bá»™ (cÃ¢u chÆ°a lÃ m = 0), sinh aiInsight song ngá»¯ + skillsToImprove.</summary>
+    /// <remarks>Chá»‰ hoÃ n thÃ nh Ä‘Æ°á»£c phiÃªn Ä‘ang IN_PROGRESS â€” 400 náº¿u phiÃªn Ä‘Ã£ COMPLETED/ABANDONED. VÃ­ dá»¥ bá»™ 30 cÃ¢u, 1 cÃ¢u 95 Ä‘iá»ƒm â†’ overall â‰ˆ 3.17. RAG insight lá»—i â†’ complete váº«n 200, aiInsight=null.</remarks>
+=======
+    /// <summary>ÄÃ¡nh dáº¥u phiÃªn luyá»‡n táº­p Ä‘Ã£ hoÃ n thÃ nh (IN_PROGRESS â†’ COMPLETED), tÃ­nh overall_score = tá»•ng Ä‘iá»ƒm Succeeded / tá»•ng sá»‘ cÃ¢u trong bá»™ (cÃ¢u chÆ°a lÃ m = 0), lÃ m trÃ²n 2 chá»¯ sá»‘ tháº­p phÃ¢n.</summary>
+    /// <remarks>Chá»‰ hoÃ n thÃ nh Ä‘Æ°á»£c phiÃªn Ä‘ang IN_PROGRESS â€” 400 náº¿u phiÃªn Ä‘Ã£ COMPLETED/ABANDONED. VÃ­ dá»¥ bá»™ 30 cÃ¢u, 1 cÃ¢u 95 Ä‘iá»ƒm â†’ overall â‰ˆ 3.17.</remarks>
+>>>>>>> origin/main
+    /// <param name="id">Id phiÃªn luyá»‡n táº­p.</param>
     [HttpPost("{id:guid}/complete")]
     public async Task<IActionResult> Complete(Guid id)
     {
@@ -92,8 +96,8 @@ public class CandidatePracticeSessionsController : ControllerBase
         return SuccessResp.Ok(result);
     }
 
-    /// <summary>Candidate chủ động huỷ bỏ phiên đang làm dở (IN_PROGRESS → ABANDONED) — dùng khi muốn thoát mà không tính là đã hoàn thành.</summary>
-    /// <param name="id">Id phiên luyện tập.</param>
+    /// <summary>Candidate chá»§ Ä‘á»™ng huá»· bá» phiÃªn Ä‘ang lÃ m dá»Ÿ (IN_PROGRESS â†’ ABANDONED) â€” dÃ¹ng khi muá»‘n thoÃ¡t mÃ  khÃ´ng tÃ­nh lÃ  Ä‘Ã£ hoÃ n thÃ nh.</summary>
+    /// <param name="id">Id phiÃªn luyá»‡n táº­p.</param>
     [HttpPost("{id:guid}/abandon")]
     public async Task<IActionResult> Abandon(Guid id)
     {
@@ -101,3 +105,4 @@ public class CandidatePracticeSessionsController : ControllerBase
         return SuccessResp.Ok(result);
     }
 }
+

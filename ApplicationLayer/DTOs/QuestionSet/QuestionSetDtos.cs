@@ -18,6 +18,13 @@ public class QuestionSetListItemDto
 
     public string? Title { get; set; }
     public string Status { get; set; } = string.Empty;
+
+    /// <summary>Tên công ty của HR sở hữu bộ này — chính là công ty candidate sẽ thấy trên marketplace sau khi publish.</summary>
+    public string CompanyName { get; set; } = string.Empty;
+
+    /// <summary>Luôn có giá trị: logo thật nếu công ty đã upload, không thì fallback theo domain website hoặc tự vẽ từ tên công ty.</summary>
+    public string CompanyLogo { get; set; } = string.Empty;
+
     public DateTime SavedAt { get; set; }
     public DateTime? PublishedAt { get; set; }
 }
@@ -29,6 +36,12 @@ public class SaveDraftResponseDto
     public Guid SourceJobId { get; set; }
     public int QuestionCount { get; set; }
     public DateTime SavedAt { get; set; }
+
+    /// <summary>Tên công ty của HR sở hữu bộ này — chính là công ty candidate sẽ thấy trên marketplace sau khi publish.</summary>
+    public string CompanyName { get; set; } = string.Empty;
+
+    /// <summary>Luôn có giá trị: logo thật nếu công ty đã upload, không thì fallback theo domain website hoặc tự vẽ từ tên công ty.</summary>
+    public string CompanyLogo { get; set; } = string.Empty;
 }
 
 public class QuestionSetDetailResponseDto
@@ -37,6 +50,13 @@ public class QuestionSetDetailResponseDto
     public string Status { get; set; } = string.Empty;
     public Guid SourceJobId { get; set; }
     public string? Title { get; set; }
+
+    /// <summary>Tên công ty của HR sở hữu bộ này — chính là công ty candidate sẽ thấy trên marketplace sau khi publish.</summary>
+    public string CompanyName { get; set; } = string.Empty;
+
+    /// <summary>Luôn có giá trị: logo thật nếu công ty đã upload, không thì fallback theo domain website hoặc tự vẽ từ tên công ty.</summary>
+    public string CompanyLogo { get; set; } = string.Empty;
+
     public string JobDescription { get; set; } = string.Empty;
     public string? HrNote { get; set; }
 
@@ -92,7 +112,11 @@ public class PublishedQuestionSetRow
     /// <summary>Mô tả bộ câu hỏi hiển thị trên card — lấy từ question_sets.HrNote.</summary>
     public string? Description { get; set; }
 
-    /// <summary>Điểm trung bình OverallScore các phiên luyện tập đã chấm — null khi chưa có phiên nào được chấm.</summary>
+    /// <summary>
+    /// OverallScore trung bình các phiên luyện tập đã chấm — RAW, thang 0-100 (SCRUM-304).
+    /// Không phải rating sao hiển thị cho candidate — PublishedQuestionSetMapper.RoundRating quy đổi sang thang 0-5 trước khi trả ra API.
+    /// Null khi chưa có phiên nào được chấm.
+    /// </summary>
     public double? Rating { get; set; }
 
     /// <summary>Số phiên luyện tập đã tạo trên bộ này.</summary>
@@ -112,7 +136,10 @@ public class PublishedQuestionSetDetail
     public string SkillsJson { get; set; } = "[]";
     public int? TimeLimitMinutes { get; set; }
     public string? Description { get; set; }
+
+    /// <summary>OverallScore trung bình RAW, thang 0-100 — xem ghi chú ở PublishedQuestionSetRow.Rating.</summary>
     public double? Rating { get; set; }
+
     public int AttemptCount { get; set; }
     public List<PublishedQuestionRow> Questions { get; set; } = new();
 }
