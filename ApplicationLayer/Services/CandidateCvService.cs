@@ -5,6 +5,7 @@ using ApplicationLayer.Helpers;
 using ApplicationLayer.Interfaces.Repositories;
 using ApplicationLayer.Interfaces.Services;
 using ApplicationLayer.Settings;
+using DomainLayer.Constants;
 using DomainLayer.Entities;
 using DomainLayer.Exceptions;
 using Microsoft.Extensions.Options;
@@ -107,7 +108,8 @@ public class CandidateCvService : ICandidateCvService
             UploadedAt = profile.CvUploadedAt,
             DownloadUrl = downloadUrl,
             AutoSyncProfileFromCv = profile.AutoSyncProfileFromCv,
-            ProfileFieldsSynced = syncedFields
+            ProfileFieldsSynced = syncedFields,
+            LockedFromCvSync = profile.CvSyncLockedFields.ToList()
         };
     }
 
@@ -131,7 +133,8 @@ public class CandidateCvService : ICandidateCvService
             ParsedAt = profile.CvParsedAt,
             UploadedAt = profile.CvUploadedAt,
             DownloadUrl = downloadUrl,
-            AutoSyncProfileFromCv = profile.AutoSyncProfileFromCv
+            AutoSyncProfileFromCv = profile.AutoSyncProfileFromCv,
+            LockedFromCvSync = profile.CvSyncLockedFields.ToList()
         };
     }
 
@@ -179,10 +182,12 @@ public class CandidateCvService : ICandidateCvService
     }
 
     /// <summary>
-    /// Feature "CV auto-apply profile": khi bật AutoSyncProfileFromCv, ghi đè họ tên/SĐT/địa chỉ/GitHub/LinkedIn
-    /// trên User + CandidateProfile bằng dữ liệu CV vừa trích xuất. Chỉ ghi đè field nào CV thực sự có giá trị —
-    /// field CV không trích được (null/rỗng) thì giữ nguyên giá trị đang có trên profile (không xóa dữ liệu tốt
-    /// bằng dữ liệu thiếu). Trả về danh sách tên field vừa được áp dụng để FE hiển thị cho candidate biết.
+    /// Feature "CV auto-apply profile": khi bật AutoSyncProfileFromCv, CV được ƯU TIÊN CAO NHẤT — ghi đè
+    /// họ tên/SĐT/địa chỉ/GitHub/LinkedIn trên User + CandidateProfile bằng dữ liệu CV vừa trích xuất, MIỄN LÀ
+    /// field đó chưa từng bị candidate tự tay khóa (<see cref="CandidateProfile.CvSyncLockedFields"/> — một khi
+    /// candidate tự sửa field nào qua PUT profile thì field đó không bao giờ bị CV ghi đè nữa, kể cả khi
+    /// AutoSyncProfileFromCv đang bật). Field CV không trích được (null/rỗng) thì giữ nguyên giá trị cũ.
+    /// Trả về danh sách tên field vừa được áp dụng để FE hiển thị cho candidate biết.
     /// </summary>
     private async Task<List<string>> ApplyCvProfileSyncAsync(
         CandidateProfile profile, ParseCvResult parseResult, Guid userId)
@@ -191,43 +196,44 @@ public class CandidateCvService : ICandidateCvService
         if (!profile.AutoSyncProfileFromCv)
             return applied;
 
+        var locked = profile.CvSyncLockedFields;
         User? user = null;
 
-        if (!string.IsNullOrWhiteSpace(parseResult.FullName))
+        if (!locked.Contains(CvSyncableProfileFields.FullName) && !string.IsNullOrWhiteSpace(parseResult.FullName))
         {
             user = await _userRepository.GetByIdAsync(userId);
             if (user is not null)
             {
                 user.FullName = parseResult.FullName.Trim();
-                applied.Add(nameof(User.FullName));
+                applied.Add(CvSyncableProfileFields.FullName);
             }
         }
 
-        if (!string.IsNullOrWhiteSpace(parseResult.PhoneNumber))
+        if (!locked.Contains(CvSyncableProfileFields.PhoneNumber) && !string.IsNullOrWhiteSpace(parseResult.PhoneNumber))
         {
             user ??= await _userRepository.GetByIdAsync(userId);
             if (user is not null)
                 user.PhoneNumber = parseResult.PhoneNumber.Trim();
             profile.PhoneNumber = parseResult.PhoneNumber.Trim();
-            applied.Add(nameof(CandidateProfile.PhoneNumber));
+            applied.Add(CvSyncableProfileFields.PhoneNumber);
         }
 
-        if (!string.IsNullOrWhiteSpace(parseResult.Address))
+        if (!locked.Contains(CvSyncableProfileFields.Address) && !string.IsNullOrWhiteSpace(parseResult.Address))
         {
             profile.Address = parseResult.Address.Trim();
-            applied.Add(nameof(CandidateProfile.Address));
+            applied.Add(CvSyncableProfileFields.Address);
         }
 
-        if (!string.IsNullOrWhiteSpace(parseResult.GithubUrl))
+        if (!locked.Contains(CvSyncableProfileFields.GithubUrl) && !string.IsNullOrWhiteSpace(parseResult.GithubUrl))
         {
             profile.GithubUrl = parseResult.GithubUrl.Trim();
-            applied.Add(nameof(CandidateProfile.GithubUrl));
+            applied.Add(CvSyncableProfileFields.GithubUrl);
         }
 
-        if (!string.IsNullOrWhiteSpace(parseResult.LinkedInUrl))
+        if (!locked.Contains(CvSyncableProfileFields.LinkedInUrl) && !string.IsNullOrWhiteSpace(parseResult.LinkedInUrl))
         {
             profile.LinkedInUrl = parseResult.LinkedInUrl.Trim();
-            applied.Add(nameof(CandidateProfile.LinkedInUrl));
+            applied.Add(CvSyncableProfileFields.LinkedInUrl);
         }
 
         if (user is not null)

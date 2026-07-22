@@ -9,8 +9,9 @@ namespace WebAPI.Controllers.Candidate;
 
 /// <summary>
 /// CV của Candidate — upload (PDF/DOCX/JPG/JPEG/PNG) để AI trích kỹ năng (skills) và tự động cập nhật TechStack trên hồ sơ.
-/// Mỗi Candidate chỉ giữ đúng 1 CV. Khi bật AutoSyncProfileFromCv (mặc định bật), upload CV còn tự áp họ tên/SĐT/địa chỉ/
-/// GitHub/LinkedIn trích xuất được vào profile — candidate luôn có thể vào profile chỉnh tay lại tùy ý sau đó.
+/// Mỗi Candidate chỉ giữ đúng 1 CV. Khi bật AutoSyncProfileFromCv (mặc định bật), CV được ưu tiên cao nhất: mỗi lần
+/// upload sẽ tự ghi đè họ tên/SĐT/địa chỉ/GitHub/LinkedIn trên profile bằng dữ liệu CV trích xuất được — TRỪ field nào
+/// candidate đã từng tự tay chỉnh qua PUT profile (field đó bị khóa vĩnh viễn khỏi CV sync, không bao giờ bị ghi đè lại).
 /// </summary>
 [ApiController]
 [Route("api/candidate/cv")]
@@ -28,7 +29,8 @@ public class CandidateCvController : ControllerBase
     /// <remarks>
     /// 400 nếu sai định dạng/quá dung lượng. Nếu bước phân tích AI lỗi/timeout, request trả lỗi rõ ràng nhưng file CV đã lưu vẫn được giữ nguyên, TechStack cũ không bị mất.
     /// Nếu đang bật AutoSyncProfileFromCv (xem GET/PUT sync-settings), response còn trả profileFieldsSynced — tên các field
-    /// (họ tên/SĐT/địa chỉ/GitHub/LinkedIn) vừa được ghi đè trên profile từ CV này; field CV không trích được thì giữ nguyên giá trị cũ.
+    /// (họ tên/SĐT/địa chỉ/GitHub/LinkedIn) vừa được ghi đè trên profile từ CV này; field CV không trích được thì giữ nguyên giá trị cũ;
+    /// field nào candidate đã từng tự sửa tay trong profile thì nằm trong lockedFromCvSync và sẽ không bao giờ bị CV ghi đè nữa.
     /// </remarks>
     [HttpPost]
     [Consumes("multipart/form-data")]

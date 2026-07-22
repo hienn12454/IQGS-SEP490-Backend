@@ -34,9 +34,17 @@ public class CandidateProfile : BaseEntity
 
     /// <summary>
     /// Bật: mỗi lần upload CV mới, hệ thống tự ghi đè họ tên/SĐT/địa chỉ/GitHub/LinkedIn trên profile
-    /// bằng dữ liệu CV vừa trích xuất được (field CV không trích được thì giữ nguyên giá trị cũ).
-    /// Tắt: upload CV chỉ cập nhật TechStack như cũ, không đụng các field cá nhân — profile do candidate tự
-    /// chỉnh tay được giữ nguyên qua các lần upload sau. Mặc định bật.
+    /// bằng dữ liệu CV vừa trích xuất được — trừ field nào đã có trong <see cref="CvSyncLockedFields"/>
+    /// (candidate đã tự tay chỉnh field đó, CV không còn quyền ghi đè nữa). Field CV không trích được thì
+    /// giữ nguyên giá trị cũ. Tắt: upload CV chỉ cập nhật TechStack như cũ, không đụng field cá nhân nào.
+    /// Mặc định bật.
     /// </summary>
     public bool AutoSyncProfileFromCv { get; set; } = true;
+
+    /// <summary>
+    /// Tên các field (theo <see cref="Constants.CvSyncableProfileFields"/>) mà candidate đã tự tay chỉnh
+    /// qua PUT profile — CV ưu tiên ghi đè mọi field khi mới có dữ liệu, NHƯNG một khi candidate đã tự sửa
+    /// field nào thì field đó bị khóa vĩnh viễn khỏi CV sync (kể cả khi AutoSyncProfileFromCv đang bật).
+    /// </summary>
+    public string[] CvSyncLockedFields { get; set; } = Array.Empty<string>();
 }
