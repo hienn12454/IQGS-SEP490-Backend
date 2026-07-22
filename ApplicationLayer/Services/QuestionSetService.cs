@@ -4,7 +4,6 @@ using ApplicationLayer.DTOs.QuestionGeneration;
 using ApplicationLayer.Helpers;
 using ApplicationLayer.Interfaces.Repositories;
 using ApplicationLayer.Interfaces.Services;
-using ApplicationLayer.Services.Mapping;
 using DomainLayer.Constants;
 using DomainLayer.Entities;
 using DomainLayer.Exceptions;
@@ -16,8 +15,7 @@ public class QuestionSetService : IQuestionSetService
     private readonly IQuestionSetRepository _questionSetRepository;
     private readonly IQuestionGenerationJobRepository _jobRepository;
     private readonly IPlatformSettingsRepository _platformSettingsRepository;
-    private readonly IHRProfileRepository _hrProfileRepository;
-    private readonly ICompanyRepository _companyRepository;
+    private readonly IHrCompanyInfoService _hrCompanyInfoService;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -29,26 +27,12 @@ public class QuestionSetService : IQuestionSetService
         IQuestionSetRepository questionSetRepository,
         IQuestionGenerationJobRepository jobRepository,
         IPlatformSettingsRepository platformSettingsRepository,
-        IHRProfileRepository hrProfileRepository,
-        ICompanyRepository companyRepository)
+        IHrCompanyInfoService hrCompanyInfoService)
     {
         _questionSetRepository = questionSetRepository;
         _jobRepository = jobRepository;
         _platformSettingsRepository = platformSettingsRepository;
-        _hrProfileRepository = hrProfileRepository;
-        _companyRepository = companyRepository;
-    }
-
-    /// <summary>Lấy tên + logo công ty của HR sở hữu (qua HRProfile.CompanyId) — dùng gán vào response question set cho HR.</summary>
-    private async Task<(string Name, string Logo)> GetOwnerCompanyInfoAsync(Guid ownerId)
-    {
-        var hrProfile = await _hrProfileRepository.GetByUserIdAsync(ownerId);
-        if (hrProfile is null)
-            return (string.Empty, CompanyLogoResolver.Resolve(null, null, string.Empty));
-
-        var company = await _companyRepository.GetByIdAsync(hrProfile.CompanyId);
-        var name = company?.Name ?? string.Empty;
-        return (name, CompanyLogoResolver.Resolve(company?.LogoUrl, company?.WebsiteUrl, name));
+        _hrCompanyInfoService = hrCompanyInfoService;
     }
 
     public async Task<SaveDraftResponseDto> SaveDraftFromJobAsync(Guid jobId, Guid ownerId)
@@ -100,7 +84,7 @@ public class QuestionSetService : IQuestionSetService
 
         await _questionSetRepository.AddAsync(questionSet, snapshotQuestions);
 
-        var (companyName, companyLogo) = await GetOwnerCompanyInfoAsync(ownerId);
+        var (companyName, companyLogo) = await _hrCompanyInfoService.GetByHrUserIdAsync(ownerId);
 
         return new SaveDraftResponseDto
         {
@@ -120,7 +104,7 @@ public class QuestionSetService : IQuestionSetService
         var questionSets = await _questionSetRepository.ListByOwnerAsync(ownerId, query.JobId);
 
         // Cùng 1 ownerId -> cùng 1 công ty cho mọi item trong list — chỉ cần lookup 1 lần, tránh N+1 query.
-        var (companyName, companyLogo) = await GetOwnerCompanyInfoAsync(ownerId);
+        var (companyName, companyLogo) = await _hrCompanyInfoService.GetByHrUserIdAsync(ownerId);
 
         return questionSets.Select(qs => new QuestionSetListItemDto
         {
@@ -147,7 +131,7 @@ public class QuestionSetService : IQuestionSetService
         if (!string.IsNullOrWhiteSpace(questionSet.PlanJson))
             planObj = JsonSerializer.Deserialize<object>(questionSet.PlanJson, JsonOptions);
 
-        var (companyName, companyLogo) = await GetOwnerCompanyInfoAsync(ownerId);
+        var (companyName, companyLogo) = await _hrCompanyInfoService.GetByHrUserIdAsync(ownerId);
 
         return new QuestionSetDetailResponseDto
         {
