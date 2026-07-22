@@ -1,8 +1,6 @@
-using ApplicationLayer.Helpers;
-using ApplicationLayer.Interfaces.Jobs;
+﻿using ApplicationLayer.Interfaces.Jobs;
 using ApplicationLayer.Interfaces.Repositories;
 using ApplicationLayer.Interfaces.Services;
-using DomainLayer.Constants;
 using Hangfire;
 using Microsoft.Extensions.Logging;
 
@@ -11,27 +9,22 @@ namespace InfrastructureLayer.Jobs;
 /// <summary>
 /// Quét các phiên practice IN_PROGRESS thuộc bộ có giới hạn thời gian và tự nộp bài khi hết giờ —
 /// bọc case candidate thoát app/mất mạng nên không còn request nào chạm vào phiên để trigger auto-submit lazy.
-/// CompletedAt ghi đúng deadline (StartedAt + limit); OverallScore tính cùng công thức SCRUM-304 như nộp tay.
+/// CompletedAt ghi đúng deadline (StartedAt + limit); overallScore + AI Insight
+/// được xử lý tập trung qua FinalizeExpiredByWatchdogAsync (SCRUM-304/SCRUM-305).
 /// </summary>
 public class ExpiredPracticeSessionWatchdogJob : IExpiredPracticeSessionWatchdogJob
 {
     private readonly IPracticeSessionRepository _sessionRepository;
-    private readonly ICandidateMarketplaceRepository _marketplaceRepository;
-    private readonly IAiFeedbackRepository _feedbackRepository;
-    private readonly IRecommendationService _recommendationService;
+    private readonly ICandidatePracticeSessionService _practiceSessionService;
     private readonly ILogger<ExpiredPracticeSessionWatchdogJob> _logger;
 
     public ExpiredPracticeSessionWatchdogJob(
         IPracticeSessionRepository sessionRepository,
-        ICandidateMarketplaceRepository marketplaceRepository,
-        IAiFeedbackRepository feedbackRepository,
-        IRecommendationService recommendationService,
+        ICandidatePracticeSessionService practiceSessionService,
         ILogger<ExpiredPracticeSessionWatchdogJob> logger)
     {
         _sessionRepository = sessionRepository;
-        _marketplaceRepository = marketplaceRepository;
-        _feedbackRepository = feedbackRepository;
-        _recommendationService = recommendationService;
+        _practiceSessionService = practiceSessionService;
         _logger = logger;
     }
 
@@ -47,27 +40,16 @@ public class ExpiredPracticeSessionWatchdogJob : IExpiredPracticeSessionWatchdog
             if (now < expiresAt)
                 continue;
 
-            // SCRUM-304: overall = tổng điểm Succeeded / tổng số câu trong bộ — giống hệt nộp tay/auto-submit lazy.
-            var questions = await _marketplaceRepository.GetQuestionsSnapshotAsync(session.QuestionSetId);
-            var scores = await _feedbackRepository.GetSucceededScoresAsync(session.Id);
-
-            session.Status = PracticeSessionStatus.Completed;
-            session.CompletedAt = expiresAt;
-            session.UpdatedAt = now;
-            session.OverallScore = PracticeOverallScoreCalculator.Compute(scores, questions.Count);
-            await _sessionRepository.UpdateAsync(session);
-
-            _logger.LogInformation(
-                "Watchdog tự nộp phiên practice {SessionId} (candidate {CandidateUserId}) — hết giờ lúc {ExpiresAt:O}, overallScore={OverallScore}.",
-                session.Id, session.CandidateUserId, expiresAt, session.OverallScore);
-
             try
             {
-                await _recommendationService.GenerateForCompletedSessionAsync(session);
+                await _practiceSessionService.FinalizeExpiredByWatchdogAsync(session.Id);
+                _logger.LogInformation(
+                    "Watchdog tự nộp phiên practice {SessionId} (candidate {CandidateUserId}) — hết giờ lúc {ExpiresAt:O}.",
+                    session.Id, session.CandidateUserId, expiresAt);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Tạo recommendation thất bại cho session {SessionId}.", session.Id);
+                _logger.LogError(ex, "Watchdog finalize thất bại cho session {SessionId}.", session.Id);
             }
         }
     }

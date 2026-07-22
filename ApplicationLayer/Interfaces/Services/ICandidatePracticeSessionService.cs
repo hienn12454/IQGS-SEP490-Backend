@@ -8,6 +8,12 @@ public interface ICandidatePracticeSessionService
     Task<PracticeSessionResponseDto> GetByIdAsync(Guid sessionId, Guid candidateUserId);
     Task<SubmitAnswerResponseDto> SubmitAnswerAsync(Guid sessionId, Guid candidateUserId, SubmitAnswerDto dto);
     Task<PracticeSessionCompleteResponseDto> CompleteAsync(Guid sessionId, Guid candidateUserId);
+
+    /// <summary>
+    /// Watchdog hết giờ: chuyển COMPLETED, tính overallScore + AI Insight, recommendation (SCRUM-305).
+    /// </summary>
+    Task FinalizeExpiredByWatchdogAsync(Guid sessionId);
+
     Task<PracticeSessionResponseDto> AbandonAsync(Guid sessionId, Guid candidateUserId);
     Task<PracticeSessionFeedbackDto> GetFeedbackAsync(Guid sessionId, Guid candidateUserId);
     Task<PagedResultDto<PracticeSessionListItemDto>> ListAsync(Guid candidateUserId, PracticeSessionListQueryDto query);

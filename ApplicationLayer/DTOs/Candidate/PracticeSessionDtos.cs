@@ -14,6 +14,9 @@ public class PracticeSessionResponseDto
     public DateTime? CompletedAt { get; set; }
     public double? OverallScore { get; set; }
 
+    /// <summary>Nhận xét AI tổng quan + kỹ năng cần cải thiện (SCRUM-305) — null nếu chưa sinh hoặc RAG lỗi.</summary>
+    public PracticeAiInsightDto? AiInsight { get; set; }
+
     /// <summary>Giới hạn thời gian làm bài (phút) HR đặt — null = không giới hạn.</summary>
     public int? TimeLimitMinutes { get; set; }
 
@@ -44,6 +47,23 @@ public class PracticeSessionCompleteResponseDto
     public DateTime? CompletedAt { get; set; }
     public double? OverallScore { get; set; }
     public int? DurationSeconds { get; set; }
+
+    /// <summary>AI Insight song ngữ + skillsToImprove (SCRUM-305).</summary>
+    public PracticeAiInsightDto? AiInsight { get; set; }
+}
+
+/// <summary>Nhận xét AI tổng quan phiên practice (SCRUM-305).</summary>
+public class PracticeAiInsightDto
+{
+    public string Vi { get; set; } = string.Empty;
+    public string En { get; set; } = string.Empty;
+    public BilingualStringListDto SkillsToImprove { get; set; } = new();
+}
+
+public class BilingualStringListDto
+{
+    public List<string> Vi { get; set; } = new();
+    public List<string> En { get; set; } = new();
 }
 
 /// <summary>Query danh sách phiên luyện tập — hỗ trợ lọc theo status, questionSet, keyword, khoảng ngày (SCRUM-284/298).</summary>
