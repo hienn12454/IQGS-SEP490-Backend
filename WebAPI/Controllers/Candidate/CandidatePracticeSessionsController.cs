@@ -82,12 +82,8 @@ public class CandidatePracticeSessionsController : ControllerBase
         return SuccessResp.Ok(result);
     }
 
-    /// <summary>ÄÃ¡nh dáº¥u phiÃªn luyá»‡n táº­p Ä‘Ã£ hoÃ n thÃ nh (IN_PROGRESS â†’ COMPLETED), tÃ­nh overall_score = tá»•ng Ä‘iá»ƒm Succeeded / tá»•ng sá»‘ cÃ¢u trong bá»™ (cÃ¢u chÆ°a lÃ m = 0), sinh aiInsight song ngá»¯ + skillsToImprove.</summary>
-    /// <remarks>Chá»‰ hoÃ n thÃ nh Ä‘Æ°á»£c phiÃªn Ä‘ang IN_PROGRESS â€” 400 náº¿u phiÃªn Ä‘Ã£ COMPLETED/ABANDONED. VÃ­ dá»¥ bá»™ 30 cÃ¢u, 1 cÃ¢u 95 Ä‘iá»ƒm â†’ overall â‰ˆ 3.17. RAG insight lá»—i â†’ complete váº«n 200, aiInsight=null.</remarks>
-=======
-    /// <summary>ÄÃ¡nh dáº¥u phiÃªn luyá»‡n táº­p Ä‘Ã£ hoÃ n thÃ nh (IN_PROGRESS â†’ COMPLETED), tÃ­nh overall_score = tá»•ng Ä‘iá»ƒm Succeeded / tá»•ng sá»‘ cÃ¢u trong bá»™ (cÃ¢u chÆ°a lÃ m = 0), lÃ m trÃ²n 2 chá»¯ sá»‘ tháº­p phÃ¢n.</summary>
-    /// <remarks>Chá»‰ hoÃ n thÃ nh Ä‘Æ°á»£c phiÃªn Ä‘ang IN_PROGRESS â€” 400 náº¿u phiÃªn Ä‘Ã£ COMPLETED/ABANDONED. VÃ­ dá»¥ bá»™ 30 cÃ¢u, 1 cÃ¢u 95 Ä‘iá»ƒm â†’ overall â‰ˆ 3.17.</remarks>
->>>>>>> origin/main
+    /// <summary>Đánh dấu phiên luyện tập đã hoàn thành (IN_PROGRESS → COMPLETED), tính overall_score = tổng điểm Succeeded / tổng số câu trong bộ (câu chưa làm = 0), sinh aiInsight song ngữ + skillsToImprove.</summary>
+    /// <remarks>Chỉ hoàn thành được phiên đang IN_PROGRESS — 400 nếu phiên đã COMPLETED/ABANDONED. Ví dụ bộ 30 câu, 1 câu 95 điểm → overall ≈ 3.17. RAG insight lỗi → complete vẫn 200, aiInsight=null.</remarks>
     /// <param name="id">Id phiÃªn luyá»‡n táº­p.</param>
     [HttpPost("{id:guid}/complete")]
     public async Task<IActionResult> Complete(Guid id)
