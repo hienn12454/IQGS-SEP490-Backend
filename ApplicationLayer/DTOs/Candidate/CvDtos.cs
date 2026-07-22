@@ -19,6 +19,12 @@ public class CvEvaluationResponseDto
     /// Rỗng nếu tắt AutoSyncProfileFromCv, hoặc CV không trích xuất được field cá nhân nào, hoặc đây là response của GET.
     /// </summary>
     public List<string> ProfileFieldsSynced { get; set; } = new();
+
+    /// <summary>
+    /// Tên các field candidate đã từng tự tay chỉnh qua PUT profile — các field này bị khóa vĩnh viễn khỏi
+    /// CV sync, CV có trích xuất được giá trị mới cũng không ghi đè nữa.
+    /// </summary>
+    public List<string> LockedFromCvSync { get; set; } = new();
 }
 
 /// <summary>Cài đặt bật/tắt tự động đồng bộ thông tin cá nhân (họ tên, SĐT, địa chỉ, GitHub, LinkedIn) từ CV vào profile.</summary>

@@ -2,6 +2,7 @@ using ApplicationLayer.DTOs.Candidate;
 using ApplicationLayer.DTOs.Recommendation;
 using ApplicationLayer.Interfaces.Repositories;
 using ApplicationLayer.Interfaces.Services;
+using ApplicationLayer.Services.Mapping;
 using DomainLayer.Constants;
 using DomainLayer.Entities;
 using DomainLayer.Exceptions;
@@ -25,15 +26,18 @@ public class RecommendationService : IRecommendationService
     private readonly ICandidateRecommendationRepository _recommendationRepository;
     private readonly ICandidateInvitationRepository _invitationRepository;
     private readonly ICandidateProfileRepository _profileRepository;
+    private readonly IHrCompanyInfoService _hrCompanyInfoService;
 
     public RecommendationService(
         ICandidateRecommendationRepository recommendationRepository,
         ICandidateInvitationRepository invitationRepository,
-        ICandidateProfileRepository profileRepository)
+        ICandidateProfileRepository profileRepository,
+        IHrCompanyInfoService hrCompanyInfoService)
     {
         _recommendationRepository = recommendationRepository;
         _invitationRepository = invitationRepository;
         _profileRepository = profileRepository;
+        _hrCompanyInfoService = hrCompanyInfoService;
     }
 
     public async Task GenerateForCompletedSessionAsync(PracticeSession session)
@@ -96,6 +100,10 @@ public class RecommendationService : IRecommendationService
         var (rows, totalCount) = await _recommendationRepository.ListByHrAsync(
             hrUserId, page, pageSize, status, query.QuestionSetId);
 
+        // Cùng 1 hrUserId -> cùng 1 công ty cho mọi dòng trong list — chỉ cần lookup 1 lần, tránh N+1 query.
+        // Dùng làm fallback title khi HR chưa đặt tên riêng cho bộ câu hỏi, tránh trả về chuỗi rỗng.
+        var (companyName, _) = await _hrCompanyInfoService.GetByHrUserIdAsync(hrUserId);
+
         return new PagedResultDto<HrRecommendationListItemDto>
         {
             Items = rows.Select(r => new HrRecommendationListItemDto
@@ -108,7 +116,7 @@ public class RecommendationService : IRecommendationService
                 SeniorityLevel = r.SeniorityLevel,
                 TechStack = r.TechStack.ToList(),
                 QuestionSetId = r.QuestionSetId,
-                QuestionSetTitle = r.QuestionSetTitle ?? string.Empty,
+                QuestionSetTitle = PublishedQuestionSetMapper.ResolveTitle(r.QuestionSetTitle, companyName),
                 OverallScore = r.OverallScore,
                 Status = r.Status,
                 InvitationStatus = r.InvitationStatus,

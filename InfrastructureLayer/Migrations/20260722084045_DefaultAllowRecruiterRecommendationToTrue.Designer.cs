@@ -3,6 +3,7 @@ using System;
 using InfrastructureLayer.Database;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Pgvector;
@@ -12,9 +13,11 @@ using Pgvector;
 namespace InfrastructureLayer.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260722084045_DefaultAllowRecruiterRecommendationToTrue")]
+    partial class DefaultAllowRecruiterRecommendationToTrue
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -199,10 +202,6 @@ namespace InfrastructureLayer.Migrations
 
                     b.Property<DateTime?>("CvParsedAt")
                         .HasColumnType("timestamp with time zone");
-
-                    b.Property<string[]>("CvSyncLockedFields")
-                        .IsRequired()
-                        .HasColumnType("text[]");
 
                     b.Property<DateTime?>("CvUploadedAt")
                         .HasColumnType("timestamp with time zone");
@@ -640,14 +639,6 @@ namespace InfrastructureLayer.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
-                    b.Property<string>("AiInsightEn")
-                        .HasMaxLength(2000)
-                        .HasColumnType("character varying(2000)");
-
-                    b.Property<string>("AiInsightVi")
-                        .HasMaxLength(2000)
-                        .HasColumnType("character varying(2000)");
-
                     b.Property<Guid>("CandidateUserId")
                         .HasColumnType("uuid");
 
@@ -665,9 +656,6 @@ namespace InfrastructureLayer.Migrations
 
                     b.Property<Guid>("QuestionSetId")
                         .HasColumnType("uuid");
-
-                    b.Property<string>("SkillsToImproveJson")
-                        .HasColumnType("text");
 
                     b.Property<DateTime?>("StartedAt")
                         .HasColumnType("timestamp with time zone");
