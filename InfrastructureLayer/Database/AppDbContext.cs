@@ -133,7 +133,7 @@ public class AppDbContext : DbContext
             entity.Property(p => p.GithubUrl).HasMaxLength(500);
             entity.Property(p => p.Address).HasMaxLength(500);
 
-            entity.Property(p => p.AllowRecruiterRecommendation).IsRequired().HasDefaultValue(false);
+            entity.Property(p => p.AllowRecruiterRecommendation).IsRequired().HasDefaultValue(true);
             entity.Property(p => p.AutoSyncProfileFromCv).IsRequired().HasDefaultValue(true);
 
             entity.HasOne(p => p.User)

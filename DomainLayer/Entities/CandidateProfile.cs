@@ -29,8 +29,8 @@ public class CandidateProfile : BaseEntity
     /// <summary>Kết quả đánh giá CV từ RAG (skills[], summary) dạng JSON.</summary>
     public string? CvEvaluationJson { get; set; }
 
-    /// <summary>Consent cho phép hệ thống đề xuất hồ sơ này cho HR khi đạt điều kiện (SCRUM-293) — mặc định tắt.</summary>
-    public bool AllowRecruiterRecommendation { get; set; }
+    /// <summary>Consent cho phép hệ thống đề xuất hồ sơ này cho HR khi đạt điều kiện (SCRUM-293) — mặc định bật.</summary>
+    public bool AllowRecruiterRecommendation { get; set; } = true;
 
     /// <summary>
     /// Bật: mỗi lần upload CV mới, hệ thống tự ghi đè họ tên/SĐT/địa chỉ/GitHub/LinkedIn trên profile
