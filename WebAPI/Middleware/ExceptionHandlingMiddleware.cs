@@ -1,5 +1,7 @@
 using DomainLayer.Common;
 using DomainLayer.Exceptions;
+using DomainLayer.Studio;
+using Microsoft.AspNetCore.Mvc;
 
 namespace WebAPI.Middleware;
 
@@ -42,6 +44,11 @@ public class ExceptionHandlingMiddleware
             _logger.LogWarning("HTTP {StatusCode}: {Message}", ex.HttpStatusCode, ex.Message);
             await WriteJsonAsync(context, ex.HttpStatusCode, ex.Message, ex);
         }
+        catch (StudioBusinessException ex)
+        {
+            _logger.LogWarning("Studio business error {ErrorCode}: {Message}", ex.ErrorCode, ex.Message);
+            await WriteProblemDetailsAsync(context, ex);
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Unhandled exception at {Path}", context.Request.Path);
@@ -49,6 +56,21 @@ public class ExceptionHandlingMiddleware
             var userMessage = "Đã xảy ra lỗi hệ thống. Vui lòng thử lại sau.";
             await WriteJsonAsync(context, StatusCodes.Status500InternalServerError, userMessage, ex);
         }
+    }
+
+    private static async Task WriteProblemDetailsAsync(HttpContext context, StudioBusinessException ex)
+    {
+        context.Response.StatusCode = ex.StatusCode;
+        context.Response.ContentType = "application/problem+json; charset=utf-8";
+        var problem = new ProblemDetails
+        {
+            Type = $"https://iqgs.dev/errors/{ex.ErrorCode.ToLowerInvariant()}",
+            Title = ex.Message,
+            Status = ex.StatusCode,
+            Detail = ex.Message
+        };
+        problem.Extensions["errorCode"] = ex.ErrorCode;
+        await context.Response.WriteAsJsonAsync(problem);
     }
 
     private static async Task WriteStructuredAsync(HttpContext context, int statusCode, StructuredErrorPayload payload)
