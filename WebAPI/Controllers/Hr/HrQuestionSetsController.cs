@@ -105,7 +105,7 @@ public class HrQuestionSetsController : ControllerBase
         return SuccessResp.Ok(result);
     }
 
-    /// <summary>Danh sách candidate đã practice bộ câu hỏi này (SCRUM-326) — mọi trạng thái phiên (IN_PROGRESS/COMPLETED/ABANDONED), không lọc theo ngưỡng điểm như Recommendation. Chỉ HR chủ sở hữu xem được.</summary>
+    /// <summary>Danh sách candidate đã practice bộ câu hỏi này (SCRUM-326) — mọi trạng thái phiên (IN_PROGRESS/COMPLETED/ABANDONED), không lọc theo ngưỡng điểm như Recommendation. Chỉ HR chủ sở hữu xem được. Candidate đã tắt "Cho phép đề xuất hồ sơ cho HR" (AllowRecruiterRecommendation) sẽ không xuất hiện trong danh sách này.</summary>
     /// <param name="id">Id bộ câu hỏi.</param>
     [HttpGet("{id:guid}/practitioners")]
     public async Task<IActionResult> GetPractitioners(Guid id)

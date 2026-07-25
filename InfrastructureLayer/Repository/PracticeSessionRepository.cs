@@ -178,6 +178,9 @@ public class PracticeSessionRepository : IPracticeSessionRepository
             .Join(_context.CandidateProfiles.AsNoTracking(),
                 x => x.s.CandidateUserId, p => p.UserId,
                 (x, p) => new { x.s, x.u, p })
+            // AC-03 SCRUM-326: bám đúng cơ chế consent hiện có — candidate tắt AllowRecruiterRecommendation
+            // thì HR không được thấy PII của candidate đó, kể cả trên chính bộ câu hỏi của HR.
+            .Where(x => x.p.AllowRecruiterRecommendation)
             .OrderByDescending(x => x.s.StartedAt)
             .Select(x => new QuestionSetPractitionerRow
             {
