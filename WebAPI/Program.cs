@@ -2,6 +2,10 @@
 using ApplicationLayer.Interfaces.Repositories;
 using ApplicationLayer.Interfaces.Services;
 using ApplicationLayer.Services;
+using ApplicationLayer.Studio.Interfaces;
+using ApplicationLayer.Studio.Validators;
+using FluentValidation;
+using FluentValidation.AspNetCore;
 using ApplicationLayer.Settings;
 using Hangfire;
 using Hangfire.PostgreSql;
@@ -9,6 +13,7 @@ using InfrastructureLayer.Database;
 using InfrastructureLayer.External;
 using InfrastructureLayer.Jobs;
 using InfrastructureLayer.Repository;
+using InfrastructureLayer.Services.Studio;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -20,8 +25,10 @@ using System.Security.Claims;
 using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Text.Unicode;
 using WebAPI.Middleware;
+using Serilog;
 
 namespace WebAPI;
 
@@ -30,10 +37,20 @@ public class Program
     public static async Task Main(string[] args)
     {
         var builder = WebApplication.CreateBuilder(args);
+        builder.Host.UseSerilog((ctx, cfg) =>
+            cfg.ReadFrom.Configuration(ctx.Configuration)
+               .WriteTo.Console()
+               .WriteTo.File("logs/webapi-.log", rollingInterval: RollingInterval.Day));
 
         builder.Services.AddControllers()
             .AddJsonOptions(o =>
-                o.JsonSerializerOptions.Encoder = JavaScriptEncoder.Create(UnicodeRanges.All));
+            {
+                o.JsonSerializerOptions.Encoder = JavaScriptEncoder.Create(UnicodeRanges.All);
+                o.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
+            });
+        builder.Services.AddFluentValidationAutoValidation();
+        builder.Services.AddFluentValidationClientsideAdapters();
+        builder.Services.AddValidatorsFromAssemblyContaining<CreateStudioProjectRequestValidator>();
 
         // Custom model-validation response (thay thế default 400 của ASP.NET)
         builder.Services.Configure<ApiBehaviorOptions>(options =>
@@ -96,7 +113,8 @@ public class Program
             {
                 var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFile);
                 if (File.Exists(xmlPath))
-                    options.IncludeXmlComments(xmlPath, includeControllerXmlComments: true);
+                    // false: không hiện XML summary cạnh tên controller trên Swagger UI
+                    options.IncludeXmlComments(xmlPath, includeControllerXmlComments: false);
             }
         });
 
@@ -296,6 +314,21 @@ public class Program
         builder.Services.AddScoped<IHrBookmarkService, HrBookmarkService>();
         builder.Services.AddScoped<QuestionAiContextBuilder>();
         builder.Services.AddScoped<IQuestionAiAssistService, QuestionAiAssistService>();
+        builder.Services.AddScoped<IInterviewProjectService, InterviewProjectService>();
+        builder.Services.AddScoped<IJobDescriptionService, JobDescriptionService>();
+        builder.Services.AddScoped<IJobDescriptionAnalyzer, MockJobDescriptionAnalyzer>();
+        builder.Services.AddScoped<IStudioJobDescriptionUploadService, StudioJobDescriptionUploadService>();
+        builder.Services.AddScoped<IStudioKnowledgeDocumentService, StudioKnowledgeRagService>();
+        builder.Services.AddScoped<IInterviewPlanService, InterviewPlanService>();
+        builder.Services.AddScoped<IQuestionGenerationService, QuestionGenerationService>();
+        builder.Services.AddScoped<IAiChatService, AiChatService>();
+        builder.Services.AddScoped<IStudioSettingsService, StudioSettingsService>();
+        builder.Services.AddScoped<IStudioShareService, StudioShareService>();
+        builder.Services.AddSingleton<IStudioMockAiService, StudioMockAiService>();
+        builder.Services.AddScoped<IDocumentTextExtractor, PdfTextExtractor>();
+        builder.Services.AddScoped<IDocumentTextExtractor, DocxTextExtractor>();
+        builder.Services.AddScoped<IDocumentTextExtractor, TxtTextExtractor>();
+        builder.Services.AddScoped<IDocumentTextExtractorFactory, DocumentTextExtractorFactory>();
 
         // Hangfire jobs
         builder.Services.AddScoped<IKnowledgeIngestJob, KnowledgeIngestJob>();
@@ -339,6 +372,7 @@ public class Program
             branch => branch.UseMiddleware<InternalApiKeyMiddleware>());
 
         app.UseCors();
+        app.UseSerilogRequestLogging();
 
         app.UseSwagger();
         app.UseSwaggerUI(options =>
