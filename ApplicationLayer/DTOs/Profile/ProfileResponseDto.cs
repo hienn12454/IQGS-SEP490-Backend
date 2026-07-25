@@ -29,6 +29,7 @@ public class HRProfileDto
     public string? JobTitle { get; set; }
     public string? PhoneNumber { get; set; }
     public string? LinkedInUrl { get; set; }
+    public string? GithubUrl { get; set; }
     public string? Bio { get; set; }
     public bool IsCompanyVerified { get; set; }
 }

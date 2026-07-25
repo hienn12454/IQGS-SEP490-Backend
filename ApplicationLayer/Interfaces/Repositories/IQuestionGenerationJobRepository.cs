@@ -16,6 +16,8 @@ public interface IQuestionGenerationJobRepository
     Task AddQuestionsAsync(IEnumerable<GeneratedQuestion> questions);
     Task DeleteQuestionsByJobIdAsync(Guid jobId);
     Task<PagedResultDto<QuestionGenerationJob>> GetPagedByOwnerAsync(Guid ownerId, QuestionGenerationListQueryDto query);
+    /// <summary>Toàn bộ job của HR này kèm Plan + Questions — dùng để tính KPI/thống kê dashboard, không phân trang.</summary>
+    Task<IReadOnlyList<QuestionGenerationJob>> GetAllByOwnerWithPlanAndQuestionsAsync(Guid ownerId);
     Task<PagedResultDto<QuestionGenerationJob>> GetPagedPlansByOwnerAsync(Guid ownerId, QuestionGenerationListQueryDto query);
     Task<GeneratedQuestion?> GetQuestionByIdAsync(Guid questionId);
     Task<List<GeneratedQuestion>> GetQuestionsByJobIdAsync(Guid jobId);

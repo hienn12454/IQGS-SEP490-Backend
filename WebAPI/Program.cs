@@ -268,6 +268,7 @@ public class Program
         builder.Services.AddScoped<IKnowledgeDocumentRepository, KnowledgeDocumentRepository>();
         builder.Services.AddScoped<IQuestionGenerationJobRepository, QuestionGenerationJobRepository>();
         builder.Services.AddScoped<IQuestionSetRepository, QuestionSetRepository>();
+        builder.Services.AddScoped<IHrQuestionSetBookmarkRepository, HrQuestionSetBookmarkRepository>();
 
         // Services
         builder.Services.AddScoped<IJwtService, JwtService>();
@@ -291,6 +292,8 @@ public class Program
         builder.Services.AddScoped<IQuestionGenerationJobInternalService, QuestionGenerationJobInternalService>();
         builder.Services.AddScoped<IQuestionSetService, QuestionSetService>();
         builder.Services.AddScoped<IHrCompanyInfoService, HrCompanyInfoService>();
+        builder.Services.AddScoped<IHrDashboardService, HrDashboardService>();
+        builder.Services.AddScoped<IHrBookmarkService, HrBookmarkService>();
         builder.Services.AddScoped<QuestionAiContextBuilder>();
         builder.Services.AddScoped<IQuestionAiAssistService, QuestionAiAssistService>();
 

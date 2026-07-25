@@ -16,10 +16,12 @@ namespace WebAPI.Controllers.Hr;
 public class HrQuestionSetsController : ControllerBase
 {
     private readonly IQuestionSetService _service;
+    private readonly IHrBookmarkService _bookmarkService;
 
-    public HrQuestionSetsController(IQuestionSetService service)
+    public HrQuestionSetsController(IQuestionSetService service, IHrBookmarkService bookmarkService)
     {
         _service = service;
+        _bookmarkService = bookmarkService;
     }
 
     /// <summary>Danh sách tất cả bộ câu hỏi (draft/published) mà HR hiện tại sở hữu.</summary>
@@ -90,6 +92,34 @@ public class HrQuestionSetsController : ControllerBase
     public async Task<IActionResult> SetTimeLimit(Guid id, [FromBody] SetTimeLimitRequestDto dto)
     {
         var result = await _service.SetTimeLimitAsync(id, GetCurrentUserId(), dto);
+        return SuccessResp.Ok(result);
+    }
+
+    /// <summary>Đổi tên bộ câu hỏi (SCRUM-330) — không ảnh hưởng trạng thái DRAFT/PUBLISHED hiện tại. Marketplace/danh sách sẽ phản ánh tên mới ngay.</summary>
+    /// <param name="id">Id bộ câu hỏi.</param>
+    /// <param name="dto">title: 1–500 ký tự, không được để trống.</param>
+    [HttpPut("{id:guid}/title")]
+    public async Task<IActionResult> RenameTitle(Guid id, [FromBody] RenameQuestionSetTitleRequestDto dto)
+    {
+        var result = await _service.RenameTitleAsync(id, GetCurrentUserId(), dto);
+        return SuccessResp.Ok(result);
+    }
+
+    /// <summary>Danh sách candidate đã practice bộ câu hỏi này (SCRUM-326) — mọi trạng thái phiên (IN_PROGRESS/COMPLETED/ABANDONED), không lọc theo ngưỡng điểm như Recommendation. Chỉ HR chủ sở hữu xem được. Candidate đã tắt "Cho phép đề xuất hồ sơ cho HR" (AllowRecruiterRecommendation) sẽ không xuất hiện trong danh sách này.</summary>
+    /// <param name="id">Id bộ câu hỏi.</param>
+    [HttpGet("{id:guid}/practitioners")]
+    public async Task<IActionResult> GetPractitioners(Guid id)
+    {
+        var result = await _service.GetPractitionersAsync(id, GetCurrentUserId());
+        return SuccessResp.Ok(result);
+    }
+
+    /// <summary>Bookmark/bỏ bookmark bộ câu hỏi của chính mình (SCRUM-324) — toggle: gọi lần 1 để bookmark, gọi lại để bỏ. Chỉ bookmark được set do chính HR này sở hữu (draft hoặc published).</summary>
+    /// <param name="id">Id bộ câu hỏi.</param>
+    [HttpPost("{id:guid}/bookmark")]
+    public async Task<IActionResult> ToggleBookmark(Guid id)
+    {
+        var result = await _bookmarkService.ToggleAsync(id, GetCurrentUserId());
         return SuccessResp.Ok(result);
     }
 

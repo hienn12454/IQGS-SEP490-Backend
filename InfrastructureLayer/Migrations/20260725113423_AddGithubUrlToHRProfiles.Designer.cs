@@ -3,6 +3,7 @@ using System;
 using InfrastructureLayer.Database;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Pgvector;
@@ -12,9 +13,11 @@ using Pgvector;
 namespace InfrastructureLayer.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260725113423_AddGithubUrlToHRProfiles")]
+    partial class AddGithubUrlToHRProfiles
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -452,37 +455,6 @@ namespace InfrastructureLayer.Migrations
                         .IsUnique();
 
                     b.ToTable("HRProfiles");
-                });
-
-            modelBuilder.Entity("DomainLayer.Entities.HrQuestionSetBookmark", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("HrUserId")
-                        .HasColumnType("uuid");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("boolean");
-
-                    b.Property<Guid>("QuestionSetId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("QuestionSetId");
-
-                    b.HasIndex("HrUserId", "QuestionSetId")
-                        .IsUnique();
-
-                    b.ToTable("hr_question_set_bookmarks", (string)null);
                 });
 
             modelBuilder.Entity("DomainLayer.Entities.KnowledgeChunk", b =>
@@ -1271,17 +1243,6 @@ namespace InfrastructureLayer.Migrations
                     b.Navigation("Company");
 
                     b.Navigation("User");
-                });
-
-            modelBuilder.Entity("DomainLayer.Entities.HrQuestionSetBookmark", b =>
-                {
-                    b.HasOne("DomainLayer.Entities.QuestionSet", "QuestionSet")
-                        .WithMany()
-                        .HasForeignKey("QuestionSetId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("QuestionSet");
                 });
 
             modelBuilder.Entity("DomainLayer.Entities.KnowledgeChunk", b =>

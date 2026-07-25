@@ -148,6 +148,7 @@ public class UserService : IUserService
                 JobTitle = dto.JobTitle,
                 PhoneNumber = dto.PhoneNumber,
                 LinkedInUrl = dto.LinkedInUrl,
+                GithubUrl = dto.GithubUrl,
                 Bio = dto.Bio
             });
         }
@@ -157,6 +158,7 @@ public class UserService : IUserService
             profile.JobTitle = dto.JobTitle;
             profile.PhoneNumber = dto.PhoneNumber;
             profile.LinkedInUrl = dto.LinkedInUrl;
+            profile.GithubUrl = dto.GithubUrl;
             profile.Bio = dto.Bio;
             await _hrProfileRepo.UpdateAsync(profile);
         }
@@ -297,6 +299,7 @@ public class UserService : IUserService
                     JobTitle = hr.JobTitle,
                     PhoneNumber = hr.PhoneNumber,
                     LinkedInUrl = hr.LinkedInUrl,
+                    GithubUrl = hr.GithubUrl,
                     Bio = hr.Bio,
                     IsCompanyVerified = hr.IsCompanyVerified
                 };
