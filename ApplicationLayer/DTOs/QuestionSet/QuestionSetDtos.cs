@@ -90,6 +90,53 @@ public class SetTimeLimitResponseDto
     public int? TimeLimitMinutes { get; set; }
 }
 
+/// <summary>SCRUM-330: request đổi tên bộ câu hỏi sau khi đã tạo.</summary>
+public class RenameQuestionSetTitleRequestDto
+{
+    [System.ComponentModel.DataAnnotations.Required(ErrorMessage = "Tiêu đề không được để trống.")]
+    [System.ComponentModel.DataAnnotations.MinLength(1, ErrorMessage = "Tiêu đề không được để trống.")]
+    [System.ComponentModel.DataAnnotations.MaxLength(500, ErrorMessage = "Tiêu đề không được vượt quá 500 ký tự.")]
+    public string Title { get; set; } = string.Empty;
+}
+
+public class RenameQuestionSetTitleResponseDto
+{
+    public Guid QuestionSetId { get; set; }
+    public string Title { get; set; } = string.Empty;
+}
+
+/// <summary>Read-model 1 candidate đã practice 1 bộ câu hỏi — dùng nội bộ bởi repository (SCRUM-326).</summary>
+public class QuestionSetPractitionerRow
+{
+    public Guid CandidateUserId { get; set; }
+    public string CandidateName { get; set; } = string.Empty;
+    public string CandidateEmail { get; set; } = string.Empty;
+    public string? TargetRole { get; set; }
+    public string? SeniorityLevel { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public double? OverallScore { get; set; }
+    public DateTime? StartedAt { get; set; }
+    public DateTime? CompletedAt { get; set; }
+}
+
+/// <summary>SCRUM-326: 1 candidate đã practice bộ câu hỏi của HR — khác Recommendation (không lọc theo ngưỡng điểm).</summary>
+public class QuestionSetPractitionerDto
+{
+    public Guid CandidateUserId { get; set; }
+    public string CandidateName { get; set; } = string.Empty;
+    public string CandidateEmail { get; set; } = string.Empty;
+    public string? TargetRole { get; set; }
+    public string? SeniorityLevel { get; set; }
+
+    /// <summary>IN_PROGRESS | COMPLETED | ABANDONED.</summary>
+    public string Status { get; set; } = string.Empty;
+
+    /// <summary>Thang 0–100 — null nếu phiên chưa hoàn thành.</summary>
+    public double? OverallScore { get; set; }
+    public DateTime? StartedAt { get; set; }
+    public DateTime? CompletedAt { get; set; }
+}
+
 /// <summary>Read-model cho 1 dòng marketplace (projection JOIN question_sets/HRProfiles/Companies), dùng nội bộ bởi repository.</summary>
 public class PublishedQuestionSetRow
 {

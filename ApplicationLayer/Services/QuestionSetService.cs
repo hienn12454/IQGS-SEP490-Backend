@@ -16,6 +16,7 @@ public class QuestionSetService : IQuestionSetService
     private readonly IQuestionGenerationJobRepository _jobRepository;
     private readonly IPlatformSettingsRepository _platformSettingsRepository;
     private readonly IHrCompanyInfoService _hrCompanyInfoService;
+    private readonly IPracticeSessionRepository _practiceSessionRepository;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -27,12 +28,14 @@ public class QuestionSetService : IQuestionSetService
         IQuestionSetRepository questionSetRepository,
         IQuestionGenerationJobRepository jobRepository,
         IPlatformSettingsRepository platformSettingsRepository,
-        IHrCompanyInfoService hrCompanyInfoService)
+        IHrCompanyInfoService hrCompanyInfoService,
+        IPracticeSessionRepository practiceSessionRepository)
     {
         _questionSetRepository = questionSetRepository;
         _jobRepository = jobRepository;
         _platformSettingsRepository = platformSettingsRepository;
         _hrCompanyInfoService = hrCompanyInfoService;
+        _practiceSessionRepository = practiceSessionRepository;
     }
 
     public async Task<SaveDraftResponseDto> SaveDraftFromJobAsync(Guid jobId, Guid ownerId)
@@ -316,6 +319,42 @@ public class QuestionSetService : IQuestionSetService
             QuestionSetId = questionSet.Id,
             TimeLimitMinutes = questionSet.TimeLimitMinutes
         };
+    }
+
+    public async Task<RenameQuestionSetTitleResponseDto> RenameTitleAsync(
+        Guid questionSetId, Guid ownerId, RenameQuestionSetTitleRequestDto dto)
+    {
+        var questionSet = await EnsureOwnedQuestionSetAsync(questionSetId, ownerId);
+
+        // Chỉ đổi Title — không đụng Status, giữ nguyên DRAFT/PUBLISHED hiện tại (SCRUM-330 AC).
+        questionSet.Title = dto.Title.Trim();
+        questionSet.UpdatedAt = DateTime.UtcNow;
+        await _questionSetRepository.UpdateAsync(questionSet);
+
+        return new RenameQuestionSetTitleResponseDto
+        {
+            QuestionSetId = questionSet.Id,
+            Title = questionSet.Title
+        };
+    }
+
+    public async Task<IReadOnlyList<QuestionSetPractitionerDto>> GetPractitionersAsync(Guid questionSetId, Guid ownerId)
+    {
+        await EnsureOwnedQuestionSetAsync(questionSetId, ownerId);
+
+        var rows = await _practiceSessionRepository.ListPractitionersByQuestionSetAsync(questionSetId);
+        return rows.Select(r => new QuestionSetPractitionerDto
+        {
+            CandidateUserId = r.CandidateUserId,
+            CandidateName = r.CandidateName,
+            CandidateEmail = r.CandidateEmail,
+            TargetRole = r.TargetRole,
+            SeniorityLevel = r.SeniorityLevel,
+            Status = r.Status,
+            OverallScore = r.OverallScore,
+            StartedAt = r.StartedAt,
+            CompletedAt = r.CompletedAt
+        }).ToList();
     }
 
     public async Task<QuestionSetActionResponseDto> UnpublishAsync(Guid questionSetId, Guid ownerId)

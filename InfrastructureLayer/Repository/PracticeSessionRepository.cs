@@ -1,4 +1,5 @@
 using ApplicationLayer.DTOs.Candidate;
+using ApplicationLayer.DTOs.QuestionSet;
 using ApplicationLayer.Interfaces.Repositories;
 using DomainLayer.Constants;
 using DomainLayer.Entities;
@@ -162,5 +163,35 @@ public class PracticeSessionRepository : IPracticeSessionRepository
             LatestScore = latestScore,
             TotalDurationSeconds = (long)totalDurationSeconds
         };
+    }
+
+    public async Task<IReadOnlyList<QuestionSetPractitionerRow>> ListPractitionersByQuestionSetAsync(Guid questionSetId)
+    {
+        var query = _context.PracticeSessions
+            .AsNoTracking()
+            .Where(s => s.QuestionSetId == questionSetId && s.IsActive);
+
+        var projected = query
+            .Join(_context.Users.AsNoTracking(),
+                s => s.CandidateUserId, u => u.Id,
+                (s, u) => new { s, u })
+            .Join(_context.CandidateProfiles.AsNoTracking(),
+                x => x.s.CandidateUserId, p => p.UserId,
+                (x, p) => new { x.s, x.u, p })
+            .OrderByDescending(x => x.s.StartedAt)
+            .Select(x => new QuestionSetPractitionerRow
+            {
+                CandidateUserId = x.s.CandidateUserId,
+                CandidateName = x.u.FullName,
+                CandidateEmail = x.u.Email,
+                TargetRole = x.p.TargetRole,
+                SeniorityLevel = x.p.SeniorityLevel,
+                Status = x.s.Status,
+                OverallScore = x.s.OverallScore,
+                StartedAt = x.s.StartedAt,
+                CompletedAt = x.s.CompletedAt
+            });
+
+        return await projected.ToListAsync();
     }
 }
