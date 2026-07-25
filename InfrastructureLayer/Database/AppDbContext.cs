@@ -107,6 +107,7 @@ public class AppDbContext : DbContext
             entity.Property(p => p.JobTitle).HasMaxLength(150);
             entity.Property(p => p.PhoneNumber).HasMaxLength(20);
             entity.Property(p => p.LinkedInUrl).HasMaxLength(500);
+            entity.Property(p => p.GithubUrl).HasMaxLength(500);
             entity.Property(p => p.IsCompanyVerified).IsRequired().HasDefaultValue(false);
 
             entity.HasOne(p => p.User)
