@@ -167,6 +167,61 @@ namespace InfrastructureLayer.Migrations
                     b.ToTable("candidate_invitations", (string)null);
                 });
 
+            modelBuilder.Entity("DomainLayer.Entities.CandidateOffer", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("AcceptedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("CandidateUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("HrUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Message")
+                        .IsRequired()
+                        .HasMaxLength(5000)
+                        .HasColumnType("character varying(5000)");
+
+                    b.Property<Guid>("RecommendationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<DateTime>("TokenExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique();
+
+                    b.HasIndex("RecommendationId", "CreatedAt");
+
+                    b.ToTable("candidate_offers", (string)null);
+                });
+
             modelBuilder.Entity("DomainLayer.Entities.CandidateProfile", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1948,6 +2003,17 @@ namespace InfrastructureLayer.Migrations
                 });
 
             modelBuilder.Entity("DomainLayer.Entities.CandidateInvitation", b =>
+                {
+                    b.HasOne("DomainLayer.Entities.CandidateRecommendation", "Recommendation")
+                        .WithMany()
+                        .HasForeignKey("RecommendationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Recommendation");
+                });
+
+            modelBuilder.Entity("DomainLayer.Entities.CandidateOffer", b =>
                 {
                     b.HasOne("DomainLayer.Entities.CandidateRecommendation", "Recommendation")
                         .WithMany()
