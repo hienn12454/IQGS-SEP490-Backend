@@ -429,6 +429,8 @@ public class AppDbContext : DbContext
             entity.HasKey(i => i.Id);
             entity.Property(i => i.Status).IsRequired().HasMaxLength(20);
             entity.Property(i => i.Message).HasMaxLength(2000);
+            entity.Property(i => i.ResponseMessage).HasMaxLength(2000);
+            entity.Property(i => i.SharedPhoneNumber).HasMaxLength(20);
 
             entity.HasOne(i => i.Recommendation)
                   .WithMany()

@@ -21,7 +21,7 @@ public class HrRecommendationsController : ControllerBase
         _service = service;
     }
 
-    /// <summary>Danh sách candidate được đề xuất cho HR hiện tại, sắp theo điểm giảm dần, phân trang. Kèm thông tin candidate (tên, email, targetRole, techStack) + bộ câu hỏi + trạng thái lời mời nếu đã mời.</summary>
+    /// <summary>Danh sách candidate được đề xuất cho HR hiện tại, sắp theo điểm giảm dần, phân trang. Kèm thông tin candidate (tên, email, targetRole, techStack) + bộ câu hỏi + trạng thái lời mời nếu đã mời. Nếu candidate đã ACCEPTED lời mời, còn có invitationResponseMessage/invitationSharedPhoneNumber — do chính candidate chủ động gửi kèm lúc accept, không phải SĐT trên profile.</summary>
     /// <param name="query">page, pageSize, status (NEW/SHORTLISTED/DISMISSED/INVITED), questionSetId.</param>
     [HttpGet]
     public async Task<IActionResult> List([FromQuery] HrRecommendationListQueryDto query)

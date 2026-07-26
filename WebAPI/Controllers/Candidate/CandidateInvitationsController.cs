@@ -1,3 +1,4 @@
+using ApplicationLayer.DTOs.Candidate;
 using ApplicationLayer.Interfaces.Services;
 using ApplicationLayer.ResponseCode;
 using Microsoft.AspNetCore.Authorization;
@@ -27,12 +28,13 @@ public class CandidateInvitationsController : ControllerBase
         return SuccessResp.Ok(result);
     }
 
-    /// <summary>Chấp nhận lời mời (PENDING → ACCEPTED). 409 nếu đã phản hồi trước đó.</summary>
+    /// <summary>Chấp nhận lời mời (PENDING → ACCEPTED). 409 nếu đã phản hồi trước đó. Body không bắt buộc — có thể gửi kèm lời nhắn và/hoặc SĐT để HR liên hệ phỏng vấn (candidate tự chọn có chia sẻ hay không, chỉ HR gửi lời mời này thấy được).</summary>
     /// <param name="id">Id lời mời.</param>
+    /// <param name="dto">Tùy chọn: responseMessage, phoneNumber. Bỏ trống body nếu không muốn gửi kèm gì.</param>
     [HttpPost("{id:guid}/accept")]
-    public async Task<IActionResult> Accept(Guid id)
+    public async Task<IActionResult> Accept(Guid id, [FromBody] AcceptInvitationRequestDto? dto)
     {
-        var result = await _service.AcceptAsync(id, User.GetUserId());
+        var result = await _service.AcceptAsync(id, User.GetUserId(), dto);
         return SuccessResp.Ok(result);
     }
 
