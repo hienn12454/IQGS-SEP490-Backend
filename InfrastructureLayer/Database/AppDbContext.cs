@@ -32,6 +32,10 @@ public class AppDbContext : DbContext
     public DbSet<CandidateInvitation> CandidateInvitations { get; set; }
     public DbSet<CandidateOffer> CandidateOffers { get; set; }
     public DbSet<DomainLayer.Entities.PlatformSettings> PlatformSettings { get; set; }
+    public DbSet<SubscriptionPlan> SubscriptionPlans { get; set; }
+    public DbSet<Subscription> Subscriptions { get; set; }
+    public DbSet<UsageCounter> UsageCounters { get; set; }
+    public DbSet<SubscriptionTransaction> SubscriptionTransactions { get; set; }
     public DbSet<InterviewProject> InterviewProjects { get; set; }
     public DbSet<JobDescription> StudioJobDescriptions { get; set; }
     public DbSet<StudioKnowledgeDocument> StudioKnowledgeDocuments { get; set; }
@@ -494,6 +498,142 @@ public class AppDbContext : DbContext
                 CreatedAt = new DateTime(2026, 7, 21, 0, 0, 0, DateTimeKind.Utc),
                 IsActive = true
             });
+        });
+
+        // ── SubscriptionPlan (Free/Premium templates) ───────────────
+        modelBuilder.Entity<SubscriptionPlan>(entity =>
+        {
+            entity.ToTable("subscription_plans");
+            entity.HasKey(p => p.Id);
+            entity.Property(p => p.Code).IsRequired().HasMaxLength(50);
+            entity.HasIndex(p => p.Code).IsUnique();
+            entity.Property(p => p.Audience).IsRequired().HasMaxLength(20);
+            entity.Property(p => p.Name).IsRequired().HasMaxLength(100);
+            entity.Property(p => p.Currency).IsRequired().HasMaxLength(10);
+            entity.Property(p => p.PriceMonthly).HasPrecision(18, 2);
+            entity.Property(p => p.LimitsJson).IsRequired().HasColumnType("jsonb");
+
+            var seedAt = new DateTime(2026, 7, 30, 0, 0, 0, DateTimeKind.Utc);
+            // JSON cố định (camelCase) khớp SubscriptionPlanLimits — không gọi helper lúc design-time
+            const string hrFreeLimits =
+                "{\"generateCooldownHours\":24,\"generateUnlimited\":false,\"planRegeneratePerDraft\":5,\"canExport\":false,\"askAiPerMonth\":0,\"canPublish\":true,\"freeVisiblePercent\":100,\"canPersistHrRecommendation\":false,\"feedbackOnlyOnVisible\":false}";
+            const string hrPremiumLimits =
+                "{\"generateCooldownHours\":0,\"generateUnlimited\":true,\"planRegeneratePerDraft\":5,\"canExport\":true,\"askAiPerMonth\":1000,\"canPublish\":true,\"freeVisiblePercent\":100,\"canPersistHrRecommendation\":false,\"feedbackOnlyOnVisible\":false}";
+            const string candidateFreeLimits =
+                "{\"generateCooldownHours\":0,\"generateUnlimited\":false,\"planRegeneratePerDraft\":0,\"canExport\":false,\"askAiPerMonth\":0,\"canPublish\":false,\"freeVisiblePercent\":20,\"canPersistHrRecommendation\":false,\"feedbackOnlyOnVisible\":true}";
+            const string candidatePremiumLimits =
+                "{\"generateCooldownHours\":0,\"generateUnlimited\":false,\"planRegeneratePerDraft\":0,\"canExport\":false,\"askAiPerMonth\":0,\"canPublish\":false,\"freeVisiblePercent\":100,\"canPersistHrRecommendation\":true,\"feedbackOnlyOnVisible\":false}";
+
+            entity.HasData(
+                new SubscriptionPlan
+                {
+                    Id = SubscriptionPlanCodes.HrFreeId,
+                    Code = SubscriptionPlanCodes.HrFree,
+                    Audience = SubscriptionAudience.HR,
+                    Name = "HR Free",
+                    PriceMonthly = 0,
+                    Currency = "VND",
+                    LimitsJson = hrFreeLimits,
+                    CreatedAt = seedAt,
+                    IsActive = true
+                },
+                new SubscriptionPlan
+                {
+                    Id = SubscriptionPlanCodes.HrPremiumId,
+                    Code = SubscriptionPlanCodes.HrPremium,
+                    Audience = SubscriptionAudience.HR,
+                    Name = "HR Premium",
+                    PriceMonthly = 699000,
+                    Currency = "VND",
+                    LimitsJson = hrPremiumLimits,
+                    CreatedAt = seedAt,
+                    IsActive = true
+                },
+                new SubscriptionPlan
+                {
+                    Id = SubscriptionPlanCodes.CandidateFreeId,
+                    Code = SubscriptionPlanCodes.CandidateFree,
+                    Audience = SubscriptionAudience.Candidate,
+                    Name = "Candidate Free",
+                    PriceMonthly = 0,
+                    Currency = "VND",
+                    LimitsJson = candidateFreeLimits,
+                    CreatedAt = seedAt,
+                    IsActive = true
+                },
+                new SubscriptionPlan
+                {
+                    Id = SubscriptionPlanCodes.CandidatePremiumId,
+                    Code = SubscriptionPlanCodes.CandidatePremium,
+                    Audience = SubscriptionAudience.Candidate,
+                    Name = "Candidate Premium",
+                    PriceMonthly = 149000,
+                    Currency = "VND",
+                    LimitsJson = candidatePremiumLimits,
+                    CreatedAt = seedAt,
+                    IsActive = true
+                });
+        });
+
+        // ── Subscription (per user, anniversary period + snapshot) ──
+        modelBuilder.Entity<Subscription>(entity =>
+        {
+            entity.ToTable("subscriptions");
+            entity.HasKey(s => s.Id);
+            entity.Property(s => s.Status).IsRequired().HasMaxLength(20);
+            entity.Property(s => s.LimitsSnapshotJson).IsRequired().HasColumnType("jsonb");
+            entity.HasIndex(s => s.UserId).IsUnique();
+
+            entity.HasOne(s => s.User)
+                  .WithMany()
+                  .HasForeignKey(s => s.UserId)
+                  .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(s => s.Plan)
+                  .WithMany(p => p.Subscriptions)
+                  .HasForeignKey(s => s.PlanId)
+                  .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // ── UsageCounter ────────────────────────────────────────────
+        modelBuilder.Entity<UsageCounter>(entity =>
+        {
+            entity.ToTable("usage_counters");
+            entity.HasKey(c => c.Id);
+            entity.Property(c => c.UsageType).IsRequired().HasMaxLength(50);
+            entity.Property(c => c.ScopeKey).IsRequired().HasMaxLength(100).HasDefaultValue(string.Empty);
+
+            entity.HasOne(c => c.Subscription)
+                  .WithMany(s => s.UsageCounters)
+                  .HasForeignKey(c => c.SubscriptionId)
+                  .OnDelete(DeleteBehavior.Cascade);
+
+            // Unique theo kỳ + type + scope (null scope = tổng)
+            entity.HasIndex(c => new { c.SubscriptionId, c.PeriodStart, c.UsageType, c.ScopeKey })
+                  .IsUnique();
+        });
+
+        // ── SubscriptionTransaction (sandbox) ───────────────────────
+        modelBuilder.Entity<SubscriptionTransaction>(entity =>
+        {
+            entity.ToTable("subscription_transactions");
+            entity.HasKey(t => t.Id);
+            entity.Property(t => t.Type).IsRequired().HasMaxLength(30);
+            entity.Property(t => t.Status).IsRequired().HasMaxLength(20);
+            entity.Property(t => t.Provider).IsRequired().HasMaxLength(30);
+            entity.Property(t => t.Currency).IsRequired().HasMaxLength(10);
+            entity.Property(t => t.Amount).HasPrecision(18, 2);
+            entity.Property(t => t.OrderCode).HasMaxLength(80);
+            entity.Property(t => t.ExternalTransactionId).HasMaxLength(120);
+            entity.Property(t => t.RawPayloadJson).HasColumnType("jsonb");
+            entity.Property(t => t.Note).HasMaxLength(500);
+            entity.HasIndex(t => t.OrderCode).IsUnique();
+            entity.HasIndex(t => t.ExternalTransactionId).IsUnique();
+
+            entity.HasOne(t => t.Subscription)
+                  .WithMany(s => s.Transactions)
+                  .HasForeignKey(t => t.SubscriptionId)
+                  .OnDelete(DeleteBehavior.Cascade);
         });
     }
 }
