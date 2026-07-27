@@ -28,7 +28,7 @@ public class CandidatePrivacySettingsController : ControllerBase
         return SuccessResp.Ok(result);
     }
 
-    /// <summary>Bật/tắt consent allowRecruiterRecommendation. Bật = phiên luyện tập đạt điều kiện sẽ tự tạo recommendation cho HR; tắt = không tạo recommendation mới (recommendation đã tạo trước đó không bị xóa).</summary>
+    /// <summary>Bật/tắt consent allowRecruiterRecommendation. Bật = phiên luyện tập đạt điều kiện sẽ tự tạo recommendation cho HR, và toàn bộ recommendation hiện có (kể cả tạo từ trước) hiển thị lại trên list HR. Tắt = không tạo recommendation mới, đồng thời ẩn NGAY mọi recommendation đã tạo trước đó khỏi list HR xem được (không xóa dữ liệu, chỉ ẩn — bật lại là thấy lại).</summary>
     /// <param name="dto">allowRecruiterRecommendation: true/false.</param>
     [HttpPut]
     public async Task<IActionResult> Update([FromBody] CandidatePrivacySettingsDto dto)

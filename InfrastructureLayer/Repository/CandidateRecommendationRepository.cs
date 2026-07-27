@@ -60,6 +60,9 @@ public class CandidateRecommendationRepository : ICandidateRecommendationReposit
             .Join(_context.CandidateProfiles.AsNoTracking(),
                 x => x.r.CandidateUserId, p => p.UserId,
                 (x, p) => new { x.r, x.u, p })
+            // Candidate tắt AllowRecruiterRecommendation -> ẩn NGAY khỏi list HR xem được, kể cả recommendation
+            // đã tạo từ trước (không chỉ chặn tạo mới) — HR không còn thấy tên/email/điểm cho đến khi candidate bật lại.
+            .Where(x => x.p.AllowRecruiterRecommendation)
             .OrderByDescending(x => x.r.OverallScore)
             .ThenByDescending(x => x.r.CreatedAt)
             .Select(x => new HrRecommendationRow
