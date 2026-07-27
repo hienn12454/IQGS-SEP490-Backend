@@ -18,5 +18,11 @@ public class CandidateInvitation : BaseEntity
     public string Status { get; set; } = Constants.InvitationStatus.Pending;
     public DateTime? RespondedAt { get; set; }
 
+    /// <summary>Lời nhắn candidate gửi kèm khi ACCEPTED — null nếu chưa phản hồi/từ chối hoặc không nhập.</summary>
+    public string? ResponseMessage { get; set; }
+
+    /// <summary>SĐT candidate chủ động chia sẻ khi ACCEPTED (candidate tự chọn có nhập hay không) — null nếu chưa phản hồi/từ chối hoặc không nhập.</summary>
+    public string? SharedPhoneNumber { get; set; }
+
     public CandidateRecommendation Recommendation { get; set; } = null!;
 }

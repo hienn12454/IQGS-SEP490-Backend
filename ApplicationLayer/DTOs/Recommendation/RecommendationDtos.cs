@@ -33,6 +33,12 @@ public class HrRecommendationListItemDto
     /// <summary>Trạng thái lời mời nếu đã invite (PENDING/ACCEPTED/REJECTED) — null nếu chưa mời.</summary>
     public string? InvitationStatus { get; set; }
 
+    /// <summary>Lời nhắn candidate gửi kèm khi accept lời mời — null nếu chưa accept hoặc không nhập.</summary>
+    public string? InvitationResponseMessage { get; set; }
+
+    /// <summary>SĐT candidate chủ động chia sẻ khi accept lời mời — null nếu chưa accept hoặc không nhập. KHÔNG phải PhoneNumber trên CandidateProfile.</summary>
+    public string? InvitationSharedPhoneNumber { get; set; }
+
     public DateTime RecommendedAt { get; set; }
 }
 
@@ -51,6 +57,8 @@ public class HrRecommendationRow
     public double OverallScore { get; set; }
     public string Status { get; set; } = string.Empty;
     public string? InvitationStatus { get; set; }
+    public string? InvitationResponseMessage { get; set; }
+    public string? InvitationSharedPhoneNumber { get; set; }
     public DateTime RecommendedAt { get; set; }
 }
 

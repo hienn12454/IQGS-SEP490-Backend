@@ -35,13 +35,14 @@ public class CandidateInvitationService : ICandidateInvitationService
         }).ToList();
     }
 
-    public Task<InvitationActionResponseDto> AcceptAsync(Guid id, Guid candidateUserId)
-        => RespondAsync(id, candidateUserId, InvitationStatus.Accepted);
+    public Task<InvitationActionResponseDto> AcceptAsync(Guid id, Guid candidateUserId, AcceptInvitationRequestDto? dto)
+        => RespondAsync(id, candidateUserId, InvitationStatus.Accepted, dto?.ResponseMessage, dto?.PhoneNumber);
 
     public Task<InvitationActionResponseDto> RejectAsync(Guid id, Guid candidateUserId)
-        => RespondAsync(id, candidateUserId, InvitationStatus.Rejected);
+        => RespondAsync(id, candidateUserId, InvitationStatus.Rejected, null, null);
 
-    private async Task<InvitationActionResponseDto> RespondAsync(Guid id, Guid candidateUserId, string newStatus)
+    private async Task<InvitationActionResponseDto> RespondAsync(
+        Guid id, Guid candidateUserId, string newStatus, string? responseMessage, string? sharedPhoneNumber)
     {
         var invitation = await _invitationRepository.GetByIdAsync(id)
             ?? throw new NotFoundException("Lời mời không tồn tại.");
@@ -55,6 +56,14 @@ public class CandidateInvitationService : ICandidateInvitationService
         invitation.Status = newStatus;
         invitation.RespondedAt = DateTime.UtcNow;
         invitation.UpdatedAt = DateTime.UtcNow;
+
+        // Chỉ lưu lời nhắn/SĐT khi ACCEPTED — candidate từ chối thì không cần chia sẻ gì thêm.
+        if (newStatus == InvitationStatus.Accepted)
+        {
+            invitation.ResponseMessage = string.IsNullOrWhiteSpace(responseMessage) ? null : responseMessage.Trim();
+            invitation.SharedPhoneNumber = string.IsNullOrWhiteSpace(sharedPhoneNumber) ? null : sharedPhoneNumber.Trim();
+        }
+
         await _invitationRepository.UpdateAsync(invitation);
 
         return new InvitationActionResponseDto
