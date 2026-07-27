@@ -25,6 +25,8 @@ public class QuestionGenerationJobService : IQuestionGenerationJobService
     private readonly IRagService _ragService;
     private readonly KnowledgeBaseSettings _kbSettings;
     private readonly IQuestionSetRepository _questionSetRepository;
+    private readonly ISubscriptionGateService _subscriptionGate;
+    private readonly IUsageMeteringService _usageMetering;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -37,13 +39,17 @@ public class QuestionGenerationJobService : IQuestionGenerationJobService
         IJobScheduler jobScheduler,
         IRagService ragService,
         IQuestionSetRepository questionSetRepository,
-        IOptions<KnowledgeBaseSettings> kbSettings)
+        IOptions<KnowledgeBaseSettings> kbSettings,
+        ISubscriptionGateService subscriptionGate,
+        IUsageMeteringService usageMetering)
     {
         _repository = repository;
         _jobScheduler = jobScheduler;
         _ragService = ragService;
         _kbSettings = kbSettings.Value;
         _questionSetRepository = questionSetRepository;
+        _subscriptionGate = subscriptionGate;
+        _usageMetering = usageMetering;
     }
 
     public Task<CreatePlanJobResponseDto> CreatePlanJobAsync(
@@ -130,6 +136,9 @@ public class QuestionGenerationJobService : IQuestionGenerationJobService
         var normalizedDifficulty = QuestionGenerationInputValidator.ValidateAndNormalizeDifficulty(difficulty);
         var normalizedTypes = QuestionGenerationInputValidator.ValidateAndNormalizeQuestionTypes(questionTypes);
 
+        // SCRUM-382: Free cooldown 24h / Premium unlimited
+        await _subscriptionGate.CheckGenerateSetAsync(ownerId);
+
         var resolved = await ResolveJobDescriptionAsync(
             jobDescription, fileStream, fileName, fileSize, ct);
 
@@ -148,6 +157,7 @@ public class QuestionGenerationJobService : IQuestionGenerationJobService
         };
 
         await _repository.AddAsync(job);
+        await _usageMetering.MarkGenerateSuccessAsync(ownerId);
         _jobScheduler.EnqueueGeneratePlan(job.Id);
 
         return new CreatePlanJobResponseDto

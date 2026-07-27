@@ -112,9 +112,6 @@ public class HrDashboardTopRecommendationDto
 
 public class HrDashboardSubscriptionDto
 {
-    /// <summary>
-    /// Stub tạm thời — hệ thống chưa có tính năng Payment/Subscription, luôn trả "Free" cho đến khi
-    /// Payment MVP hoàn thành và có bảng gói riêng.
-    /// </summary>
+    /// <summary>Free hoặc Premium — đọc từ Subscription thật (SCRUM-336).</summary>
     public string PlanId { get; set; } = "Free";
 }

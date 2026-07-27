@@ -14,6 +14,8 @@ public class QuestionAiAssistService : IQuestionAiAssistService
     private readonly IQuestionSetRepository _questionSetRepository;
     private readonly IRagService _ragService;
     private readonly QuestionAiContextBuilder _contextBuilder;
+    private readonly ISubscriptionGateService _subscriptionGate;
+    private readonly IUsageMeteringService _usageMetering;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -25,12 +27,16 @@ public class QuestionAiAssistService : IQuestionAiAssistService
         IQuestionGenerationJobRepository repository,
         IQuestionSetRepository questionSetRepository,
         IRagService ragService,
-        QuestionAiContextBuilder contextBuilder)
+        QuestionAiContextBuilder contextBuilder,
+        ISubscriptionGateService subscriptionGate,
+        IUsageMeteringService usageMetering)
     {
         _repository = repository;
         _questionSetRepository = questionSetRepository;
         _ragService = ragService;
         _contextBuilder = contextBuilder;
+        _subscriptionGate = subscriptionGate;
+        _usageMetering = usageMetering;
     }
 
     public async Task<AskQuestionAiResponseDto> AskAsync(
@@ -38,6 +44,9 @@ public class QuestionAiAssistService : IQuestionAiAssistService
     {
         if (string.IsNullOrWhiteSpace(dto.Message))
             throw new BadRequestException("message không được để trống.");
+
+        // SCRUM-382: Premium + quota Ask-AI theo LimitsSnapshot
+        await _subscriptionGate.CheckAskAiAsync(ownerId);
 
         var job = await GetOwnedJobForAskAiAsync(jobId, questionId, ownerId);
         var question = job.Questions.FirstOrDefault(q => q.Id == questionId)
@@ -86,6 +95,7 @@ public class QuestionAiAssistService : IQuestionAiAssistService
         };
 
         await _repository.AddQuestionAiChatMessagesAsync(new[] { hrMessage, aiMessage });
+        await _usageMetering.IncrementAsync(ownerId, UsageType.HrAskAi);
 
         return new AskQuestionAiResponseDto
         {

@@ -5,6 +5,7 @@ using ApplicationLayer.DTOs.Rag;
 using ApplicationLayer.Helpers;
 using ApplicationLayer.Interfaces.Repositories;
 using ApplicationLayer.Interfaces.Services;
+using ApplicationLayer.Services.Mapping;
 using DomainLayer.Constants;
 using DomainLayer.Entities;
 using DomainLayer.Exceptions;
@@ -25,6 +26,8 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
     private readonly IAiFeedbackRepository _feedbackRepository;
     private readonly IRagService _ragService;
     private readonly IRecommendationService _recommendationService;
+    private readonly ISubscriptionGateService _subscriptionGate;
+    private readonly IUsageMeteringService _usageMetering;
     private readonly ILogger<CandidatePracticeSessionService> _logger;
 
     public CandidatePracticeSessionService(
@@ -34,6 +37,8 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
         IAiFeedbackRepository feedbackRepository,
         IRagService ragService,
         IRecommendationService recommendationService,
+        ISubscriptionGateService subscriptionGate,
+        IUsageMeteringService usageMetering,
         ILogger<CandidatePracticeSessionService> logger)
     {
         _sessionRepository = sessionRepository;
@@ -42,6 +47,8 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
         _feedbackRepository = feedbackRepository;
         _ragService = ragService;
         _recommendationService = recommendationService;
+        _subscriptionGate = subscriptionGate;
+        _usageMetering = usageMetering;
         _logger = logger;
     }
 
@@ -92,6 +99,15 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
 
         if (!await _marketplaceRepository.QuestionBelongsToSetAsync(dto.QuestionId, session.QuestionSetId))
             throw new BadRequestException("questionId không thuộc bộ câu hỏi của phiên luyện tập này.");
+
+        // SCRUM-382: Free chỉ feedback ~20% câu đầu theo Order
+        var questions = (await _marketplaceRepository.GetQuestionsSnapshotAsync(session.QuestionSetId))
+            .OrderBy(q => q.Order)
+            .ToList();
+        var index = questions.FindIndex(q => q.Id == dto.QuestionId);
+        if (index < 0)
+            throw new BadRequestException("questionId không thuộc bộ câu hỏi của phiên luyện tập này.");
+        await _subscriptionGate.CheckFeedbackAsync(candidateUserId, index, questions.Count);
 
         var answerText = dto.AnswerText.Trim();
         var submittedAt = DateTime.UtcNow;
@@ -152,6 +168,7 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
 
         // 3) Gọi RAG evaluate sync (SCRUM-282) — lỗi → lưu Failed, không throw ra FE
         var evaluation = await EvaluateAndPersistAsync(answer, dto.QuestionId);
+        await _usageMetering.IncrementAsync(candidateUserId, UsageType.CandidateFeedback);
 
         return new SubmitAnswerResponseDto
         {
@@ -303,6 +320,7 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
             QuestionSetId = r.QuestionSetId,
             SetTitle = string.IsNullOrWhiteSpace(r.SetTitle) ? r.CompanyName : r.SetTitle,
             CompanyName = r.CompanyName,
+            CompanyLogo = CompanyLogoResolver.Resolve(r.CompanyLogo, r.CompanyWebsite, r.CompanyName),
             Status = r.Status,
             Score = r.Score,
             DurationSeconds = ComputeDurationSeconds(r.StartedAt, r.CompletedAt),
@@ -364,23 +382,28 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
 
             var strengths = ragResult.Strengths ?? [];
             var improvements = ragResult.Improvements ?? [];
+            // AI trả điểm thô nhiều chữ số thập phân (vd 51.0739292829) — làm tròn về hàng đơn vị trước khi lưu/trả về,
+            // candidate chỉ cần xem điểm nguyên. Áp dụng luôn cho từng dimension score trong breakdown.
+            var roundedScore = RoundScore(ragResult.Score);
+            var roundedDimensionScores = RoundDimensionScores(ragResult.DimensionScores);
+
             await UpsertFeedbackAsync(
                 answer.Id,
                 AiFeedbackEvaluationStatus.Succeeded,
-                ragResult.Score,
+                roundedScore,
                 strengths,
                 improvements,
                 ragResult.Suggestion,
-                ragResult.DimensionScores,
+                roundedDimensionScores,
                 null);
 
             return (
                 AiFeedbackEvaluationStatus.Succeeded,
-                ragResult.Score,
+                roundedScore,
                 strengths,
                 improvements,
                 ragResult.Suggestion,
-                ragResult.DimensionScores,
+                roundedDimensionScores,
                 null);
         }
         catch (Exception ex)
@@ -445,6 +468,12 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
 
         return session;
     }
+
+    /// <summary>Làm tròn điểm AI trả về hàng đơn vị (vd 51.0739292829 → 51) — không giữ chữ số thập phân.</summary>
+    private static double? RoundScore(double? score) => score.HasValue ? Math.Round(score.Value, 0) : null;
+
+    private static Dictionary<string, double>? RoundDimensionScores(Dictionary<string, double>? dimensionScores) =>
+        dimensionScores?.ToDictionary(kv => kv.Key, kv => Math.Round(kv.Value, 0));
 
     /// <summary>Hạn chót nộp bài = StartedAt + giới hạn phút — null nếu bộ không giới hạn thời gian.</summary>
     private static DateTime? ComputeExpiresAt(DateTime? startedAt, int? timeLimitMinutes)
