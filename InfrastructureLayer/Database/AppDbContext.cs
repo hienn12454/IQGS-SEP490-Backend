@@ -1,5 +1,6 @@
 using DomainLayer.Constants;
 using DomainLayer.Entities;
+using DomainLayer.Studio;
 using Microsoft.EntityFrameworkCore;
 using Pgvector.EntityFrameworkCore;
 
@@ -30,12 +31,29 @@ public class AppDbContext : DbContext
     public DbSet<CandidateRecommendation> CandidateRecommendations { get; set; }
     public DbSet<CandidateInvitation> CandidateInvitations { get; set; }
     public DbSet<DomainLayer.Entities.PlatformSettings> PlatformSettings { get; set; }
+    public DbSet<InterviewProject> InterviewProjects { get; set; }
+    public DbSet<JobDescription> StudioJobDescriptions { get; set; }
+    public DbSet<StudioKnowledgeDocument> StudioKnowledgeDocuments { get; set; }
+    public DbSet<AiChatSession> AiChatSessions { get; set; }
+    public DbSet<AiChatMessage> AiChatMessages { get; set; }
+    public DbSet<InterviewPlan> InterviewPlans { get; set; }
+    public DbSet<PlanSection> PlanSections { get; set; }
+    public DbSet<PlanFocusArea> PlanFocusAreas { get; set; }
+    public DbSet<PlanApprovalHistory> PlanApprovalHistories { get; set; }
+    public DbSet<StudioSettings> StudioSettings { get; set; }
+    public DbSet<StudioFocusArea> StudioFocusAreas { get; set; }
+    public DbSet<InterviewQuestion> InterviewQuestions { get; set; }
+    public DbSet<QuestionGenerationRun> QuestionGenerationRuns { get; set; }
+    public DbSet<ProjectShare> ProjectShares { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
 
         modelBuilder.HasPostgresExtension("vector");
+        modelBuilder.ApplyConfigurationsFromAssembly(
+            typeof(AppDbContext).Assembly,
+            type => type.Namespace is not null && type.Namespace.Contains(".Configurations.Studio"));
 
         // ── Role (lookup table) ─────────────────────────────────────
         modelBuilder.Entity<Role>(entity =>

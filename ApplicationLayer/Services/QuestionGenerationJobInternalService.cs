@@ -48,10 +48,25 @@ public class QuestionGenerationJobInternalService : IQuestionGenerationJobIntern
 
         await _repository.UpdateAsync(job);
 
+        JobFailureDto? failure = null;
+        if (job.Status == QuestionGenerationJobStatus.Failed)
+        {
+            var payload = JobErrorSerializer.TryDeserialize(job.ErrorMessage);
+            failure = new JobFailureDto
+            {
+                Title = payload?.Error ?? "Lỗi xử lý job",
+                Message = payload?.Detail ?? payload?.Error ?? job.ErrorMessage ?? "Lỗi xử lý job",
+                Stage = payload?.Stage,
+                Source = payload?.Source,
+                Errors = payload?.Errors ?? []
+            };
+        }
+
         return new JobStatusResponseDto
         {
             JobId = job.Id,
-            Status = job.Status
+            Status = job.Status,
+            Failure = failure
         };
     }
 

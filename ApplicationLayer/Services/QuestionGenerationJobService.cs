@@ -403,7 +403,8 @@ public class QuestionGenerationJobService : IQuestionGenerationJobService
             CreatedAt = job.CreatedAt,
             CompletedAt = job.CompletedAt,
             QuestionCount = job.Questions.Count,
-            HasDraft = draftJobIds.Contains(job.Id)
+            HasDraft = draftJobIds.Contains(job.Id),
+            IsFromStudio = IsStudioMirrorJob(job.HrNote)
         }).ToList();
         return new PagedResultDto<QuestionGenerationJobListItemDto>
         {
@@ -425,14 +426,17 @@ public class QuestionGenerationJobService : IQuestionGenerationJobService
         {
             var plan = job.Plan!;
             var summary = PlanJsonSummaryReader.Read(job, plan);
+            var fallbackSkills = JsonSerializer.Deserialize<List<string>>(job.SkillsJson, JsonOptions) ?? new();
+            var fallbackRole = fallbackSkills.Count > 0 ? string.Join(", ", fallbackSkills) : string.Empty;
+            var fallbackJobTitle = string.IsNullOrWhiteSpace(job.JobDescription) ? string.Empty : job.JobDescription.Trim();
             return new QuestionGenerationPlanListItemDto
             {
                 JobId = job.Id,
-                JobTitle = summary.JobTitle,
-                Role = summary.Role,
-                Level = summary.Level,
+                JobTitle = string.IsNullOrWhiteSpace(summary.JobTitle) ? fallbackJobTitle : summary.JobTitle,
+                Role = string.IsNullOrWhiteSpace(summary.Role) ? fallbackRole : summary.Role,
+                Level = string.IsNullOrWhiteSpace(summary.Level) ? job.Difficulty : summary.Level,
                 ExperienceLevel = summary.ExperienceLevel,
-                Question = summary.Question,
+                Question = summary.Question > 0 ? summary.Question : job.NumberOfQuestions,
                 CreatedAt = plan.CreatedAt,
                 Status = job.Status,
                 IsPlanApproved = plan.IsApproved
@@ -877,7 +881,8 @@ public class QuestionGenerationJobService : IQuestionGenerationJobService
             QuestionCount = job.Questions.Count,
             HasDraft = hasDraft,
             PlanApproved = planApproved,
-            QuestionSetId = questionSetId
+            QuestionSetId = questionSetId,
+            IsFromStudio = IsStudioMirrorJob(job.HrNote)
         };
 
         return new JobStatusResponseDto
@@ -934,6 +939,11 @@ public class QuestionGenerationJobService : IQuestionGenerationJobService
             return trimmed;
         return trimmed.Substring(0, JobDescriptionPreviewLength) + "...";
     }
+
+    /// <summary>SCRUM-374: nhận diện job đồng bộ từ Studio History mirror.</summary>
+    private static bool IsStudioMirrorJob(string? hrNote)
+        => !string.IsNullOrWhiteSpace(hrNote)
+           && hrNote.StartsWith("STUDIO_MIRROR", StringComparison.OrdinalIgnoreCase);
 
     private GeneratedQuestionResponseDto MapGeneratedQuestion(GeneratedQuestion q)
     {

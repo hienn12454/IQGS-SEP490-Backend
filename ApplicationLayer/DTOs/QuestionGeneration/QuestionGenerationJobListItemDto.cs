@@ -14,4 +14,7 @@ public class QuestionGenerationJobListItemDto
 
     /// <summary>True khi session đã được lưu thành QuestionSet draft.</summary>
     public bool HasDraft { get; set; }
+
+    /// <summary>SCRUM-374: job mirror từ Studio v2 (HrNote bắt đầu bằng STUDIO_MIRROR).</summary>
+    public bool IsFromStudio { get; set; }
 }

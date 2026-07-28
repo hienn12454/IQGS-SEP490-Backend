@@ -15,6 +15,12 @@ public interface IRecommendationService
 
     Task<PagedResultDto<HrRecommendationListItemDto>> ListForHrAsync(Guid hrUserId, HrRecommendationListQueryDto query);
 
+    /// <summary>Chi tiết 1 recommendation thuộc HR hiện tại — kèm profile/CV/stats (SCRUM-377).</summary>
+    Task<HrRecommendationDetailDto> GetByIdForHrAsync(Guid id, Guid hrUserId);
+
+    /// <summary>SAS URL tải CV của candidate thuộc recommendation — chỉ HR owner (SCRUM-377).</summary>
+    Task<HrRecommendationCvDto> GetCvForHrAsync(Guid id, Guid hrUserId);
+
     Task<RecommendationActionResponseDto> ShortlistAsync(Guid id, Guid hrUserId);
 
     Task<RecommendationActionResponseDto> DismissAsync(Guid id, Guid hrUserId);
