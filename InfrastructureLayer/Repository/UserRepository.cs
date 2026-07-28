@@ -62,6 +62,49 @@ public class UserRepository : BaseRepository<User>, IUserRepository
         if (query.IsActive.HasValue)
             q = q.Where(u => u.IsActive == query.IsActive.Value);
 
+        if (query.IsEmailVerified.HasValue)
+            q = q.Where(u => u.IsEmailVerified == query.IsEmailVerified.Value);
+
+        if (query.CreatedFrom.HasValue)
+        {
+            var from = query.CreatedFrom.Value.Date;
+            q = q.Where(u => u.CreatedAt >= from);
+        }
+
+        if (query.CreatedTo.HasValue)
+        {
+            // Inclusive cả ngày CreatedTo
+            var toExclusive = query.CreatedTo.Value.Date.AddDays(1);
+            q = q.Where(u => u.CreatedAt < toExclusive);
+        }
+
+        // Lọc gói Free / Premium theo subscription còn hạn
+        if (!string.IsNullOrWhiteSpace(query.Plan))
+        {
+            var planKey = query.Plan.Trim();
+            var now = DateTime.UtcNow;
+
+            var premiumUserIds = _context.Subscriptions.AsNoTracking()
+                .Where(s => s.IsActive && s.CurrentPeriodEnd > now)
+                .Join(
+                    _context.SubscriptionPlans.AsNoTracking(),
+                    s => s.PlanId,
+                    p => p.Id,
+                    (s, p) => new { s.UserId, p.Code })
+                .Where(x => x.Code.Contains("PREMIUM"))
+                .Select(x => x.UserId);
+
+            if (string.Equals(planKey, "Premium", StringComparison.OrdinalIgnoreCase))
+            {
+                q = q.Where(u => premiumUserIds.Contains(u.Id));
+            }
+            else if (string.Equals(planKey, "Free", StringComparison.OrdinalIgnoreCase))
+            {
+                // Free: không thuộc nhóm Premium active (gồm user chưa có sub)
+                q = q.Where(u => !premiumUserIds.Contains(u.Id));
+            }
+        }
+
         var total = await q.CountAsync();
         var users = await q
             .OrderByDescending(u => u.CreatedAt)

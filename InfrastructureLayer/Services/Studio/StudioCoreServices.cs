@@ -1,5 +1,6 @@
 using ApplicationLayer.DTOs.Rag;
 using ApplicationLayer.Interfaces.Services;
+using ApplicationLayer.Services;
 using ApplicationLayer.Studio.Contracts;
 using ApplicationLayer.Studio.Helpers;
 using ApplicationLayer.Studio.Interfaces;
@@ -164,7 +165,9 @@ public sealed class InterviewPlanService(
     AppDbContext dbContext,
     IInterviewProjectService projectService,
     IRagService ragService,
-    IAiChatService aiChatService) : IInterviewPlanService
+    IAiChatService aiChatService,
+    ISubscriptionGateService subscriptionGate,
+    IUsageMeteringService usageMetering) : IInterviewPlanService
 {
     public async Task<IReadOnlyList<PlanSummaryDto>> ListAsync(Guid projectId, Guid userId, CancellationToken ct)
     {
@@ -276,6 +279,9 @@ public sealed class InterviewPlanService(
     public async Task<PlanSummaryDto> GenerateInitialAsync(Guid projectId, Guid userId, CancellationToken ct)
     {
         // SCRUM-367: giống GeneratePlanJob — gọi RAG sync (retrieve SYSTEM+HR theo OwnerId)
+        // SCRUM-382: Free cooldown tạo bộ / plan
+        await subscriptionGate.CheckGenerateSetAsync(userId);
+
         var project = await projectService.EnsureProjectAccessAsync(projectId, userId, true, ct);
         var jd = await dbContext.StudioJobDescriptions.FirstOrDefaultAsync(x => x.ProjectId == projectId && x.IsActive, ct)
             ?? throw new StudioBusinessException("JD_REQUIRED", StatusCodes.Status422UnprocessableEntity, "Cần Job Description trước khi tạo plan.");
@@ -383,6 +389,7 @@ public sealed class InterviewPlanService(
             plan.Revision,
             ct);
 
+        await usageMetering.MarkGenerateSuccessAsync(userId);
         return new PlanSummaryDto(plan.Id, plan.Revision, plan.Title, plan.Status, plan.TotalQuestions);
     }
 
@@ -404,6 +411,10 @@ public sealed class InterviewPlanService(
     {
         // SCRUM-368: refine qua RAG (retrieve) — không mock; chỉ instruction liên quan plan
         PlanChatScopeGuard.EnsurePlanRelated(instruction);
+
+        // SCRUM-382: ≤5 lần regenerate / draft (planId)
+        var draftKey = planId.ToString("N");
+        await subscriptionGate.CheckPlanRegenerateAsync(userId, draftKey);
 
         var project = await projectService.EnsureProjectAccessAsync(projectId, userId, true, ct);
         var source = await dbContext.InterviewPlans.FirstOrDefaultAsync(x => x.Id == planId && x.ProjectId == projectId && x.IsActive, ct)
@@ -544,6 +555,7 @@ public sealed class InterviewPlanService(
             refined.Revision,
             ct);
 
+        await usageMetering.IncrementAsync(userId, DomainLayer.Constants.UsageType.HrPlanRegenerate, draftKey);
         return new PlanSummaryDto(refined.Id, refined.Revision, refined.Title, refined.Status, refined.TotalQuestions);
     }
 
