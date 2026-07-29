@@ -22,14 +22,28 @@ public class SubscriptionPlanLimits
 
     public bool CanPublish { get; set; } = true;
 
-    /// <summary>Candidate Free: % câu được practice/feedback (mặc định 20).</summary>
+    /// <summary>
+    /// Legacy: % câu Free được mở. Teaser Freemium = 100 (làm full bài).
+    /// Giữ field để snapshot cũ deserialize được.
+    /// </summary>
     public int FreeVisiblePercent { get; set; } = 20;
 
     /// <summary>Premium Candidate: ghi data gợi ý HR.</summary>
     public bool CanPersistHrRecommendation { get; set; }
 
-    /// <summary>Free: feedback chỉ trên câu visible.</summary>
+    /// <summary>
+    /// Legacy: feedback chỉ trên câu visible. Teaser Freemium: Free = false (không chặn giữa phiên).
+    /// </summary>
     public bool FeedbackOnlyOnVisible { get; set; } = true;
+
+    /// <summary>
+    /// Premium: true — AI chấm + feedback đầy đủ mọi câu + insight.
+    /// Free: false — chỉ teaser (FreeTeaserFeedbackCount câu).
+    /// </summary>
+    public bool CanDetailedAiFeedback { get; set; }
+
+    /// <summary>Số câu AI feedback mẫu cho Free khi CanDetailedAiFeedback = false.</summary>
+    public int FreeTeaserFeedbackCount { get; set; } = 1;
 
     public static SubscriptionPlanLimits HrFree() => new()
     {
@@ -41,7 +55,9 @@ public class SubscriptionPlanLimits
         CanPublish = true,
         FreeVisiblePercent = 100,
         CanPersistHrRecommendation = false,
-        FeedbackOnlyOnVisible = false
+        FeedbackOnlyOnVisible = false,
+        CanDetailedAiFeedback = true,
+        FreeTeaserFeedbackCount = 0
     };
 
     public static SubscriptionPlanLimits HrPremium() => new()
@@ -54,7 +70,9 @@ public class SubscriptionPlanLimits
         CanPublish = true,
         FreeVisiblePercent = 100,
         CanPersistHrRecommendation = false,
-        FeedbackOnlyOnVisible = false
+        FeedbackOnlyOnVisible = false,
+        CanDetailedAiFeedback = true,
+        FreeTeaserFeedbackCount = 0
     };
 
     public static SubscriptionPlanLimits CandidateFree() => new()
@@ -65,9 +83,11 @@ public class SubscriptionPlanLimits
         CanExport = false,
         AskAiPerMonth = 0,
         CanPublish = false,
-        FreeVisiblePercent = 20,
+        FreeVisiblePercent = 100,
         CanPersistHrRecommendation = false,
-        FeedbackOnlyOnVisible = true
+        FeedbackOnlyOnVisible = false,
+        CanDetailedAiFeedback = false,
+        FreeTeaserFeedbackCount = 1
     };
 
     public static SubscriptionPlanLimits CandidatePremium() => new()
@@ -80,6 +100,8 @@ public class SubscriptionPlanLimits
         CanPublish = false,
         FreeVisiblePercent = 100,
         CanPersistHrRecommendation = true,
-        FeedbackOnlyOnVisible = false
+        FeedbackOnlyOnVisible = false,
+        CanDetailedAiFeedback = true,
+        FreeTeaserFeedbackCount = 0
     };
 }

@@ -72,6 +72,17 @@ public class ParseCvResult
     public List<string> Skills { get; set; } = new();
     public string? Summary { get; set; }
     public string? FileName { get; set; }
+
+    // Thông tin cá nhân trích xuất từ CV — dùng để tự đồng bộ vào profile (feature "CV auto-apply profile").
+    // Optional/nullable: phụ thuộc RAG service có hỗ trợ trích xuất hay chưa. Nếu RAG chưa trả các field này,
+    // JSON deserialize để null — code gọi (CandidateCvService) coi null là "CV không có thông tin này", giữ nguyên
+    // giá trị cũ trên profile, không lỗi, không mất dữ liệu.
+    public string? FullName { get; set; }
+    public string? PhoneNumber { get; set; }
+    public string? Address { get; set; }
+    public string? GithubUrl { get; set; }
+    public string? LinkedInUrl { get; set; }
+
     public List<string> Warnings { get; set; } = new();
     public string? Error { get; set; }
     public string? Detail { get; set; }
@@ -89,6 +100,10 @@ public class GeneratePlanRequest
     public List<string> QuestionTypes { get; set; } = new();
     public List<string> Skills { get; set; } = new();
     public string? HrNote { get; set; }
+    /// <summary>Vietnamese | English — ngôn ngữ plan/câu hỏi.</summary>
+    public string? Language { get; set; }
+    /// <summary>SCRUM-388: KnowledgeDocumentIds Selected → filter HR retrieve.</summary>
+    public List<Guid>? DocumentIds { get; set; }
 }
 
 public class GeneratePlanResult
@@ -109,6 +124,8 @@ public class GenerateQuestionsFromPlanRequest
     public string JobDescription { get; set; } = string.Empty;
     public object ApprovedPlan { get; set; } = new();
     public string? HrNote { get; set; }
+    /// <summary>Vietnamese | English — ngôn ngữ câu hỏi sinh ra.</summary>
+    public string? Language { get; set; }
 }
 
 public class RagGeneratedQuestionDto
@@ -123,6 +140,12 @@ public class RagGeneratedQuestionDto
     public string? Skill { get; set; }
     public string? FocusArea { get; set; }
     public List<string>? EvaluationCriteria { get; set; }
+    public string? CodeTemplateType { get; set; }
+    public string? CodeSnippet { get; set; }
+    /// <summary>SCRUM-396: gợi ý text hình ảnh/diagram cho HR (không AI gen ảnh).</summary>
+    public string? ImageHint { get; set; }
+    /// <summary>SCRUM-400: Text | Code — phương thức trả lời Candidate.</summary>
+    public string? AnswerMethod { get; set; }
 }
 
 public class GenerateQuestionsFromPlanResult

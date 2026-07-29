@@ -3,6 +3,7 @@ using DomainLayer.Studio.Enums;
 
 namespace DomainLayer.Studio;
 
+/// <summary>Project Studio — root pipeline generate. Soft-delete qua IsActive; FK con Restrict tránh hard-delete nuốt data marketplace.</summary>
 public sealed class InterviewProject : BaseEntity
 {
     public Guid OwnerId { get; set; }
@@ -10,6 +11,17 @@ public sealed class InterviewProject : BaseEntity
     public string? Description { get; set; }
     public InterviewProjectStatus Status { get; set; } = InterviewProjectStatus.Draft;
     public int LatestPlanRevision { get; set; }
+
+    public User? Owner { get; set; }
+    public JobDescription? JobDescription { get; set; }
+    public StudioSettings? Settings { get; set; }
+    public ICollection<StudioKnowledgeDocument> KnowledgeDocuments { get; set; } = new List<StudioKnowledgeDocument>();
+    public ICollection<AiChatSession> ChatSessions { get; set; } = new List<AiChatSession>();
+    public ICollection<InterviewPlan> Plans { get; set; } = new List<InterviewPlan>();
+    public ICollection<QuestionGenerationRun> GenerationRuns { get; set; } = new List<QuestionGenerationRun>();
+    public ICollection<InterviewQuestion> Questions { get; set; } = new List<InterviewQuestion>();
+    public ICollection<ProjectShare> Shares { get; set; } = new List<ProjectShare>();
+    public ICollection<PlanApprovalHistory> ApprovalHistories { get; set; } = new List<PlanApprovalHistory>();
 }
 
 public sealed class JobDescription : BaseEntity
@@ -25,6 +37,8 @@ public sealed class JobDescription : BaseEntity
     public string? DetectedSkillsJson { get; set; }
     public int WordCount { get; set; }
     public int CharacterCount { get; set; }
+
+    public InterviewProject? Project { get; set; }
 }
 
 public sealed class StudioKnowledgeDocument : BaseEntity
@@ -40,6 +54,9 @@ public sealed class StudioKnowledgeDocument : BaseEntity
     public bool IsSelected { get; set; }
     public DocumentProcessingStatus ProcessingStatus { get; set; } = DocumentProcessingStatus.Pending;
     public string? ProcessingError { get; set; }
+
+    public InterviewProject? Project { get; set; }
+    public KnowledgeDocument? KnowledgeDocument { get; set; }
 }
 
 public sealed class AiChatSession : BaseEntity
@@ -48,6 +65,11 @@ public sealed class AiChatSession : BaseEntity
     public Guid UserId { get; set; }
     public AiModelSelectionMode SelectionMode { get; set; } = AiModelSelectionMode.Auto;
     public string? SelectedModelDisplayName { get; set; }
+
+    public InterviewProject? Project { get; set; }
+    public User? User { get; set; }
+    public ICollection<AiChatMessage> Messages { get; set; } = new List<AiChatMessage>();
+    public ICollection<InterviewPlan> Plans { get; set; } = new List<InterviewPlan>();
 }
 
 public sealed class AiChatMessage : BaseEntity
@@ -61,6 +83,9 @@ public sealed class AiChatMessage : BaseEntity
     public string? ResolvedModelName { get; set; }
     public string? ErrorCode { get; set; }
     public DateTime? CompletedAt { get; set; }
+
+    public AiChatSession? Session { get; set; }
+    public InterviewPlan? RelatedPlan { get; set; }
 }
 
 public sealed class InterviewPlan : BaseEntity
@@ -85,6 +110,16 @@ public sealed class InterviewPlan : BaseEntity
     public DateTime? ApprovedAt { get; set; }
     public Guid? ApprovedBy { get; set; }
     public Guid ConcurrencyVersion { get; set; } = Guid.NewGuid();
+
+    public InterviewProject? Project { get; set; }
+    public AiChatSession? Session { get; set; }
+    public User? ApprovedByUser { get; set; }
+    public ICollection<PlanSection> Sections { get; set; } = new List<PlanSection>();
+    public ICollection<PlanFocusArea> FocusAreas { get; set; } = new List<PlanFocusArea>();
+    public ICollection<PlanApprovalHistory> ApprovalHistories { get; set; } = new List<PlanApprovalHistory>();
+    public ICollection<QuestionGenerationRun> GenerationRuns { get; set; } = new List<QuestionGenerationRun>();
+    public ICollection<InterviewQuestion> Questions { get; set; } = new List<InterviewQuestion>();
+    public ICollection<StudioSettings> AppliedInSettings { get; set; } = new List<StudioSettings>();
 }
 
 public sealed class PlanSection : BaseEntity
@@ -96,6 +131,9 @@ public sealed class PlanSection : BaseEntity
     public int NumberOfQuestions { get; set; }
     public QuestionDifficulty Difficulty { get; set; } = QuestionDifficulty.Medium;
     public int EstimatedMinutes { get; set; }
+
+    public InterviewPlan? InterviewPlan { get; set; }
+    public ICollection<InterviewQuestion> Questions { get; set; } = new List<InterviewQuestion>();
 }
 
 public sealed class PlanFocusArea : BaseEntity
@@ -104,6 +142,8 @@ public sealed class PlanFocusArea : BaseEntity
     public string Name { get; set; } = string.Empty;
     public decimal Weight { get; set; }
     public int OrderIndex { get; set; }
+
+    public InterviewPlan? InterviewPlan { get; set; }
 }
 
 public sealed class PlanApprovalHistory : BaseEntity
@@ -114,12 +154,17 @@ public sealed class PlanApprovalHistory : BaseEntity
     public PlanApprovalAction Action { get; set; }
     public Guid ActorId { get; set; }
     public string? Notes { get; set; }
+
+    public InterviewProject? Project { get; set; }
+    public InterviewPlan? InterviewPlan { get; set; }
+    public User? Actor { get; set; }
 }
 
 public sealed class StudioSettings : BaseEntity
 {
     public Guid ProjectId { get; set; }
-    public Guid AppliedPlanId { get; set; }
+    /// <summary>Plan đã approve áp dụng generate — null nếu settings tạo trước khi có plan (FK optional).</summary>
+    public Guid? AppliedPlanId { get; set; }
     public int InterviewLengthMinutes { get; set; }
     public int NumberOfQuestions { get; set; }
     public string SeniorityLevel { get; set; } = "Mid";
@@ -131,6 +176,14 @@ public sealed class StudioSettings : BaseEntity
     public string OutputFormat { get; set; } = "Markdown";
     /// <summary>SCRUM-370: JSON array loại câu — ["technical","system_design","problem_solving","behavioral"].</summary>
     public string? QuestionTypesJson { get; set; }
+    /// <summary>Question content mode: TheoryOnly | CodeOnly | Mixed.</summary>
+    public string ContentMode { get; set; } = "Mixed";
+    /// <summary>JSON array code template ids enabled for generation/builder.</summary>
+    public string? CodeTemplatesJson { get; set; }
+
+    public InterviewProject? Project { get; set; }
+    public InterviewPlan? AppliedPlan { get; set; }
+    public ICollection<StudioFocusArea> FocusAreas { get; set; } = new List<StudioFocusArea>();
 }
 
 public sealed class StudioFocusArea : BaseEntity
@@ -139,6 +192,8 @@ public sealed class StudioFocusArea : BaseEntity
     public string Name { get; set; } = string.Empty;
     public decimal Weight { get; set; }
     public int OrderIndex { get; set; }
+
+    public StudioSettings? StudioSettings { get; set; }
 }
 
 public sealed class InterviewQuestion : BaseEntity
@@ -156,6 +211,11 @@ public sealed class InterviewQuestion : BaseEntity
     public int OrderIndex { get; set; }
     public string? TagsJson { get; set; }
     public string? GeneratedByModelName { get; set; }
+
+    public InterviewProject? Project { get; set; }
+    public InterviewPlan? InterviewPlan { get; set; }
+    public PlanSection? PlanSection { get; set; }
+    public QuestionGenerationRun? GenerationRun { get; set; }
 }
 
 public sealed class QuestionGenerationRun : BaseEntity
@@ -175,8 +235,11 @@ public sealed class QuestionGenerationRun : BaseEntity
     public DateTime? FailedAt { get; set; }
     public string? ErrorCode { get; set; }
     public string? ErrorMessage { get; set; }
-    /// <summary>SCRUM-372: Job History (QuestionGenerationJob) đã mirror từ run này — regenerate tái sử dụng cùng Id.</summary>
-    public Guid? MirroredJobId { get; set; }
+
+    public InterviewProject? Project { get; set; }
+    public InterviewPlan? InterviewPlan { get; set; }
+    public User? RequestedByUser { get; set; }
+    public ICollection<InterviewQuestion> Questions { get; set; } = new List<InterviewQuestion>();
 }
 
 public sealed class ProjectShare : BaseEntity
@@ -186,4 +249,7 @@ public sealed class ProjectShare : BaseEntity
     public SharePermission Permission { get; set; } = SharePermission.View;
     public DateTime? ExpiresAt { get; set; }
     public Guid CreatedBy { get; set; }
+
+    public InterviewProject? Project { get; set; }
+    public User? CreatedByUser { get; set; }
 }

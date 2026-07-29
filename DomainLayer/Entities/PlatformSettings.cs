@@ -11,4 +11,10 @@ public class PlatformSettings : BaseEntity
 
     /// <summary>Số câu hỏi tối thiểu để HR publish 1 bộ câu hỏi lên marketplace — Admin hạ xuống để tiện test. Mặc định 10.</summary>
     public int MinQuestionsToPublish { get; set; } = 10;
+
+    /// <summary>SCRUM-404: Số bộ tối đa Admin được ghim trên Marketplace cùng lúc. Mặc định 5.</summary>
+    public int MaxPinnedSets { get; set; } = 5;
+
+    /// <summary>SCRUM-404: Ngưỡng AttemptCount để hiện badge Trending trên card Candidate. Mặc định 10.</summary>
+    public int MinAttemptsForTrending { get; set; } = 10;
 }

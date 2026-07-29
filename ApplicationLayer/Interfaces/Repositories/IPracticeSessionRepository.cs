@@ -1,4 +1,5 @@
 using ApplicationLayer.DTOs.Candidate;
+using ApplicationLayer.DTOs.Hr;
 using ApplicationLayer.DTOs.QuestionSet;
 using DomainLayer.Entities;
 
@@ -25,4 +26,17 @@ public interface IPracticeSessionRepository
 
     /// <summary>SCRUM-326: candidate đã practice 1 bộ câu hỏi (mọi status), sắp giảm dần theo StartedAt — dùng cho HR xem engagement.</summary>
     Task<IReadOnlyList<QuestionSetPractitionerRow>> ListPractitionersByQuestionSetAsync(Guid questionSetId);
+
+    /// <summary>SCRUM-398: candidate đã từng có session trên bất kỳ set nào của HR (mọi status, IsActive).</summary>
+    Task<bool> HasAnySessionOnHrOwnedSetsAsync(Guid candidateUserId, Guid hrOwnerId);
+
+    /// <summary>SCRUM-398: danh sách session của candidate trên set thuộc HR — order StartedAt desc.</summary>
+    Task<IReadOnlyList<HrCandidatePracticeOnMySetRow>> ListSessionsOnHrOwnedSetsAsync(Guid candidateUserId, Guid hrOwnerId);
+
+    /// <summary>
+    /// SCRUM-401: lấy CompletedAt + StartedAt của session COMPLETED từ fromUtc trở đi
+    /// (aggregate heatmap ở service — tránh phụ thuộc pageSize ListAsync).
+    /// </summary>
+    Task<IReadOnlyList<PracticeSessionHeatmapRawRow>> ListCompletedTimestampsForHeatmapAsync(
+        Guid candidateUserId, DateTime fromUtc);
 }

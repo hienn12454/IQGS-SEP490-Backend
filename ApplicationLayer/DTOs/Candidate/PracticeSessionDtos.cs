@@ -36,6 +36,18 @@ public class PracticeSessionQuestionDto
     public string? Skill { get; set; }
     public string? FocusArea { get; set; }
 
+    /// <summary>SCRUM-399: loại code template (BUG_DETECTION, …) — parse từ rationale meta.</summary>
+    public string? CodeTemplateType { get; set; }
+
+    /// <summary>SCRUM-399: starter code của đề bài.</summary>
+    public string? CodeSnippet { get; set; }
+
+    /// <summary>SCRUM-399: SAS URL ảnh đính kèm (~2h).</summary>
+    public string? AttachedImageUrl { get; set; }
+
+    /// <summary>SCRUM-400: Text | Code.</summary>
+    public string AnswerMethod { get; set; } = "Text";
+
     /// <summary>Câu trả lời candidate đã submit cho câu hỏi này (null nếu chưa trả lời) — SCRUM-278.</summary>
     public string? AnswerText { get; set; }
 }
@@ -93,6 +105,10 @@ public class PracticeSessionListItemDto
     public Guid QuestionSetId { get; set; }
     public string SetTitle { get; set; } = string.Empty;
     public string CompanyName { get; set; } = string.Empty;
+
+    /// <summary>Luôn có giá trị: logo thật nếu công ty đã upload, không thì fallback theo domain website hoặc tự vẽ từ tên công ty.</summary>
+    public string CompanyLogo { get; set; } = string.Empty;
+
     public string Status { get; set; } = string.Empty;
     public double? Score { get; set; }
     public int? DurationSeconds { get; set; }
@@ -127,6 +143,8 @@ public class PracticeSessionRow
     public Guid QuestionSetId { get; set; }
     public string? SetTitle { get; set; }
     public string CompanyName { get; set; } = string.Empty;
+    public string? CompanyLogo { get; set; }
+    public string? CompanyWebsite { get; set; }
     public string Status { get; set; } = string.Empty;
     public double? Score { get; set; }
     public DateTime? StartedAt { get; set; }
