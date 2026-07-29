@@ -3,6 +3,7 @@ using ApplicationLayer.Interfaces.Services;
 using ApplicationLayer.Studio.Contracts;
 using ApplicationLayer.Studio.Helpers;
 using ApplicationLayer.Studio.Interfaces;
+using DomainLayer.Exceptions;
 using DomainLayer.Studio;
 using DomainLayer.Studio.Enums;
 using InfrastructureLayer.Database;
@@ -907,13 +908,17 @@ public sealed class QuestionGenerationService(
         }
         catch (Exception ex)
         {
+            // Ưu tiên Detail từ RAG (vd. thiếu approvedPlan.order) thay vì chỉ "Validation error"
+            var detail = ex is StructuredHttpException she && !string.IsNullOrWhiteSpace(she.Payload.Detail)
+                ? she.Payload.Detail!
+                : ex.Message;
             run.Status = DomainLayer.Studio.Enums.QuestionGenerationStatus.Failed;
             run.ErrorCode = "RAG_DISPATCH_FAILED";
-            run.ErrorMessage = ex.Message;
+            run.ErrorMessage = detail;
             run.FailedAt = DateTime.UtcNow;
             await dbContext.SaveChangesAsync(ct);
             throw new StudioBusinessException("RAG_DISPATCH_FAILED", StatusCodes.Status502BadGateway,
-                $"Không enqueue được RAG sinh câu hỏi: {ex.Message}");
+                $"Không enqueue được RAG sinh câu hỏi: {detail}");
         }
 
         return new GenerationRunDto(
