@@ -269,9 +269,12 @@ public static class StudioPlanSettingsPatcher
                 var diff = qIdx < difficultyQueue.Count
                     ? difficultyQueue[qIdx].ToString().ToLowerInvariant()
                     : overall.ToString().ToLowerInvariant();
+                // RAG QuestionGenerationPlan bắt buộc mỗi outline item có order (1-based)
+                var order = qIdx + 1;
                 qIdx++;
                 outline.Add(new JsonObject
                 {
+                    ["order"] = order,
                     ["type"] = type,
                     ["difficulty"] = diff,
                     ["skill"] = template?["skill"]?.GetValue<string>()
@@ -293,6 +296,15 @@ public static class StudioPlanSettingsPatcher
         }
         while (outline.Count > targetTotal)
             outline.RemoveAt(outline.Count - 1);
+
+        // Đảm bảo order liên tục 1..N sau pad/trim (clone cũ có thể thiếu/trùng order)
+        for (var i = 0; i < outline.Count; i++)
+        {
+            if (outline[i] is JsonObject item)
+            {
+                item["order"] = i + 1;
+            }
+        }
 
         root["recommendedQuestionOutline"] = outline;
         root["recommended_question_outline"] = outline.DeepClone();
