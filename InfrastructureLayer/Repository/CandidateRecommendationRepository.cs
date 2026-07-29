@@ -87,6 +87,9 @@ public class CandidateRecommendationRepository : ICandidateRecommendationReposit
             .Join(_context.CandidateProfiles.AsNoTracking(),
                 x => x.r.CandidateUserId, p => p.UserId,
                 (x, p) => new { x.r, x.u, p })
+            // Candidate tắt AllowRecruiterRecommendation -> ẩn NGAY khỏi cả trang chi tiết/CV, không chỉ list
+            // (trước đây thiếu filter này nên HR vẫn xem/tải CV được nếu đã có sẵn link recommendation id).
+            .Where(x => x.p.AllowRecruiterRecommendation)
             .Select(x => new HrRecommendationRow
             {
                 Id = x.r.Id,
