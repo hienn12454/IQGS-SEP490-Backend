@@ -281,6 +281,7 @@ public class Program
         builder.Services.AddScoped<ICandidateMarketplaceRepository, CandidateMarketplaceRepository>();
         builder.Services.AddScoped<ICandidateRecommendationRepository, CandidateRecommendationRepository>();
         builder.Services.AddScoped<ICandidateInvitationRepository, CandidateInvitationRepository>();
+        builder.Services.AddScoped<ICandidateOfferRepository, CandidateOfferRepository>();
         builder.Services.AddScoped<IPlatformSettingsRepository, PlatformSettingsRepository>();
         builder.Services.AddScoped<ICompanyRepository, CompanyRepository>();
         builder.Services.AddScoped<IKnowledgeDocumentRepository, KnowledgeDocumentRepository>();
@@ -304,6 +305,7 @@ public class Program
         builder.Services.AddScoped<ICandidatePrivacySettingsService, CandidatePrivacySettingsService>();
         builder.Services.AddScoped<IRecommendationService, RecommendationService>();
         builder.Services.AddScoped<ICandidateInvitationService, CandidateInvitationService>();
+        builder.Services.AddScoped<ICandidateOfferService, CandidateOfferService>();
         builder.Services.AddScoped<IPlatformSettingsService, PlatformSettingsService>();
         builder.Services.AddScoped<IKnowledgeDocumentInternalService, KnowledgeDocumentInternalService>();
         builder.Services.AddScoped<IQuestionGenerationJobService, QuestionGenerationJobService>();

@@ -30,6 +30,7 @@ public class AppDbContext : DbContext
     public DbSet<AiFeedback> AiFeedbacks { get; set; }
     public DbSet<CandidateRecommendation> CandidateRecommendations { get; set; }
     public DbSet<CandidateInvitation> CandidateInvitations { get; set; }
+    public DbSet<CandidateOffer> CandidateOffers { get; set; }
     public DbSet<DomainLayer.Entities.PlatformSettings> PlatformSettings { get; set; }
     public DbSet<InterviewProject> InterviewProjects { get; set; }
     public DbSet<JobDescription> StudioJobDescriptions { get; set; }
@@ -457,6 +458,25 @@ public class AppDbContext : DbContext
 
             entity.HasIndex(i => i.RecommendationId).IsUnique();
             entity.HasIndex(i => new { i.CandidateUserId, i.Status });
+        });
+
+        // ── CandidateOffer (offer phỏng vấn qua email — độc lập với CandidateInvitation) ─
+        modelBuilder.Entity<CandidateOffer>(entity =>
+        {
+            entity.ToTable("candidate_offers");
+            entity.HasKey(o => o.Id);
+            entity.Property(o => o.Status).IsRequired().HasMaxLength(20);
+            entity.Property(o => o.Message).IsRequired().HasMaxLength(5000);
+            entity.Property(o => o.TokenHash).IsRequired().HasMaxLength(64);
+
+            entity.HasOne(o => o.Recommendation)
+                  .WithMany()
+                  .HasForeignKey(o => o.RecommendationId)
+                  .OnDelete(DeleteBehavior.Cascade);
+
+            // Lookup công khai theo token — không unique theo RecommendationId vì cho phép gửi lại.
+            entity.HasIndex(o => o.TokenHash).IsUnique();
+            entity.HasIndex(o => new { o.RecommendationId, o.CreatedAt });
         });
 
         // ── PlatformSettings (singleton — Admin runtime config) ─────

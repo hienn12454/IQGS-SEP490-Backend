@@ -15,10 +15,12 @@ namespace WebAPI.Controllers.Hr;
 public class HrRecommendationsController : ControllerBase
 {
     private readonly IRecommendationService _service;
+    private readonly ICandidateOfferService _offerService;
 
-    public HrRecommendationsController(IRecommendationService service)
+    public HrRecommendationsController(IRecommendationService service, ICandidateOfferService offerService)
     {
         _service = service;
+        _offerService = offerService;
     }
 
     /// <summary>Danh sách candidate được đề xuất cho HR hiện tại. Filter: status, questionSetId, minScore. Sort: sortBy=score|date, sortDir=asc|desc. Phân trang page/pageSize. Kèm thông tin candidate (tên, email, targetRole, techStack) + bộ câu hỏi + trạng thái lời mời nếu đã mời. Nếu candidate đã ACCEPTED lời mời, còn có invitationResponseMessage/invitationSharedPhoneNumber — do chính candidate chủ động gửi kèm lúc accept, không phải SĐT trên profile. Candidate đang tắt "Cho phép đề xuất hồ sơ cho HR" (allowRecruiterRecommendation, xem /api/candidate/privacy-settings) sẽ KHÔNG xuất hiện trong danh sách này, kể cả recommendation đã tạo từ trước.</summary>
@@ -71,6 +73,19 @@ public class HrRecommendationsController : ControllerBase
     public async Task<IActionResult> Invite(Guid id, [FromBody] InviteCandidateRequestDto dto)
     {
         var result = await _service.InviteAsync(id, GetCurrentUserId(), dto);
+        return SuccessResp.Created(result);
+    }
+
+    /// <summary>Gửi email đề nghị phỏng vấn (offline) cho candidate từ recommendation — nội dung tự do HR nhập,
+    /// kèm nút xem/xác nhận dẫn tới trang công khai. Gửi được cho MỌI recommendation HR sở hữu bất kể Status,
+    /// độc lập với /invite (lời mời trong app). Khi candidate bấm xác nhận, HR sẽ nhận email báo kèm thông tin
+    /// candidate (tên, email, vị trí, tech stack...). 409 nếu lần gửi offer gần nhất cho recommendation này đã được chấp nhận.</summary>
+    /// <param name="id">Id recommendation.</param>
+    /// <param name="dto">message: nội dung lời đề nghị (bắt buộc, tối đa 5000 ký tự).</param>
+    [HttpPost("{id:guid}/offer")]
+    public async Task<IActionResult> SendOffer(Guid id, [FromBody] SendCandidateOfferRequestDto dto)
+    {
+        var result = await _offerService.SendOfferAsync(id, GetCurrentUserId(), dto);
         return SuccessResp.Created(result);
     }
 
