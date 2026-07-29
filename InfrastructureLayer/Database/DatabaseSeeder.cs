@@ -1,5 +1,6 @@
 using DomainLayer.Constants;
 using DomainLayer.Entities;
+using InfrastructureLayer.Database.Seed;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -20,6 +21,11 @@ public static class DatabaseSeeder
             await SeedCompaniesAsync(context, logger);
             await SeedDefaultHRAsync(context, logger);
             await SeedDefaultCandidateAsync(context, logger);
+            var env = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
+            if (string.Equals(env, "Development", StringComparison.OrdinalIgnoreCase))
+            {
+                await StudioSeedData.SeedAsync(context, logger);
+            }
         }
         catch (Exception ex)
         {

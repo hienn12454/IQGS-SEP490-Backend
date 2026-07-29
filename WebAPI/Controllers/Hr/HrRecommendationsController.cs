@@ -8,7 +8,7 @@ using System.Security.Claims;
 
 namespace WebAPI.Controllers.Hr;
 
-/// <summary>Dashboard recommendation của HR (SCRUM-291): xem candidate được hệ thống đề xuất theo rule (điểm ≥ 70, có consent, bộ PUBLISHED), shortlist/dismiss/gửi lời mời.</summary>
+/// <summary>Dashboard recommendation của HR (SCRUM-291 / SCRUM-328): xem candidate được hệ thống đề xuất theo rule (điểm ≥ 70, có consent, bộ PUBLISHED), shortlist/dismiss/gửi lời mời.</summary>
 [ApiController]
 [Route("api/hr/recommendations")]
 [Authorize(Roles = "HR")]
@@ -21,12 +21,28 @@ public class HrRecommendationsController : ControllerBase
         _service = service;
     }
 
-    /// <summary>Danh sách candidate được đề xuất cho HR hiện tại, sắp theo điểm giảm dần, phân trang. Kèm thông tin candidate (tên, email, targetRole, techStack) + bộ câu hỏi + trạng thái lời mời nếu đã mời. Nếu candidate đã ACCEPTED lời mời, còn có invitationResponseMessage/invitationSharedPhoneNumber — do chính candidate chủ động gửi kèm lúc accept, không phải SĐT trên profile. Candidate đang tắt "Cho phép đề xuất hồ sơ cho HR" (allowRecruiterRecommendation, xem /api/candidate/privacy-settings) sẽ KHÔNG xuất hiện trong danh sách này, kể cả recommendation đã tạo từ trước.</summary>
-    /// <param name="query">page, pageSize, status (NEW/SHORTLISTED/DISMISSED/INVITED), questionSetId.</param>
+    /// <summary>Danh sách candidate được đề xuất cho HR hiện tại. Filter: status, questionSetId, minScore. Sort: sortBy=score|date, sortDir=asc|desc. Phân trang page/pageSize. Kèm thông tin candidate (tên, email, targetRole, techStack) + bộ câu hỏi + trạng thái lời mời nếu đã mời. Nếu candidate đã ACCEPTED lời mời, còn có invitationResponseMessage/invitationSharedPhoneNumber — do chính candidate chủ động gửi kèm lúc accept, không phải SĐT trên profile. Candidate đang tắt "Cho phép đề xuất hồ sơ cho HR" (allowRecruiterRecommendation, xem /api/candidate/privacy-settings) sẽ KHÔNG xuất hiện trong danh sách này, kể cả recommendation đã tạo từ trước.</summary>
+    /// <param name="query">page, pageSize, status, questionSetId, minScore, sortBy, sortDir.</param>
     [HttpGet]
     public async Task<IActionResult> List([FromQuery] HrRecommendationListQueryDto query)
     {
         var result = await _service.ListForHrAsync(GetCurrentUserId(), query);
+        return SuccessResp.Ok(result);
+    }
+
+    /// <summary>Chi tiết 1 recommendation thuộc HR hiện tại — kèm profile/CV/social/practice stats (SCRUM-377). 404 nếu không tồn tại; 403 nếu thuộc HR khác.</summary>
+    [HttpGet("{id:guid}")]
+    public async Task<IActionResult> GetById(Guid id)
+    {
+        var result = await _service.GetByIdForHrAsync(id, GetCurrentUserId());
+        return SuccessResp.Ok(result);
+    }
+
+    /// <summary>Tải CV của candidate thuộc recommendation — trả SAS downloadUrl tạm thời (SCRUM-377). 404 nếu chưa upload CV; 403 nếu recommendation thuộc HR khác.</summary>
+    [HttpGet("{id:guid}/cv")]
+    public async Task<IActionResult> GetCv(Guid id)
+    {
+        var result = await _service.GetCvForHrAsync(id, GetCurrentUserId());
         return SuccessResp.Ok(result);
     }
 

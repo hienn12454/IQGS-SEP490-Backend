@@ -12,6 +12,7 @@
     <!-- Auth -->
     <PackageReference Include="BCrypt.Net-Next" Version="4.0.3" />
     <PackageReference Include="Google.Apis.Auth" Version="1.68.0" />
+    <PackageReference Include="FluentValidation" Version="11.11.0" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.0" />
     <!-- Email -->
     <PackageReference Include="MailKit" Version="4.10.0" NoWarn="NU1902" />

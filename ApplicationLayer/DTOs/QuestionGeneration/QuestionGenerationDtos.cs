@@ -56,6 +56,8 @@ public class JobMetaDto
     public bool HasDraft { get; set; }
     public bool PlanApproved { get; set; }
     public Guid? QuestionSetId { get; set; }
+    /// <summary>SCRUM-374: job mirror từ Studio v2.</summary>
+    public bool IsFromStudio { get; set; }
 }
 
 public class JobFailureDto

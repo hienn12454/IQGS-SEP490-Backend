@@ -45,7 +45,7 @@ public class HrDashboardService : IHrDashboardService
         var thisMonthSessions = jobs.Count(j => j.CreatedAt.Year == nowUtc.Year && j.CreatedAt.Month == nowUtc.Month);
 
         var topRole = roleTitleByJobId.Values
-            .Where(r => !string.IsNullOrWhiteSpace(r))
+            .Where(r => !string.IsNullOrWhiteSpace(r) && !PlanJsonSummaryReader.LooksLikeSkillsList(r!))
             .GroupBy(r => r!, StringComparer.OrdinalIgnoreCase)
             .OrderByDescending(g => g.Count())
             .Select(g => g.Key)
@@ -55,7 +55,7 @@ public class HrDashboardService : IHrDashboardService
 
         var questionTypeDistribution = jobs
             .SelectMany(j => j.Questions)
-            .Select(q => QuestionTypeNormalizer.Normalize(new[] { q.QuestionType }).First())
+            .Select(q => QuestionTypeNormalizer.NormalizeOne(q.QuestionType))
             .GroupBy(t => t, StringComparer.OrdinalIgnoreCase)
             .Select(g => new HrDashboardQuestionTypeDistributionItemDto { Type = g.Key, Count = g.Count() })
             .OrderByDescending(x => x.Count)
@@ -83,8 +83,16 @@ public class HrDashboardService : IHrDashboardService
         var weekOverWeekDelta = thisWeekCount - lastWeekCount;
         var weekOverWeekTrend = weekOverWeekDelta > 0 ? "up" : weekOverWeekDelta < 0 ? "down" : "flat";
 
+        // Default sort score desc — giữ hành vi Top Candidates như trước SCRUM-328.
         var (recommendationRows, _) = await _recommendationRepository.ListByHrAsync(
-            hrUserId, page: 1, pageSize: recommendationsLimit, status: null, questionSetId: null);
+            hrUserId,
+            page: 1,
+            pageSize: recommendationsLimit,
+            status: null,
+            questionSetId: null,
+            minScore: null,
+            sortBy: "score",
+            sortDir: "desc");
 
         var topRecommendations = recommendationRows
             .Select(r => new HrDashboardTopRecommendationDto
