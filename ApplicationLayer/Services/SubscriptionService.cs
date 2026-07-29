@@ -38,6 +38,7 @@ public class SubscriptionService : ISubscriptionService
     private readonly IUsageMeteringService _metering;
     private readonly ISePayGateway _sePayGateway;
     private readonly SePaySettings _sePaySettings;
+    private readonly ISubscriptionPaymentRealtimeNotifier _paymentNotifier;
 
     public SubscriptionService(
         ISubscriptionPlanRepository planRepo,
@@ -46,7 +47,8 @@ public class SubscriptionService : ISubscriptionService
         IUsageCounterRepository usageRepo,
         IUsageMeteringService metering,
         ISePayGateway sePayGateway,
-        IOptions<SePaySettings> sePaySettings)
+        IOptions<SePaySettings> sePaySettings,
+        ISubscriptionPaymentRealtimeNotifier paymentNotifier)
     {
         _planRepo = planRepo;
         _subscriptionRepo = subscriptionRepo;
@@ -55,6 +57,7 @@ public class SubscriptionService : ISubscriptionService
         _metering = metering;
         _sePayGateway = sePayGateway;
         _sePaySettings = sePaySettings.Value;
+        _paymentNotifier = paymentNotifier;
     }
 
     public async Task AssignFreePlanAsync(Guid userId, string audience)
@@ -115,6 +118,9 @@ public class SubscriptionService : ISubscriptionService
         var premium = await _planRepo.GetByCodeAsync(premiumCode)
             ?? throw new ServerFailureException($"Chưa seed plan {premiumCode}.");
 
+        // Hủy mọi Pending upgrade cũ khi user tạo đơn mới (crash/vào lại + bấm tạo).
+        await CancelPendingUpgradesAsync(sub.Id);
+
         var orderCode = BuildOrderCode(audience);
         var sePayOrder = await _sePayGateway.CreateUpgradeOrderAsync(new SePayCreateOrderRequest
         {
@@ -142,6 +148,21 @@ public class SubscriptionService : ISubscriptionService
         return ToUpgradeIntentDto(sePayOrder);
     }
 
+    /// <summary>Cancel tất cả Pending Upgrade cùng subscription — supersede bởi đơn mới.</summary>
+    private async Task CancelPendingUpgradesAsync(Guid subscriptionId)
+    {
+        var pendings = await _txRepo.ListPendingUpgradesBySubscriptionAsync(subscriptionId);
+        foreach (var old in pendings)
+        {
+            old.Status = SubscriptionTransactionStatus.Cancelled;
+            var note = string.IsNullOrWhiteSpace(old.Note)
+                ? "Superseded by new order"
+                : $"{old.Note} | Superseded by new order";
+            old.Note = note.Length > 500 ? note[..500] : note;
+            await _txRepo.UpdateAsync(old);
+        }
+    }
+
     public async Task<UpgradePaymentIntentDto> GetUpgradePaymentStatusAsync(Guid userId, string orderCode)
     {
         var sub = await _metering.GetOrThrowSubscriptionAsync(userId);
@@ -159,21 +180,31 @@ public class SubscriptionService : ISubscriptionService
             await _txRepo.UpdateAsync(tx);
         }
 
+        // Tái tạo QR/transfer (không lưu DB) — FE poll fallback/status không mất QR.
+        var code = tx.OrderCode ?? orderCode;
+        var presentation = await _sePayGateway.CreateUpgradeOrderAsync(new SePayCreateOrderRequest
+        {
+            OrderCode = code,
+            Amount = tx.Amount,
+            Currency = tx.Currency,
+            Description = "Upgrade status rehydrate"
+        });
+
         return new UpgradePaymentIntentDto
         {
-            OrderCode = tx.OrderCode ?? orderCode,
+            OrderCode = code,
             Provider = tx.Provider,
             Amount = tx.Amount,
             Currency = tx.Currency,
             Status = tx.Status,
             ExpiresAt = tx.ExpiresAt ?? DateTime.UtcNow,
-            PaymentUrl = null,
-            QrContent = null,
-            QrImageUrl = null,
-            BankName = _sePaySettings.BankName,
-            BankAccountName = _sePaySettings.BankAccountName,
-            BankAccountNumber = _sePaySettings.BankAccountNumber,
-            TransferContent = tx.OrderCode is null ? null : $"IQGS {tx.OrderCode}"
+            PaymentUrl = presentation.PaymentUrl,
+            QrContent = presentation.QrContent,
+            QrImageUrl = presentation.QrImageUrl,
+            BankName = presentation.BankName ?? _sePaySettings.BankName,
+            BankAccountName = presentation.BankAccountName ?? _sePaySettings.BankAccountName,
+            BankAccountNumber = presentation.BankAccountNumber ?? _sePaySettings.BankAccountNumber,
+            TransferContent = presentation.TransferContent ?? $"IQGS {code}"
         };
     }
 
@@ -202,12 +233,28 @@ public class SubscriptionService : ISubscriptionService
 
         if (tx.Status == SubscriptionTransactionStatus.Paid)
         {
+            // Idempotent webhook — vẫn push SignalR để FE (mới connect) kịp đóng modal.
+            await TryNotifyPaymentPaidAsync(tx, orderCode);
             return new SePayWebhookProcessResultDto
             {
                 Processed = true,
                 PaymentAccepted = true,
                 OrderCode = orderCode,
                 Message = "Đơn đã được xác nhận trước đó."
+            };
+        }
+
+        // Terminal states: không nâng gói (CK ND cũ sau khi tạo đơn mới / failed).
+        if (tx.Status is SubscriptionTransactionStatus.Cancelled
+            or SubscriptionTransactionStatus.Expired
+            or SubscriptionTransactionStatus.Failed)
+        {
+            return new SePayWebhookProcessResultDto
+            {
+                Processed = true,
+                PaymentAccepted = false,
+                OrderCode = orderCode,
+                Message = $"Bỏ qua: đơn đã {tx.Status}, không nhận thanh toán."
             };
         }
 
@@ -261,6 +308,8 @@ public class SubscriptionService : ISubscriptionService
         tx.ConfirmedAt = normalized.PaidAt ?? DateTime.UtcNow;
         await _txRepo.UpdateAsync(tx);
         await ApplyPremiumByTransactionAsync(tx);
+        // SCRUM-387: push realtime → FE đóng QR modal ngay, không chờ poll
+        await TryNotifyPaymentPaidAsync(tx, orderCode);
 
         return new SePayWebhookProcessResultDto
         {
@@ -269,6 +318,26 @@ public class SubscriptionService : ISubscriptionService
             OrderCode = orderCode,
             Message = "Thanh toán thành công, đã nâng Premium."
         };
+    }
+
+    /// <summary>Đẩy PaymentPaid tới user sở hữu đơn; lỗi push không làm fail webhook.</summary>
+    private async Task TryNotifyPaymentPaidAsync(SubscriptionTransaction tx, string orderCode)
+    {
+        try
+        {
+            var sub = await _subscriptionRepo.GetByIdWithPlanAsync(tx.SubscriptionId);
+            if (sub is null) return;
+
+            await _paymentNotifier.NotifyPaymentPaidAsync(
+                sub.UserId,
+                orderCode,
+                tx.Amount,
+                tx.Currency);
+        }
+        catch
+        {
+            // Không ném — webhook 200 vẫn quan trọng với SePay.
+        }
     }
 
     public async Task<MySubscriptionDto> CancelAsync(Guid userId)

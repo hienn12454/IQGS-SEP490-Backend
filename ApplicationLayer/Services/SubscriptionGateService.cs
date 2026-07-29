@@ -16,6 +16,9 @@ public interface ISubscriptionGateService
     Task CheckFeedbackAsync(Guid userId, int questionIndexZeroBased, int totalQuestions);
     Task<bool> CanPersistHrRecommendationAsync(Guid userId);
     Task<int> GetVisibleQuestionCountAsync(Guid userId, int totalQuestions);
+    /// <summary>Premium: full AI feedback; Free: chỉ teaser.</summary>
+    Task<bool> CanDetailedAiFeedbackAsync(Guid userId);
+    Task<int> GetFreeTeaserFeedbackCountAsync(Guid userId);
 }
 
 public class SubscriptionGateService : ISubscriptionGateService
@@ -112,20 +115,12 @@ public class SubscriptionGateService : ISubscriptionGateService
         }
     }
 
-    public async Task CheckFeedbackAsync(Guid userId, int questionIndexZeroBased, int totalQuestions)
-    {
-        var limits = await GetLimitsAsync(userId);
-        if (!limits.FeedbackOnlyOnVisible)
-            return;
-
-        var visible = SubscriptionLimitsHelper.GetVisibleQuestionCount(totalQuestions, limits.FreeVisiblePercent);
-        if (questionIndexZeroBased < 0 || questionIndexZeroBased >= visible)
-        {
-            throw new SubscriptionGateException(
-                SubscriptionErrorCodes.FeatureRequiresPremium,
-                $"Gói Free chỉ AI Feedback cho khoảng {limits.FreeVisiblePercent}% câu đầu. Nâng Premium để mở toàn bộ.");
-        }
-    }
+    /// <summary>
+    /// Legacy no-op cho Teaser Freemium — Free được làm/lưu mọi câu;
+    /// độ sâu AI feedback quyết định lúc complete (CanDetailedAiFeedback).
+    /// </summary>
+    public Task CheckFeedbackAsync(Guid userId, int questionIndexZeroBased, int totalQuestions)
+        => Task.CompletedTask;
 
     public async Task<bool> CanPersistHrRecommendationAsync(Guid userId)
     {
@@ -133,10 +128,29 @@ public class SubscriptionGateService : ISubscriptionGateService
         return limits.CanPersistHrRecommendation;
     }
 
-    public async Task<int> GetVisibleQuestionCountAsync(Guid userId, int totalQuestions)
+    /// <summary>Teaser Freemium: luôn mở full câu hỏi (không khóa giữa phiên).</summary>
+    public Task<int> GetVisibleQuestionCountAsync(Guid userId, int totalQuestions)
+        => Task.FromResult(Math.Max(0, totalQuestions));
+
+    public async Task<bool> CanDetailedAiFeedbackAsync(Guid userId)
     {
         var limits = await GetLimitsAsync(userId);
-        return SubscriptionLimitsHelper.GetVisibleQuestionCount(totalQuestions, limits.FreeVisiblePercent);
+        if (limits.CanDetailedAiFeedback)
+            return true;
+
+        // Snapshot cũ (trước Teaser Freemium): Premium Candidate có CanPersistHrRecommendation
+        if (limits.CanPersistHrRecommendation)
+            return true;
+
+        return false;
+    }
+
+    public async Task<int> GetFreeTeaserFeedbackCountAsync(Guid userId)
+    {
+        var limits = await GetLimitsAsync(userId);
+        if (limits.CanDetailedAiFeedback)
+            return 0;
+        return Math.Max(1, limits.FreeTeaserFeedbackCount);
     }
 
     private static string FormatRemain(TimeSpan remain)
