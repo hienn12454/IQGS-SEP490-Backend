@@ -47,7 +47,12 @@ public class ExceptionHandlingMiddleware
         catch (StudioBusinessException ex)
         {
             _logger.LogWarning("Studio business error {ErrorCode}: {Message}", ex.ErrorCode, ex.Message);
-            await WriteProblemDetailsAsync(context, ex);
+            await WriteProblemDetailsAsync(context, ex.ErrorCode, ex.StatusCode, ex.Message);
+        }
+        catch (SubscriptionGateException ex)
+        {
+            _logger.LogWarning("Subscription gate {ErrorCode}: {Message}", ex.ErrorCode, ex.Message);
+            await WriteProblemDetailsAsync(context, ex.ErrorCode, ex.StatusCode, ex.Message);
         }
         catch (Exception ex)
         {
@@ -58,20 +63,23 @@ public class ExceptionHandlingMiddleware
         }
     }
 
-    private static async Task WriteProblemDetailsAsync(HttpContext context, StudioBusinessException ex)
+    private static async Task WriteProblemDetailsAsync(HttpContext context, string errorCode, int statusCode, string message)
     {
-        context.Response.StatusCode = ex.StatusCode;
+        context.Response.StatusCode = statusCode;
         context.Response.ContentType = "application/problem+json; charset=utf-8";
         var problem = new ProblemDetails
         {
-            Type = $"https://iqgs.dev/errors/{ex.ErrorCode.ToLowerInvariant()}",
-            Title = ex.Message,
-            Status = ex.StatusCode,
-            Detail = ex.Message
+            Type = $"https://iqgs.dev/errors/{errorCode.ToLowerInvariant()}",
+            Title = message,
+            Status = statusCode,
+            Detail = message
         };
-        problem.Extensions["errorCode"] = ex.ErrorCode;
+        problem.Extensions["errorCode"] = errorCode;
         await context.Response.WriteAsJsonAsync(problem);
     }
+
+    private static async Task WriteProblemDetailsAsync(HttpContext context, StudioBusinessException ex)
+        => await WriteProblemDetailsAsync(context, ex.ErrorCode, ex.StatusCode, ex.Message);
 
     private static async Task WriteStructuredAsync(HttpContext context, int statusCode, StructuredErrorPayload payload)
     {

@@ -1,4 +1,4 @@
-﻿using ApplicationLayer.Interfaces.Jobs;
+using ApplicationLayer.Interfaces.Jobs;
 using ApplicationLayer.Interfaces.Repositories;
 using ApplicationLayer.Interfaces.Services;
 using ApplicationLayer.Services;
@@ -134,6 +134,8 @@ public class Program
             builder.Configuration.GetSection(RagServiceSettings.SectionName));
         builder.Services.Configure<BlobStorageSettings>(
             builder.Configuration.GetSection(BlobStorageSettings.SectionName));
+        builder.Services.Configure<SePaySettings>(
+            builder.Configuration.GetSection(SePaySettings.SectionName));
         builder.Services.Configure<KnowledgeBaseSettings>(
             builder.Configuration.GetSection(KnowledgeBaseSettings.SectionName));
         builder.Services.Configure<CvSettings>(
@@ -144,6 +146,10 @@ public class Program
         var kbSettings = builder.Configuration
             .GetSection(KnowledgeBaseSettings.SectionName)
             .Get<KnowledgeBaseSettings>() ?? new KnowledgeBaseSettings();
+        var sePaySettings = builder.Configuration
+            .GetSection(SePaySettings.SectionName)
+            .Get<SePaySettings>() ?? new SePaySettings();
+        ValidateSePaySettings(sePaySettings);
 
         builder.Services.AddHangfire(config => config
             .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
@@ -283,6 +289,10 @@ public class Program
         builder.Services.AddScoped<ICandidateInvitationRepository, CandidateInvitationRepository>();
         builder.Services.AddScoped<ICandidateOfferRepository, CandidateOfferRepository>();
         builder.Services.AddScoped<IPlatformSettingsRepository, PlatformSettingsRepository>();
+        builder.Services.AddScoped<ISubscriptionPlanRepository, SubscriptionPlanRepository>();
+        builder.Services.AddScoped<ISubscriptionRepository, SubscriptionRepository>();
+        builder.Services.AddScoped<IUsageCounterRepository, UsageCounterRepository>();
+        builder.Services.AddScoped<ISubscriptionTransactionRepository, SubscriptionTransactionRepository>();
         builder.Services.AddScoped<ICompanyRepository, CompanyRepository>();
         builder.Services.AddScoped<IKnowledgeDocumentRepository, KnowledgeDocumentRepository>();
         builder.Services.AddScoped<IQuestionGenerationJobRepository, QuestionGenerationJobRepository>();
@@ -297,6 +307,11 @@ public class Program
         builder.Services.AddScoped<IUserService, UserService>();
         builder.Services.AddScoped<ICompanyService, CompanyService>();
         builder.Services.AddScoped<IBlobStorageService, AzureBlobStorageService>();
+        // SCRUM-385: HttpClient cho SePay User API v2 (timeout ngắn, rate-limit thân thiện)
+        builder.Services.AddHttpClient<ISePayGateway, SePayGateway>(client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(12);
+        });
         builder.Services.AddScoped<IKnowledgeDocumentService, KnowledgeDocumentService>();
         builder.Services.AddScoped<ICandidateCvService, CandidateCvService>();
         builder.Services.AddScoped<ICandidateQuestionSetService, CandidateQuestionSetService>();
@@ -307,6 +322,10 @@ public class Program
         builder.Services.AddScoped<ICandidateInvitationService, CandidateInvitationService>();
         builder.Services.AddScoped<ICandidateOfferService, CandidateOfferService>();
         builder.Services.AddScoped<IPlatformSettingsService, PlatformSettingsService>();
+        builder.Services.AddScoped<IUsageMeteringService, UsageMeteringService>();
+        builder.Services.AddScoped<ISubscriptionGateService, SubscriptionGateService>();
+        builder.Services.AddScoped<ISubscriptionService, SubscriptionService>();
+        builder.Services.AddScoped<IAdminSubscriptionPlanService, AdminSubscriptionPlanService>();
         builder.Services.AddScoped<IKnowledgeDocumentInternalService, KnowledgeDocumentInternalService>();
         builder.Services.AddScoped<IQuestionGenerationJobService, QuestionGenerationJobService>();
         builder.Services.AddScoped<IQuestionGenerationJobInternalService, QuestionGenerationJobInternalService>();
@@ -405,5 +424,19 @@ public class Program
 
         app.MapControllers();
         app.Run();
+    }
+
+    private static void ValidateSePaySettings(SePaySettings settings)
+    {
+        if (!settings.Enabled) return;
+
+        if (string.IsNullOrWhiteSpace(settings.BaseUrl))
+            throw new InvalidOperationException("SePay:BaseUrl chưa được cấu hình.");
+        if (string.IsNullOrWhiteSpace(settings.BankAccountName))
+            throw new InvalidOperationException("SePay:BankAccountName chưa được cấu hình.");
+        if (string.IsNullOrWhiteSpace(settings.BankAccountNumber))
+            throw new InvalidOperationException("SePay:BankAccountNumber chưa được cấu hình.");
+        if (settings.StrictSignatureValidation && string.IsNullOrWhiteSpace(settings.WebhookSecret))
+            throw new InvalidOperationException("SePay:WebhookSecret chưa được cấu hình khi StrictSignatureValidation=true.");
     }
 }
