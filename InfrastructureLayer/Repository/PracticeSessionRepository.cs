@@ -1,4 +1,5 @@
 using ApplicationLayer.DTOs.Candidate;
+using ApplicationLayer.DTOs.Hr;
 using ApplicationLayer.DTOs.QuestionSet;
 using ApplicationLayer.Interfaces.Repositories;
 using DomainLayer.Constants;
@@ -196,5 +197,57 @@ public class PracticeSessionRepository : IPracticeSessionRepository
             });
 
         return await projected.ToListAsync();
+    }
+
+    public Task<bool> HasAnySessionOnHrOwnedSetsAsync(Guid candidateUserId, Guid hrOwnerId)
+        => _context.PracticeSessions
+            .AsNoTracking()
+            .Where(s => s.CandidateUserId == candidateUserId && s.IsActive)
+            .Join(_context.QuestionSets.AsNoTracking(),
+                s => s.QuestionSetId, qs => qs.Id,
+                (s, qs) => qs)
+            .AnyAsync(qs => qs.OwnerId == hrOwnerId);
+
+    public async Task<IReadOnlyList<HrCandidatePracticeOnMySetRow>> ListSessionsOnHrOwnedSetsAsync(
+        Guid candidateUserId, Guid hrOwnerId)
+    {
+        return await _context.PracticeSessions
+            .AsNoTracking()
+            .Where(s => s.CandidateUserId == candidateUserId && s.IsActive)
+            .Join(_context.QuestionSets.AsNoTracking(),
+                s => s.QuestionSetId, qs => qs.Id,
+                (s, qs) => new { s, qs })
+            .Where(x => x.qs.OwnerId == hrOwnerId)
+            .OrderByDescending(x => x.s.StartedAt)
+            .Select(x => new HrCandidatePracticeOnMySetRow
+            {
+                QuestionSetId = x.qs.Id,
+                Title = x.qs.Title ?? string.Empty,
+                SessionStatus = x.s.Status,
+                OverallScore = x.s.OverallScore,
+                StartedAt = x.s.StartedAt,
+                CompletedAt = x.s.CompletedAt
+            })
+            .ToListAsync();
+    }
+
+    /// <summary>SCRUM-401: chỉ lấy 2 mốc thời gian COMPLETED trong cửa sổ — aggregate ngày ở service.</summary>
+    public async Task<IReadOnlyList<PracticeSessionHeatmapRawRow>> ListCompletedTimestampsForHeatmapAsync(
+        Guid candidateUserId, DateTime fromUtc)
+    {
+        return await _context.PracticeSessions
+            .AsNoTracking()
+            .Where(s =>
+                s.CandidateUserId == candidateUserId
+                && s.Status == PracticeSessionStatus.Completed
+                && s.CompletedAt != null
+                && s.StartedAt != null
+                && s.CompletedAt >= fromUtc)
+            .Select(s => new PracticeSessionHeatmapRawRow
+            {
+                StartedAt = s.StartedAt!.Value,
+                CompletedAt = s.CompletedAt!.Value
+            })
+            .ToListAsync();
     }
 }

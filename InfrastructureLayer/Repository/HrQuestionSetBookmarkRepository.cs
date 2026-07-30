@@ -42,4 +42,14 @@ public class HrQuestionSetBookmarkRepository : IHrQuestionSetBookmarkRepository
             .OrderByDescending(qs => qs.CreatedAt)
             .ToListAsync();
     }
+
+    public async Task<HashSet<Guid>> GetBookmarkedQuestionSetIdsAsync(Guid hrUserId)
+    {
+        var ids = await _context.HrQuestionSetBookmarks
+            .AsNoTracking()
+            .Where(b => b.HrUserId == hrUserId)
+            .Select(b => b.QuestionSetId)
+            .ToListAsync();
+        return ids.ToHashSet();
+    }
 }

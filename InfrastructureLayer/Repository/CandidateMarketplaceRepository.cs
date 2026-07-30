@@ -34,20 +34,67 @@ public class CandidateMarketplaceRepository : ICandidateMarketplaceRepository
     }
 
     /// <summary>Chiếu 1 join-row sang read-model card marketplace — dùng chung cho list và bookmarks.</summary>
-    private static IQueryable<PublishedQuestionSetRow> ProjectToRow(IQueryable<PublishedQuestionSetJoin> query)
+    private IQueryable<PublishedQuestionSetRow> ProjectToRow(IQueryable<PublishedQuestionSetJoin> query)
         => query.Select(x => new PublishedQuestionSetRow
         {
             Id = x.QuestionSet.Id,
             Title = x.QuestionSet.Title,
+            CompanyId = x.Company.Id,
             CompanyName = x.Company.Name,
             CompanyLogo = x.Company.LogoUrl,
-            Difficulty = x.QuestionSet.SourceJob.Difficulty,
-            SkillsJson = x.QuestionSet.SourceJob.SkillsJson,
-            TotalQuestions = x.QuestionSet.Questions.Count(q => q.IsActive)
+            CompanyWebsite = x.Company.WebsiteUrl,
+            // Studio không còn SourceJob — skill/difficulty lấy từ questions snapshot
+            Difficulty = x.QuestionSet.Questions
+                .Where(q => q.IsActive && q.Difficulty != null && q.Difficulty != "")
+                .Select(q => q.Difficulty)
+                .GroupBy(d => d)
+                .OrderByDescending(g => g.Count())
+                .Select(g => g.Key)
+                .FirstOrDefault() ?? "medium",
+            SkillsJson = "[]",
+            QuestionSkills = x.QuestionSet.Questions
+                .Where(q => q.IsActive && q.Skill != null && q.Skill != "")
+                .Select(q => q.Skill!)
+                .Distinct()
+                .OrderBy(s => s)
+                .ToList(),
+            TotalQuestions = x.QuestionSet.Questions.Count(q => q.IsActive),
+            TimeLimitMinutes = x.QuestionSet.TimeLimitMinutes,
+            Description = x.QuestionSet.HrNote,
+            Rating = _context.PracticeSessions
+                .Where(ps => ps.QuestionSetId == x.QuestionSet.Id && ps.IsActive)
+                .Average(ps => ps.OverallScore),
+            AttemptCount = _context.PracticeSessions
+                .Count(ps => ps.QuestionSetId == x.QuestionSet.Id && ps.IsActive),
+            IsPinned = x.QuestionSet.IsPinned,
+            PinnedAt = x.QuestionSet.PinnedAt,
+            PublishedAt = x.QuestionSet.PublishedAt
         });
 
+    private static IQueryable<PublishedQuestionSetRow> ApplySort(
+        IQueryable<PublishedQuestionSetRow> projected, string sortBy)
+    {
+        return sortBy.ToLowerInvariant() switch
+        {
+            "newest" => projected.OrderByDescending(x => x.PublishedAt),
+            "most_practiced" => projected
+                .OrderByDescending(x => x.AttemptCount)
+                .ThenByDescending(x => x.PublishedAt),
+            "highest_rated" => projected
+                .OrderByDescending(x => x.Rating ?? -1)
+                .ThenByDescending(x => x.AttemptCount)
+                .ThenByDescending(x => x.PublishedAt),
+            // featured (default): pin trước → PinnedAt → PublishedAt
+            _ => projected
+                .OrderByDescending(x => x.IsPinned)
+                .ThenByDescending(x => x.PinnedAt)
+                .ThenByDescending(x => x.PublishedAt)
+        };
+    }
+
     public async Task<(IReadOnlyList<PublishedQuestionSetRow> Items, int TotalCount)> ListPublishedAsync(
-        int page, int pageSize, string? keyword, Guid? companyId, string? difficulty, IReadOnlyList<string>? skills)
+        int page, int pageSize, string? keyword, Guid? companyId, string? difficulty,
+        IReadOnlyList<string>? skills, string sortBy = "featured")
     {
         var query = PublishedWithCompanyQuery();
 
@@ -70,7 +117,7 @@ public class CandidateMarketplaceRepository : ICandidateMarketplaceRepository
             query = query.Where(x => x.QuestionSet.Questions.Any(q =>
                 q.IsActive && q.Skill != null && skills.Any(s => EF.Functions.ILike(q.Skill, s))));
 
-        var projected = ProjectToRow(query.OrderByDescending(x => x.QuestionSet.PublishedAt));
+        var projected = ApplySort(ProjectToRow(query), sortBy);
 
         var totalCount = await projected.CountAsync();
         var items = await projected
@@ -89,10 +136,26 @@ public class CandidateMarketplaceRepository : ICandidateMarketplaceRepository
             {
                 Id = x.QuestionSet.Id,
                 Title = x.QuestionSet.Title,
+                CompanyId = x.Company.Id,
                 CompanyName = x.Company.Name,
                 CompanyLogo = x.Company.LogoUrl,
-                Difficulty = x.QuestionSet.SourceJob.Difficulty,
-                SkillsJson = x.QuestionSet.SourceJob.SkillsJson
+                CompanyWebsite = x.Company.WebsiteUrl,
+                Difficulty = x.QuestionSet.Questions
+                    .Where(q => q.IsActive && q.Difficulty != null && q.Difficulty != "")
+                    .Select(q => q.Difficulty)
+                    .GroupBy(d => d)
+                    .OrderByDescending(g => g.Count())
+                    .Select(g => g.Key)
+                    .FirstOrDefault() ?? "medium",
+                SkillsJson = "[]",
+                TimeLimitMinutes = x.QuestionSet.TimeLimitMinutes,
+                Description = x.QuestionSet.HrNote,
+                Rating = _context.PracticeSessions
+                    .Where(ps => ps.QuestionSetId == x.QuestionSet.Id && ps.IsActive)
+                    .Average(ps => ps.OverallScore),
+                AttemptCount = _context.PracticeSessions
+                    .Count(ps => ps.QuestionSetId == x.QuestionSet.Id && ps.IsActive),
+                IsPinned = x.QuestionSet.IsPinned
             }).FirstOrDefaultAsync();
 
         if (detail is null)
@@ -120,7 +183,9 @@ public class CandidateMarketplaceRepository : ICandidateMarketplaceRepository
                 Skill = q.Skill,
                 FocusArea = q.FocusArea,
                 Rationale = q.Rationale,
-                CitationsJson = q.CitationsJson
+                CitationsJson = q.CitationsJson,
+                AttachedImageBlobPath = q.AttachedImageBlobPath,
+                AnswerMethod = q.AnswerMethod
             })
             .ToListAsync();
 
@@ -152,9 +217,8 @@ public class CandidateMarketplaceRepository : ICandidateMarketplaceRepository
             .Select(b => b.QuestionSetId);
 
         var query = PublishedWithCompanyQuery()
-            .Where(x => bookmarkedIds.Contains(x.QuestionSet.Id))
-            .OrderByDescending(x => x.QuestionSet.PublishedAt);
+            .Where(x => bookmarkedIds.Contains(x.QuestionSet.Id));
 
-        return await ProjectToRow(query).ToListAsync();
+        return await ApplySort(ProjectToRow(query), "featured").ToListAsync();
     }
 }
