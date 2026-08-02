@@ -9,10 +9,14 @@ namespace ApplicationLayer.Services;
 public class CandidateQuestionSetService : ICandidateQuestionSetService
 {
     private readonly ICandidateMarketplaceRepository _repository;
+    private readonly ISubscriptionGateService _subscriptionGate;
 
-    public CandidateQuestionSetService(ICandidateMarketplaceRepository repository)
+    public CandidateQuestionSetService(
+        ICandidateMarketplaceRepository repository,
+        ISubscriptionGateService subscriptionGate)
     {
         _repository = repository;
+        _subscriptionGate = subscriptionGate;
     }
 
     public async Task<PagedResultDto<CandidateQuestionSetListItemDto>> ListPublishedAsync(
@@ -33,10 +37,13 @@ public class CandidateQuestionSetService : ICandidateQuestionSetService
         };
     }
 
-    public async Task<CandidateQuestionSetDetailDto> GetPublishedByIdAsync(Guid id)
+    public async Task<CandidateQuestionSetDetailDto> GetPublishedByIdAsync(Guid id, Guid candidateUserId)
     {
         var detail = await _repository.GetPublishedByIdAsync(id)
             ?? throw new NotFoundException("Bộ câu hỏi không tồn tại hoặc chưa được publish.");
+
+        var ordered = detail.Questions.OrderBy(q => q.Order).ToList();
+        var visibleCount = await _subscriptionGate.GetVisibleQuestionCountAsync(candidateUserId, ordered.Count);
 
         return new CandidateQuestionSetDetailDto
         {
@@ -48,25 +55,33 @@ public class CandidateQuestionSetService : ICandidateQuestionSetService
             Description = detail.Description,
             Difficulty = detail.Difficulty,
             Skills = PublishedQuestionSetMapper.MergeSkills(
-                detail.Questions.Where(q => !string.IsNullOrWhiteSpace(q.Skill)).Select(q => q.Skill!),
+                ordered.Where(q => !string.IsNullOrWhiteSpace(q.Skill)).Select(q => q.Skill!),
                 detail.SkillsJson),
-            TotalQuestions = detail.Questions.Count,
+            TotalQuestions = ordered.Count,
+            VisibleQuestionCount = visibleCount,
             EstimatedTimeMinutes = detail.TimeLimitMinutes
-                ?? detail.Questions.Count * PublishedQuestionSetMapper.EstimatedMinutesPerQuestion,
+                ?? ordered.Count * PublishedQuestionSetMapper.EstimatedMinutesPerQuestion,
             TimeLimitMinutes = detail.TimeLimitMinutes,
             Rating = PublishedQuestionSetMapper.RoundRating(detail.Rating),
             AttemptCount = detail.AttemptCount,
-            Questions = detail.Questions.Select(q => new CandidateQuestionItemDto
+            Questions = ordered.Select((q, index) =>
             {
-                Id = q.Id,
-                Order = q.Order,
-                Question = q.Question,
-                QuestionType = q.QuestionType,
-                Difficulty = q.Difficulty,
-                Skill = q.Skill,
-                FocusArea = q.FocusArea,
-                Rationale = q.Rationale,
-                Citations = PublishedQuestionSetMapper.ParseJsonList<object>(q.CitationsJson)
+                var locked = index >= visibleCount;
+                return new CandidateQuestionItemDto
+                {
+                    Id = q.Id,
+                    Order = q.Order,
+                    Question = locked ? string.Empty : q.Question,
+                    QuestionType = q.QuestionType,
+                    Difficulty = q.Difficulty,
+                    Skill = locked ? null : q.Skill,
+                    FocusArea = locked ? null : q.FocusArea,
+                    Rationale = locked ? null : q.Rationale,
+                    Citations = locked
+                        ? new List<object>()
+                        : PublishedQuestionSetMapper.ParseJsonList<object>(q.CitationsJson),
+                    IsLocked = locked
+                };
             }).ToList()
         };
     }

@@ -82,6 +82,9 @@ public class CandidateQuestionSetDetailDto
     /// <summary>Số lượt luyện tập trên bộ này.</summary>
     public int AttemptCount { get; set; }
 
+    /// <summary>Số câu Free được mở theo LimitsSnapshot (Premium = TotalQuestions).</summary>
+    public int VisibleQuestionCount { get; set; }
+
     public List<CandidateQuestionItemDto> Questions { get; set; } = new();
 }
 
@@ -97,6 +100,9 @@ public class CandidateQuestionItemDto
     public string? FocusArea { get; set; }
     public string? Rationale { get; set; }
     public List<object> Citations { get; set; } = new();
+
+    /// <summary>True nếu gói Free chưa unlock câu này (~20%).</summary>
+    public bool IsLocked { get; set; }
 }
 
 public class PagedResultDto<T>

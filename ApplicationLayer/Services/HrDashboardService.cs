@@ -2,6 +2,7 @@ using ApplicationLayer.DTOs.Hr;
 using ApplicationLayer.Helpers;
 using ApplicationLayer.Interfaces.Repositories;
 using ApplicationLayer.Interfaces.Services;
+using ApplicationLayer.Services;
 using DomainLayer.Constants;
 using DomainLayer.Entities;
 
@@ -16,13 +17,16 @@ public class HrDashboardService : IHrDashboardService
 
     private readonly IQuestionGenerationJobRepository _jobRepository;
     private readonly ICandidateRecommendationRepository _recommendationRepository;
+    private readonly ISubscriptionService _subscriptionService;
 
     public HrDashboardService(
         IQuestionGenerationJobRepository jobRepository,
-        ICandidateRecommendationRepository recommendationRepository)
+        ICandidateRecommendationRepository recommendationRepository,
+        ISubscriptionService subscriptionService)
     {
         _jobRepository = jobRepository;
         _recommendationRepository = recommendationRepository;
+        _subscriptionService = subscriptionService;
     }
 
     public async Task<HrDashboardResponseDto> GetDashboardAsync(Guid hrUserId, HrDashboardQueryDto query)
@@ -128,8 +132,24 @@ public class HrDashboardService : IHrDashboardService
                 WeekOverWeekDelta = weekOverWeekDelta
             },
             TopRecommendations = topRecommendations,
-            Subscription = new HrDashboardSubscriptionDto()
+            Subscription = await ResolveSubscriptionDtoAsync(hrUserId)
         };
+    }
+
+    private async Task<HrDashboardSubscriptionDto> ResolveSubscriptionDtoAsync(Guid hrUserId)
+    {
+        try
+        {
+            var sub = await _subscriptionService.GetMySubscriptionAsync(hrUserId);
+            return new HrDashboardSubscriptionDto
+            {
+                PlanId = sub.PlanCode.Contains("PREMIUM", StringComparison.OrdinalIgnoreCase) ? "Premium" : "Free"
+            };
+        }
+        catch
+        {
+            return new HrDashboardSubscriptionDto { PlanId = "Free" };
+        }
     }
 
     private static List<HrDashboardDailyActivityItemDto> BuildDailyActivity(

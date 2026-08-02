@@ -26,6 +26,8 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
     private readonly IAiFeedbackRepository _feedbackRepository;
     private readonly IRagService _ragService;
     private readonly IRecommendationService _recommendationService;
+    private readonly ISubscriptionGateService _subscriptionGate;
+    private readonly IUsageMeteringService _usageMetering;
     private readonly ILogger<CandidatePracticeSessionService> _logger;
 
     public CandidatePracticeSessionService(
@@ -35,6 +37,8 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
         IAiFeedbackRepository feedbackRepository,
         IRagService ragService,
         IRecommendationService recommendationService,
+        ISubscriptionGateService subscriptionGate,
+        IUsageMeteringService usageMetering,
         ILogger<CandidatePracticeSessionService> logger)
     {
         _sessionRepository = sessionRepository;
@@ -43,6 +47,8 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
         _feedbackRepository = feedbackRepository;
         _ragService = ragService;
         _recommendationService = recommendationService;
+        _subscriptionGate = subscriptionGate;
+        _usageMetering = usageMetering;
         _logger = logger;
     }
 
@@ -93,6 +99,15 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
 
         if (!await _marketplaceRepository.QuestionBelongsToSetAsync(dto.QuestionId, session.QuestionSetId))
             throw new BadRequestException("questionId không thuộc bộ câu hỏi của phiên luyện tập này.");
+
+        // SCRUM-382: Free chỉ feedback ~20% câu đầu theo Order
+        var questions = (await _marketplaceRepository.GetQuestionsSnapshotAsync(session.QuestionSetId))
+            .OrderBy(q => q.Order)
+            .ToList();
+        var index = questions.FindIndex(q => q.Id == dto.QuestionId);
+        if (index < 0)
+            throw new BadRequestException("questionId không thuộc bộ câu hỏi của phiên luyện tập này.");
+        await _subscriptionGate.CheckFeedbackAsync(candidateUserId, index, questions.Count);
 
         var answerText = dto.AnswerText.Trim();
         var submittedAt = DateTime.UtcNow;
@@ -153,6 +168,7 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
 
         // 3) Gọi RAG evaluate sync (SCRUM-282) — lỗi → lưu Failed, không throw ra FE
         var evaluation = await EvaluateAndPersistAsync(answer, dto.QuestionId);
+        await _usageMetering.IncrementAsync(candidateUserId, UsageType.CandidateFeedback);
 
         return new SubmitAnswerResponseDto
         {
