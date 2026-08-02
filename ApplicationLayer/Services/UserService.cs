@@ -15,17 +15,20 @@ public class UserService : IUserService
     private readonly IHRProfileRepository _hrProfileRepo;
     private readonly ICandidateProfileRepository _candidateProfileRepo;
     private readonly ICompanyRepository _companyRepo;
+    private readonly ISubscriptionRepository _subscriptionRepo;
 
     public UserService(
         IUserRepository userRepo,
         IHRProfileRepository hrProfileRepo,
         ICandidateProfileRepository candidateProfileRepo,
-        ICompanyRepository companyRepo)
+        ICompanyRepository companyRepo,
+        ISubscriptionRepository subscriptionRepo)
     {
         _userRepo = userRepo;
         _hrProfileRepo = hrProfileRepo;
         _candidateProfileRepo = candidateProfileRepo;
         _companyRepo = companyRepo;
+        _subscriptionRepo = subscriptionRepo;
     }
 
     // ── Admin: danh sách phân trang ───────────────────────────────────
@@ -37,17 +40,33 @@ public class UserService : IUserService
 
         var (users, total) = await _userRepo.GetPagedAsync(query);
 
-        var items = users.Select(u => new UserListItemDto
+        var userIds = users.Select(u => u.Id).ToList();
+        var planMap = await _subscriptionRepo.GetPlanSummariesByUserIdsAsync(userIds);
+        var now = DateTime.UtcNow;
+
+        var items = users.Select(u =>
         {
-            Id = u.Id,
-            FullName = u.FullName,
-            Email = u.Email,
-            Role = u.Role?.Name ?? UserRole.GetNameById(u.RoleId),
-            IsActive = u.IsActive,
-            IsEmailVerified = u.IsEmailVerified,
-            IsProfileComplete = u.IsProfileComplete,
-            Provider = u.Provider,
-            CreatedAt = u.CreatedAt
+            planMap.TryGetValue(u.Id, out var planInfo);
+            var planCode = planInfo.PlanCode;
+            // Premium còn hạn: code có PREMIUM và PeriodEnd > now (khớp auto-expire lazy)
+            var isPremium = !string.IsNullOrEmpty(planCode)
+                && planCode.Contains("PREMIUM", StringComparison.OrdinalIgnoreCase)
+                && planInfo.CurrentPeriodEnd > now;
+
+            return new UserListItemDto
+            {
+                Id = u.Id,
+                FullName = u.FullName,
+                Email = u.Email,
+                Role = u.Role?.Name ?? UserRole.GetNameById(u.RoleId),
+                IsActive = u.IsActive,
+                IsEmailVerified = u.IsEmailVerified,
+                IsProfileComplete = u.IsProfileComplete,
+                Provider = u.Provider,
+                CreatedAt = u.CreatedAt,
+                PlanCode = planCode,
+                IsPremium = isPremium
+            };
         }).ToList();
 
         return new PagedResultDto<UserListItemDto>

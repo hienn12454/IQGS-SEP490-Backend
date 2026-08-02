@@ -40,7 +40,7 @@ public class CandidateQuestionSetsController : ControllerBase
     [Authorize(Roles = "Candidate")]
     public async Task<IActionResult> GetById(Guid id)
     {
-        var result = await _service.GetPublishedByIdAsync(id);
+        var result = await _service.GetPublishedByIdAsync(id, User.GetUserId());
         return SuccessResp.Ok(result);
     }
 

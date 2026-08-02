@@ -20,6 +20,7 @@ public class AuthService : IAuthService
     private readonly IEmailService _emailService;
     private readonly IGoogleTokenValidator _googleValidator;
     private readonly IConfiguration _config;
+    private readonly ISubscriptionService _subscriptionService;
 
     // ── Cấu hình ─────────────────────────────────────
     private readonly int _maxFailedAttempts;
@@ -36,7 +37,8 @@ public class AuthService : IAuthService
         IJwtService jwtService,
         IEmailService emailService,
         IGoogleTokenValidator googleValidator,
-        IConfiguration config)
+        IConfiguration config,
+        ISubscriptionService subscriptionService)
     {
         _userRepo = userRepo;
         _hrProfileRepo = hrProfileRepo;
@@ -46,6 +48,7 @@ public class AuthService : IAuthService
         _emailService = emailService;
         _googleValidator = googleValidator;
         _config = config;
+        _subscriptionService = subscriptionService;
 
         _maxFailedAttempts = int.Parse(config["AuthSettings:MaxFailedAttempts"] ?? "5");
         _lockoutDuration = TimeSpan.FromMinutes(
@@ -204,6 +207,8 @@ public class AuthService : IAuthService
                 CompanyId = hrCompanyId!.Value,
                 JobTitle = request.JobTitle
             });
+            // SCRUM-380: gán gói Free + LimitsSnapshot + kỳ anniversary
+            await _subscriptionService.AssignFreePlanAsync(user.Id, SubscriptionAudience.HR);
         }
         else // Candidate
         {
@@ -214,6 +219,7 @@ public class AuthService : IAuthService
                 SeniorityLevel = request.SeniorityLevel,
                 TechStack = (request.TechStack ?? new List<string>()).ToArray()
             });
+            await _subscriptionService.AssignFreePlanAsync(user.Id, SubscriptionAudience.Candidate);
         }
 
         return user;
@@ -284,6 +290,9 @@ public class AuthService : IAuthService
             JobTitle = request.JobTitle
         });
 
+        // SCRUM-380: gán gói HR Free
+        await _subscriptionService.AssignFreePlanAsync(user.Id, SubscriptionAudience.HR);
+
         // SCRUM-148: gửi email xác minh
         await SendEmailVerificationAsync(user);
     }
@@ -315,6 +324,9 @@ public class AuthService : IAuthService
             SeniorityLevel = request.SeniorityLevel,
             TechStack = request.TechStack.ToArray()
         });
+
+        // SCRUM-380: gán gói Candidate Free
+        await _subscriptionService.AssignFreePlanAsync(user.Id, SubscriptionAudience.Candidate);
 
         await SendEmailVerificationAsync(user);
     }

@@ -12,4 +12,10 @@ public class UserListItemDto
     public bool IsProfileComplete { get; set; }
     public string Provider { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; }
+
+    /// <summary>Mã gói subscription (HR_FREE / CANDIDATE_PREMIUM…). Null nếu chưa có sub / role Admin.</summary>
+    public string? PlanCode { get; set; }
+
+    /// <summary>True nếu đang Premium và còn trong kỳ (PeriodEnd &gt; now).</summary>
+    public bool IsPremium { get; set; }
 }

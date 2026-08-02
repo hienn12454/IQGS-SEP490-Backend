@@ -48,6 +48,7 @@ public class RecommendationService : IRecommendationService
     private readonly IHrCompanyInfoService _hrCompanyInfoService;
     private readonly IBlobStorageService _blobStorage;
     private readonly BlobStorageSettings _blobSettings;
+    private readonly ISubscriptionGateService _subscriptionGate;
 
     public RecommendationService(
         ICandidateRecommendationRepository recommendationRepository,
@@ -56,7 +57,8 @@ public class RecommendationService : IRecommendationService
         IPracticeSessionRepository practiceSessionRepository,
         IHrCompanyInfoService hrCompanyInfoService,
         IBlobStorageService blobStorage,
-        IOptions<BlobStorageSettings> blobSettings)
+        IOptions<BlobStorageSettings> blobSettings,
+        ISubscriptionGateService subscriptionGate)
     {
         _recommendationRepository = recommendationRepository;
         _invitationRepository = invitationRepository;
@@ -65,6 +67,7 @@ public class RecommendationService : IRecommendationService
         _hrCompanyInfoService = hrCompanyInfoService;
         _blobStorage = blobStorage;
         _blobSettings = blobSettings.Value;
+        _subscriptionGate = subscriptionGate;
     }
 
     public async Task GenerateForCompletedSessionAsync(PracticeSession session)
@@ -73,6 +76,10 @@ public class RecommendationService : IRecommendationService
             return;
 
         if (session.OverallScore is not double score || score < MinScoreForRecommendation)
+            return;
+
+        // SCRUM-382: Free soft paywall — không ghi data gợi ý HR
+        if (!await _subscriptionGate.CanPersistHrRecommendationAsync(session.CandidateUserId))
             return;
 
         var profile = await _profileRepository.GetByUserIdAsync(session.CandidateUserId);
