@@ -43,6 +43,14 @@ public sealed class StudioInterviewPlansController(IInterviewPlanService planSer
         return Ok(result);
     }
 
+    /// <summary>SCRUM-393: Đổi tiêu đề plan (tên công việc) sau khi đã generate.</summary>
+    [HttpPut("{planId:guid}/title")]
+    public async Task<IActionResult> RenameTitle(Guid projectId, Guid planId, [FromBody] RenamePlanTitleRequest request, CancellationToken ct)
+    {
+        var result = await planService.RenameTitleAsync(projectId, planId, GetUserId(), request, ct);
+        return Ok(result);
+    }
+
     [HttpPost("{planId:guid}/refine")]
     public async Task<IActionResult> Refine(Guid projectId, Guid planId, [FromBody] StudioRefinePlanRequest request, CancellationToken ct)
     {
