@@ -398,6 +398,46 @@ namespace InfrastructureLayer.Migrations
                     b.ToTable("tbl_companies", (string)null);
                 });
 
+            modelBuilder.Entity("DomainLayer.Entities.Feedback", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Content")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<int?>("Rating")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Status");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("tbl_feedbacks", (string)null);
+                });
+
             modelBuilder.Entity("DomainLayer.Entities.HRProfile", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2220,6 +2260,17 @@ namespace InfrastructureLayer.Migrations
                     b.Navigation("PracticeSession");
 
                     b.Navigation("QuestionSet");
+                });
+
+            modelBuilder.Entity("DomainLayer.Entities.Feedback", b =>
+                {
+                    b.HasOne("DomainLayer.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("DomainLayer.Entities.HRProfile", b =>
