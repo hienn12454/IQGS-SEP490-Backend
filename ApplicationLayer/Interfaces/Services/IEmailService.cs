@@ -14,4 +14,15 @@ public interface IEmailService
         string candidateName, string candidateEmail,
         string? targetRole, string? seniorityLevel, IReadOnlyList<string> techStack, string? phoneNumber,
         string appLink);
+
+    /// <summary>Chúc mừng nâng cấp Premium thành công — kèm thời hạn sử dụng gói.</summary>
+    Task SendPremiumActivatedEmailAsync(
+        string toEmail, string toName, string planName,
+        DateTime periodStart, DateTime periodEnd, string appLink);
+
+    /// <summary>Gửi hóa đơn thanh toán sau khi nâng cấp gói Premium thành công.</summary>
+    Task SendSubscriptionInvoiceEmailAsync(
+        string toEmail, string toName, string orderCode, string planName,
+        decimal amount, string currency, DateTime paidAt,
+        DateTime periodStart, DateTime periodEnd, string appLink);
 }
