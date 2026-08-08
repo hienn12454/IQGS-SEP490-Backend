@@ -12,6 +12,10 @@ public interface IInterviewProjectService
     Task<StudioProjectDetailDto> UpdateAsync(Guid projectId, Guid userId, UpdateStudioProjectRequest request, CancellationToken ct);
     Task DeleteAsync(Guid projectId, Guid userId, CancellationToken ct);
     Task<InterviewProject> EnsureProjectAccessAsync(Guid projectId, Guid userId, bool requireEdit, CancellationToken ct);
+    /// <summary>Snapshot InterviewQuestions → question_sets (private DRAFT). UX: Save.</summary>
+    Task<StudioSaveQuestionSetResponseDto> SaveQuestionSetAsync(Guid projectId, Guid userId, CancellationToken ct);
+    Task PublishFromProjectAsync(Guid projectId, Guid userId, CancellationToken ct);
+    Task UnpublishFromProjectAsync(Guid projectId, Guid userId, CancellationToken ct);
 }
 
 public interface IJobDescriptionService
@@ -61,11 +65,13 @@ public interface IInterviewPlanService
     Task<PlanDetailDto?> GetCurrentAsync(Guid projectId, Guid userId, CancellationToken ct);
     Task<PlanDetailDto> GetDetailAsync(Guid projectId, Guid planId, Guid userId, CancellationToken ct);
     Task<PlanSummaryDto> GenerateInitialAsync(Guid projectId, Guid userId, CancellationToken ct);
-    Task<PlanSummaryDto> RefineAsync(Guid projectId, Guid planId, Guid userId, string instruction, CancellationToken ct);
+    Task<PlanRefineResultDto> RefineAsync(Guid projectId, Guid planId, Guid userId, string instruction, CancellationToken ct);
     Task<PlanSummaryDto> ApplySettingsAsync(Guid projectId, Guid planId, Guid userId, ApplyPlanSettingsRequest request, CancellationToken ct);
     Task<PlanSummaryDto> SubmitForApprovalAsync(Guid projectId, Guid planId, Guid userId, CancellationToken ct);
     Task<PlanSummaryDto> RejectAsync(Guid projectId, Guid planId, Guid userId, RejectPlanRequest request, CancellationToken ct);
     Task<PlanSummaryDto> ApproveAsync(Guid projectId, Guid planId, Guid userId, ApprovePlanRequest request, CancellationToken ct);
+    /// <summary>SCRUM-393: đổi Title plan (tên công việc hiển thị) — sync roleTitle trong SourcePlanJson nếu có.</summary>
+    Task<PlanSummaryDto> RenameTitleAsync(Guid projectId, Guid planId, Guid userId, RenamePlanTitleRequest request, CancellationToken ct);
     Task<IReadOnlyList<PlanApprovalHistoryDto>> GetApprovalHistoryAsync(Guid projectId, Guid planId, Guid userId, CancellationToken ct);
 }
 
@@ -81,6 +87,10 @@ public interface IQuestionGenerationService
     Task<StudioQuestionDto> UpdateQuestionAsync(Guid projectId, Guid questionId, Guid userId, UpdateQuestionRequest request, CancellationToken ct);
     Task DeleteQuestionAsync(Guid projectId, Guid questionId, Guid userId, CancellationToken ct);
     Task<StudioQuestionDto> RegenerateQuestionAsync(Guid projectId, Guid questionId, Guid userId, RegenerateQuestionRequest request, CancellationToken ct);
+    /// <summary>SCRUM-396: upload ảnh đính kèm câu hỏi lên Azure Blob.</summary>
+    Task<StudioQuestionDto> UploadQuestionImageAsync(Guid projectId, Guid questionId, Guid userId, Stream fileStream, string fileName, string contentType, long fileLength, CancellationToken ct);
+    /// <summary>SCRUM-396: xóa ảnh đính kèm câu hỏi.</summary>
+    Task<StudioQuestionDto> DeleteQuestionImageAsync(Guid projectId, Guid questionId, Guid userId, CancellationToken ct);
     Task<IReadOnlyList<GenerationRunDto>> ListRunsAsync(Guid projectId, Guid userId, CancellationToken ct);
     Task<GenerationRunDto> GetRunAsync(Guid projectId, Guid runId, Guid userId, CancellationToken ct);
 }

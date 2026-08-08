@@ -50,6 +50,34 @@ public sealed class StudioInterviewQuestionsController(IQuestionGenerationServic
         return Ok(result);
     }
 
+    /// <summary>SCRUM-396: HR upload ảnh đính kèm câu hỏi (Azure Blob).</summary>
+    [HttpPost("{questionId:guid}/image")]
+    [Consumes("multipart/form-data")]
+    [RequestSizeLimit(6 * 1024 * 1024)]
+    public async Task<IActionResult> UploadImage(
+        Guid projectId,
+        Guid questionId,
+        [FromForm] StudioQuestionImageUploadForm form,
+        CancellationToken ct)
+    {
+        var file = form.File;
+        if (file is null || file.Length == 0)
+            return BadRequest(new { code = "IMAGE_EMPTY", message = "File ảnh là bắt buộc." });
+
+        await using var stream = file.OpenReadStream();
+        var result = await generationService.UploadQuestionImageAsync(
+            projectId, questionId, GetUserId(), stream, file.FileName, file.ContentType, file.Length, ct);
+        return Ok(result);
+    }
+
+    /// <summary>SCRUM-396: xóa ảnh đính kèm câu hỏi.</summary>
+    [HttpDelete("{questionId:guid}/image")]
+    public async Task<IActionResult> DeleteImage(Guid projectId, Guid questionId, CancellationToken ct)
+    {
+        var result = await generationService.DeleteQuestionImageAsync(projectId, questionId, GetUserId(), ct);
+        return Ok(result);
+    }
+
     [HttpGet("/api/studio/projects/{projectId:guid}/question-generation-runs")]
     public async Task<IActionResult> Runs(Guid projectId, CancellationToken ct)
         => Ok(await generationService.ListRunsAsync(projectId, GetUserId(), ct));
@@ -63,4 +91,10 @@ public sealed class StudioInterviewQuestionsController(IQuestionGenerationServic
         var sub = User.FindFirstValue("sub") ?? User.FindFirstValue(ClaimTypes.NameIdentifier);
         return Guid.Parse(sub!);
     }
+}
+
+/// <summary>SCRUM-396: form upload ảnh đính kèm câu hỏi (Swagger-friendly).</summary>
+public sealed class StudioQuestionImageUploadForm
+{
+    public IFormFile? File { get; set; }
 }

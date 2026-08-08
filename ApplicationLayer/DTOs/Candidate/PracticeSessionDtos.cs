@@ -36,6 +36,18 @@ public class PracticeSessionQuestionDto
     public string? Skill { get; set; }
     public string? FocusArea { get; set; }
 
+    /// <summary>SCRUM-399: loại code template (BUG_DETECTION, …) — parse từ rationale meta.</summary>
+    public string? CodeTemplateType { get; set; }
+
+    /// <summary>SCRUM-399: starter code của đề bài.</summary>
+    public string? CodeSnippet { get; set; }
+
+    /// <summary>SCRUM-399: SAS URL ảnh đính kèm (~2h).</summary>
+    public string? AttachedImageUrl { get; set; }
+
+    /// <summary>SCRUM-400: Text | Code.</summary>
+    public string AnswerMethod { get; set; } = "Text";
+
     /// <summary>Câu trả lời candidate đã submit cho câu hỏi này (null nếu chưa trả lời) — SCRUM-278.</summary>
     public string? AnswerText { get; set; }
 }

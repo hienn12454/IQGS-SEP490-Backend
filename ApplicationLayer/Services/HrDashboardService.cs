@@ -2,29 +2,29 @@ using ApplicationLayer.DTOs.Hr;
 using ApplicationLayer.Helpers;
 using ApplicationLayer.Interfaces.Repositories;
 using ApplicationLayer.Interfaces.Services;
-using ApplicationLayer.Services;
-using DomainLayer.Constants;
-using DomainLayer.Entities;
+using DomainLayer.Studio.Enums;
 
 namespace ApplicationLayer.Services;
 
-/// <summary>SCRUM-339: gộp dữ liệu job sinh câu hỏi (JobStatus) + recommendation thành 1 response cho /hr/dashboard.</summary>
+/// <summary>
+/// Dashboard HR — KPI/activity từ Studio projects + InterviewQuestions (không dùng job V1).
+/// </summary>
 public class HrDashboardService : IHrDashboardService
 {
     private const string SimplifiedCompleted = "COMPLETED";
     private const string SimplifiedFailed = "FAILED";
     private const string SimplifiedProcessing = "PROCESSING";
 
-    private readonly IQuestionGenerationJobRepository _jobRepository;
+    private readonly IHrDashboardStudioStatsRepository _studioStats;
     private readonly ICandidateRecommendationRepository _recommendationRepository;
     private readonly ISubscriptionService _subscriptionService;
 
     public HrDashboardService(
-        IQuestionGenerationJobRepository jobRepository,
+        IHrDashboardStudioStatsRepository studioStats,
         ICandidateRecommendationRepository recommendationRepository,
         ISubscriptionService subscriptionService)
     {
-        _jobRepository = jobRepository;
+        _studioStats = studioStats;
         _recommendationRepository = recommendationRepository;
         _subscriptionService = subscriptionService;
     }
@@ -35,59 +35,63 @@ public class HrDashboardService : IHrDashboardService
         var recentLimit = Math.Clamp(query.RecentLimit <= 0 ? 7 : query.RecentLimit, 1, 50);
         var recommendationsLimit = Math.Clamp(query.RecommendationsLimit <= 0 ? 8 : query.RecommendationsLimit, 1, 50);
 
-        var jobs = await _jobRepository.GetAllByOwnerWithPlanAndQuestionsAsync(hrUserId);
-        var roleTitleByJobId = jobs.ToDictionary(j => j.Id, ResolveRoleTitle);
+        var projects = await _studioStats.GetProjectStatsByOwnerAsync(hrUserId);
 
-        var totalSessions = jobs.Count;
-        var completedSessions = jobs.Count(j => j.Status == QuestionGenerationJobStatus.Completed);
-        var totalQuestionsGenerated = jobs.Sum(j => j.Questions.Count);
+        var totalSessions = projects.Count;
+        var completedSessions = projects.Count(IsCompleted);
+        var totalQuestionsGenerated = projects.Sum(p => p.QuestionCount);
         var successRatePercent = totalSessions == 0
             ? 0
             : Math.Round((double)completedSessions / totalSessions * 100, 2);
 
         var nowUtc = DateTime.UtcNow;
-        var thisMonthSessions = jobs.Count(j => j.CreatedAt.Year == nowUtc.Year && j.CreatedAt.Month == nowUtc.Month);
+        var thisMonthSessions = projects.Count(p =>
+            p.CreatedAt.Year == nowUtc.Year && p.CreatedAt.Month == nowUtc.Month);
 
-        var topRole = roleTitleByJobId.Values
-            .Where(r => !string.IsNullOrWhiteSpace(r) && !PlanJsonSummaryReader.LooksLikeSkillsList(r!))
+        var topRole = projects
+            .Select(p => p.RoleTitle)
+            .Where(r => !string.IsNullOrWhiteSpace(r))
             .GroupBy(r => r!, StringComparer.OrdinalIgnoreCase)
             .OrderByDescending(g => g.Count())
             .Select(g => g.Key)
             .FirstOrDefault();
 
-        var dailyActivity = BuildDailyActivity(jobs, activityDays, nowUtc.Date);
+        var dailyActivity = BuildDailyActivity(projects, activityDays, nowUtc.Date);
 
-        var questionTypeDistribution = jobs
-            .SelectMany(j => j.Questions)
-            .Select(q => QuestionTypeNormalizer.NormalizeOne(q.QuestionType))
-            .GroupBy(t => t, StringComparer.OrdinalIgnoreCase)
-            .Select(g => new HrDashboardQuestionTypeDistributionItemDto { Type = g.Key, Count = g.Count() })
+        var questionTypeDistribution = projects
+            .SelectMany(p => p.QuestionTypeCounts)
+            .GroupBy(t => QuestionTypeNormalizer.NormalizeOne(t.Type), StringComparer.OrdinalIgnoreCase)
+            .Select(g => new HrDashboardQuestionTypeDistributionItemDto
+            {
+                Type = g.Key,
+                Count = g.Sum(x => x.Count)
+            })
             .OrderByDescending(x => x.Count)
             .ToList();
 
         var topQuestionType = questionTypeDistribution.FirstOrDefault()?.Type;
 
-        var recentSessions = jobs
-            .OrderByDescending(j => j.CreatedAt)
+        var recentSessions = projects
+            .OrderByDescending(p => p.UpdatedAt ?? p.CreatedAt)
             .Take(recentLimit)
-            .Select(j => new HrDashboardRecentSessionDto
+            .Select(p => new HrDashboardRecentSessionDto
             {
-                Id = j.Id,
-                RoleTitle = roleTitleByJobId[j.Id],
-                Status = MapSimplifiedStatus(j.Status),
-                QuestionCount = j.Questions.Count,
-                CreatedAt = j.CreatedAt
+                Id = p.ProjectId,
+                RoleTitle = p.RoleTitle ?? p.Name,
+                Status = MapSimplifiedStatus(p),
+                QuestionCount = p.QuestionCount,
+                CreatedAt = p.CreatedAt
             })
             .ToList();
 
         var thisWeekStart = nowUtc.Date.AddDays(-6);
         var lastWeekStart = thisWeekStart.AddDays(-7);
-        var thisWeekCount = jobs.Count(j => j.CreatedAt.Date >= thisWeekStart);
-        var lastWeekCount = jobs.Count(j => j.CreatedAt.Date >= lastWeekStart && j.CreatedAt.Date < thisWeekStart);
+        var thisWeekCount = projects.Count(p => p.CreatedAt.Date >= thisWeekStart);
+        var lastWeekCount = projects.Count(p =>
+            p.CreatedAt.Date >= lastWeekStart && p.CreatedAt.Date < thisWeekStart);
         var weekOverWeekDelta = thisWeekCount - lastWeekCount;
         var weekOverWeekTrend = weekOverWeekDelta > 0 ? "up" : weekOverWeekDelta < 0 ? "down" : "flat";
 
-        // Default sort score desc — giữ hành vi Top Candidates như trước SCRUM-328.
         var (recommendationRows, _) = await _recommendationRepository.ListByHrAsync(
             hrUserId,
             page: 1,
@@ -153,11 +157,11 @@ public class HrDashboardService : IHrDashboardService
     }
 
     private static List<HrDashboardDailyActivityItemDto> BuildDailyActivity(
-        IReadOnlyList<QuestionGenerationJob> jobs, int activityDays, DateTime todayUtc)
+        IReadOnlyList<HrStudioProjectStatRow> projects, int activityDays, DateTime todayUtc)
     {
         var fromDate = todayUtc.AddDays(-(activityDays - 1));
-        var countsByDay = jobs
-            .GroupBy(j => j.CreatedAt.Date)
+        var countsByDay = projects
+            .GroupBy(p => p.CreatedAt.Date)
             .ToDictionary(g => g.Key, g => g.Count());
 
         return Enumerable.Range(0, activityDays)
@@ -170,20 +174,16 @@ public class HrDashboardService : IHrDashboardService
             .ToList();
     }
 
-    private static string? ResolveRoleTitle(QuestionGenerationJob job)
-    {
-        if (job.Plan is null)
-            return null;
+    private static bool IsCompleted(HrStudioProjectStatRow p)
+        => p.Status is InterviewProjectStatus.Generated
+           || p.QuestionCount > 0;
 
-        var summary = PlanJsonSummaryReader.Read(job, job.Plan);
-        return string.IsNullOrWhiteSpace(summary.Role) ? null : summary.Role;
+    private static string MapSimplifiedStatus(HrStudioProjectStatRow p)
+    {
+        if (p.Status == InterviewProjectStatus.Archived)
+            return SimplifiedFailed;
+        if (IsCompleted(p))
+            return SimplifiedCompleted;
+        return SimplifiedProcessing;
     }
-
-    private static string MapSimplifiedStatus(string rawStatus) => rawStatus switch
-    {
-        QuestionGenerationJobStatus.Completed => SimplifiedCompleted,
-        QuestionGenerationJobStatus.Failed => SimplifiedFailed,
-        QuestionGenerationJobStatus.Cancelled => SimplifiedFailed,
-        _ => SimplifiedProcessing
-    };
 }

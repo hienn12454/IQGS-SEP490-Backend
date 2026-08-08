@@ -15,7 +15,8 @@ internal static class PublishedQuestionSetMapper
         PropertyNameCaseInsensitive = true
     };
 
-    public static CandidateQuestionSetListItemDto ToListItemDto(PublishedQuestionSetRow row) => new()
+    public static CandidateQuestionSetListItemDto ToListItemDto(
+        PublishedQuestionSetRow row, int minAttemptsForTrending = 10) => new()
     {
         Id = row.Id,
         Title = ResolveTitle(row.Title, row.CompanyName),
@@ -29,7 +30,9 @@ internal static class PublishedQuestionSetMapper
         EstimatedTimeMinutes = row.TimeLimitMinutes ?? row.TotalQuestions * EstimatedMinutesPerQuestion,
         TimeLimitMinutes = row.TimeLimitMinutes,
         Rating = RoundRating(row.Rating),
-        AttemptCount = row.AttemptCount
+        AttemptCount = row.AttemptCount,
+        IsPinned = row.IsPinned,
+        IsTrending = row.AttemptCount >= minAttemptsForTrending
     };
 
     public static string ResolveTitle(string? title, string companyName) =>

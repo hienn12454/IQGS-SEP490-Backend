@@ -44,11 +44,26 @@ public sealed class StudioInterviewProjectsController(IInterviewProjectService p
         return NoContent();
     }
 
-    [HttpPost("{projectId:guid}/save-draft")]
-    public async Task<IActionResult> SaveDraft(Guid projectId, CancellationToken ct)
+    [HttpPost("{projectId:guid}/save")]
+    [HttpPost("{projectId:guid}/save-draft")] // alias FE cũ 1 sprint
+    public async Task<IActionResult> Save(Guid projectId, CancellationToken ct)
     {
-        await projectService.EnsureProjectAccessAsync(projectId, GetUserId(), requireEdit: true, ct);
-        return Ok(new { message = "Đã lưu draft." });
+        var result = await projectService.SaveQuestionSetAsync(projectId, GetUserId(), ct);
+        return Ok(result);
+    }
+
+    [HttpPost("{projectId:guid}/publish")]
+    public async Task<IActionResult> Publish(Guid projectId, CancellationToken ct)
+    {
+        await projectService.PublishFromProjectAsync(projectId, GetUserId(), ct);
+        return Ok(new { message = "Đã publish." });
+    }
+
+    [HttpPost("{projectId:guid}/unpublish")]
+    public async Task<IActionResult> Unpublish(Guid projectId, CancellationToken ct)
+    {
+        await projectService.UnpublishFromProjectAsync(projectId, GetUserId(), ct);
+        return Ok(new { message = "Đã unpublish." });
     }
 
     private Guid GetUserId()

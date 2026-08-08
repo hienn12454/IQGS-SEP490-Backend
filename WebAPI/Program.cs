@@ -27,7 +27,9 @@ using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.Unicode;
+using WebAPI.Hubs;
 using WebAPI.Middleware;
+using WebAPI.Realtime;
 using Serilog;
 
 namespace WebAPI;
@@ -260,16 +262,36 @@ public class Program
                         {
                             ctx.Fail("Phiên làm việc đã kết thúc. Vui lòng đăng nhập lại.");
                         }
+                    },
+
+                    // SCRUM-387: SignalR browser gửi JWT qua query ?access_token=...
+                    OnMessageReceived = ctx =>
+                    {
+                        var accessToken = ctx.Request.Query["access_token"];
+                        var path = ctx.HttpContext.Request.Path;
+                        if (!string.IsNullOrEmpty(accessToken)
+                            && path.StartsWithSegments("/hubs"))
+                        {
+                            ctx.Token = accessToken;
+                        }
+
+                        return Task.CompletedTask;
                     }
                 };
             });
 
         builder.Services.AddAuthorization();
 
+        // SCRUM-387: realtime payment push (hub + notifier)
+        builder.Services.AddSignalR();
+        builder.Services.AddSingleton<ISubscriptionPaymentRealtimeNotifier, SignalRSubscriptionPaymentNotifier>();
+
         builder.Services.AddCors(options =>
         {
             options.AddDefaultPolicy(policy =>
             {
+                // SignalR negotiate + WebSocket: không dùng AllowAnyOrigin khi cần cookies.
+                // FE dùng JWT access_token (query) — không cookie → Keep AllowAnyOrigin.
                 policy.AllowAnyOrigin()
                       .AllowAnyMethod()
                       .AllowAnyHeader();
@@ -285,6 +307,7 @@ public class Program
         builder.Services.AddScoped<ICandidateAnswerRepository, CandidateAnswerRepository>();
         builder.Services.AddScoped<IAiFeedbackRepository, AiFeedbackRepository>();
         builder.Services.AddScoped<ICandidateMarketplaceRepository, CandidateMarketplaceRepository>();
+        builder.Services.AddScoped<IAdminMarketplaceRepository, AdminMarketplaceRepository>();
         builder.Services.AddScoped<ICandidateRecommendationRepository, CandidateRecommendationRepository>();
         builder.Services.AddScoped<ICandidateInvitationRepository, CandidateInvitationRepository>();
         builder.Services.AddScoped<ICandidateOfferRepository, CandidateOfferRepository>();
@@ -297,6 +320,7 @@ public class Program
         builder.Services.AddScoped<IKnowledgeDocumentRepository, KnowledgeDocumentRepository>();
         builder.Services.AddScoped<IQuestionGenerationJobRepository, QuestionGenerationJobRepository>();
         builder.Services.AddScoped<IQuestionSetRepository, QuestionSetRepository>();
+        builder.Services.AddScoped<IHrDashboardStudioStatsRepository, HrDashboardStudioStatsRepository>();
         builder.Services.AddScoped<IHrQuestionSetBookmarkRepository, HrQuestionSetBookmarkRepository>();
 
         // Services
@@ -319,6 +343,7 @@ public class Program
         builder.Services.AddScoped<ICandidatePracticeSessionService, CandidatePracticeSessionService>();
         builder.Services.AddScoped<ICandidatePrivacySettingsService, CandidatePrivacySettingsService>();
         builder.Services.AddScoped<IRecommendationService, RecommendationService>();
+        builder.Services.AddScoped<IHrCandidateOverviewService, HrCandidateOverviewService>();
         builder.Services.AddScoped<ICandidateInvitationService, CandidateInvitationService>();
         builder.Services.AddScoped<ICandidateOfferService, CandidateOfferService>();
         builder.Services.AddScoped<IPlatformSettingsService, PlatformSettingsService>();
@@ -326,6 +351,7 @@ public class Program
         builder.Services.AddScoped<ISubscriptionGateService, SubscriptionGateService>();
         builder.Services.AddScoped<ISubscriptionService, SubscriptionService>();
         builder.Services.AddScoped<IAdminSubscriptionPlanService, AdminSubscriptionPlanService>();
+        builder.Services.AddScoped<IAdminMarketplaceService, AdminMarketplaceService>();
         builder.Services.AddScoped<IKnowledgeDocumentInternalService, KnowledgeDocumentInternalService>();
         builder.Services.AddScoped<IQuestionGenerationJobService, QuestionGenerationJobService>();
         builder.Services.AddScoped<IQuestionGenerationJobInternalService, QuestionGenerationJobInternalService>();
@@ -358,6 +384,7 @@ public class Program
         builder.Services.AddScoped<IStuckKnowledgeDocumentWatchdogJob, StuckKnowledgeDocumentWatchdogJob>();
         builder.Services.AddScoped<IStuckQuestionGenerationWatchdogJob, StuckQuestionGenerationWatchdogJob>();
         builder.Services.AddScoped<IExpiredPracticeSessionWatchdogJob, ExpiredPracticeSessionWatchdogJob>();
+        builder.Services.AddScoped<IExpirePendingUpgradeOrdersJob, ExpirePendingUpgradeOrdersJob>();
         builder.Services.AddSingleton<IJobScheduler, JobScheduler>();
 
         var app = builder.Build();
@@ -421,8 +448,15 @@ public class Program
             "expired-practice-sessions",
             job => job.ExecuteAsync(),
             "* * * * *");
+        // TTL 10p đơn SePay upgrade — dọn Pending quá ExpiresAt
+        RecurringJob.AddOrUpdate<IExpirePendingUpgradeOrdersJob>(
+            "expire-pending-upgrade-orders",
+            job => job.ExecuteAsync(),
+            "*/5 * * * *");
 
         app.MapControllers();
+        // SCRUM-387: FE kết nối Hub này để nhận PaymentPaid sau webhook SePay
+        app.MapHub<SubscriptionPaymentHub>(SubscriptionPaymentHub.HubPath);
         app.Run();
     }
 

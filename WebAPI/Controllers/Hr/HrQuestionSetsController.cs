@@ -4,6 +4,7 @@ using ApplicationLayer.Interfaces.Services;
 using ApplicationLayer.ResponseCode;
 using DomainLayer.Exceptions;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
 
@@ -31,6 +32,15 @@ public class HrQuestionSetsController : ControllerBase
     {
         var result = await _service.ListQuestionSetsAsync(GetCurrentUserId(), query);
         return SuccessResp.Ok(result);
+    }
+
+    /// <summary>SCRUM-397: tạo bộ câu hỏi DRAFT rỗng từ Question Builder (chưa cần Studio Generate).</summary>
+    /// <param name="dto">title bắt buộc; description tùy chọn (lưu HrNote).</param>
+    [HttpPost]
+    public async Task<IActionResult> CreateManualDraft([FromBody] CreateManualDraftQuestionSetRequestDto dto)
+    {
+        var result = await _service.CreateManualDraftAsync(GetCurrentUserId(), dto);
+        return SuccessResp.Created(result);
     }
 
     /// <summary>Chi tiết 1 bộ câu hỏi kèm toàn bộ câu hỏi (có sampleAnswer/evaluationCriteria — chỉ HR chủ sở hữu mới xem được).</summary>
@@ -141,6 +151,52 @@ public class HrQuestionSetsController : ControllerBase
         return SuccessResp.Ok(result);
     }
 
+    /// <summary>SCRUM-396: HR upload ảnh đính kèm câu hỏi trong bộ (History).</summary>
+    [HttpPost("{questionSetId:guid}/questions/{questionId:guid}/image")]
+    [Consumes("multipart/form-data")]
+    [RequestSizeLimit(6 * 1024 * 1024)]
+    public async Task<IActionResult> UploadQuestionImage(
+        Guid questionSetId,
+        Guid questionId,
+        [FromForm] QuestionSetQuestionImageUploadForm form)
+    {
+        if (form.File is null || form.File.Length == 0)
+            return BadRequest(new { Code = 400, Error = "File ảnh là bắt buộc." });
+
+        await using var stream = form.File.OpenReadStream();
+        var result = await _service.UploadQuestionImageAsync(
+            questionSetId, questionId, GetCurrentUserId(),
+            stream, form.File.FileName, form.File.ContentType, form.File.Length);
+        return SuccessResp.Ok(result);
+    }
+
+    /// <summary>SCRUM-396: xóa ảnh đính kèm câu hỏi trong bộ.</summary>
+    [HttpDelete("{questionSetId:guid}/questions/{questionId:guid}/image")]
+    public async Task<IActionResult> DeleteQuestionImage(Guid questionSetId, Guid questionId)
+    {
+        var result = await _service.DeleteQuestionImageAsync(questionSetId, questionId, GetCurrentUserId());
+        return SuccessResp.Ok(result);
+    }
+
+    /// <summary>SCRUM-391: xuất Excel bộ câu hỏi (cần quyền CanExport trên gói subscription).</summary>
+    [HttpGet("{id:guid}/export")]
+    public async Task<IActionResult> Export(Guid id)
+    {
+        var file = await _service.ExportExcelAsync(id, GetCurrentUserId());
+        return File(
+            file.Content,
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            file.FileName);
+    }
+
+    /// <summary>SCRUM-391: soft-delete bộ câu hỏi khỏi History (unpublish nếu đang PUBLISHED).</summary>
+    [HttpDelete("{id:guid}")]
+    public async Task<IActionResult> SoftDelete(Guid id)
+    {
+        await _service.SoftDeleteAsync(id, GetCurrentUserId());
+        return SuccessResp.Ok(new { questionSetId = id, deleted = true });
+    }
+
     private Guid GetCurrentUserId()
     {
         var userIdStr = User.FindFirst("sub")?.Value
@@ -151,4 +207,10 @@ public class HrQuestionSetsController : ControllerBase
 
         return userId;
     }
+}
+
+/// <summary>SCRUM-396: form upload ảnh câu hỏi Question Set.</summary>
+public sealed class QuestionSetQuestionImageUploadForm
+{
+    public IFormFile? File { get; set; }
 }

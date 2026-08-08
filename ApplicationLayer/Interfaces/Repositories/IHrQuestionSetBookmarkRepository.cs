@@ -9,4 +9,6 @@ public interface IHrQuestionSetBookmarkRepository
     Task AddAsync(HrQuestionSetBookmark bookmark);
     Task DeleteAsync(HrQuestionSetBookmark bookmark);
     Task<IReadOnlyList<QuestionSet>> ListBookmarkedQuestionSetsAsync(Guid hrUserId);
+    /// <summary>SCRUM-391: id các set HR đã bookmark (cho list History).</summary>
+    Task<HashSet<Guid>> GetBookmarkedQuestionSetIdsAsync(Guid hrUserId);
 }
