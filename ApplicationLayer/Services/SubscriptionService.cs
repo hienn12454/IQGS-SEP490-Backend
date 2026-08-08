@@ -6,6 +6,7 @@ using ApplicationLayer.Settings;
 using DomainLayer.Constants;
 using DomainLayer.Entities;
 using DomainLayer.Exceptions;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -39,6 +40,9 @@ public class SubscriptionService : ISubscriptionService
     private readonly ISePayGateway _sePayGateway;
     private readonly SePaySettings _sePaySettings;
     private readonly ISubscriptionPaymentRealtimeNotifier _paymentNotifier;
+    private readonly IUserRepository _userRepo;
+    private readonly IEmailService _emailService;
+    private readonly IConfiguration _config;
 
     public SubscriptionService(
         ISubscriptionPlanRepository planRepo,
@@ -48,7 +52,10 @@ public class SubscriptionService : ISubscriptionService
         IUsageMeteringService metering,
         ISePayGateway sePayGateway,
         IOptions<SePaySettings> sePaySettings,
-        ISubscriptionPaymentRealtimeNotifier paymentNotifier)
+        ISubscriptionPaymentRealtimeNotifier paymentNotifier,
+        IUserRepository userRepo,
+        IEmailService emailService,
+        IConfiguration config)
     {
         _planRepo = planRepo;
         _subscriptionRepo = subscriptionRepo;
@@ -58,6 +65,9 @@ public class SubscriptionService : ISubscriptionService
         _sePayGateway = sePayGateway;
         _sePaySettings = sePaySettings.Value;
         _paymentNotifier = paymentNotifier;
+        _userRepo = userRepo;
+        _emailService = emailService;
+        _config = config;
     }
 
     public async Task AssignFreePlanAsync(Guid userId, string audience)
@@ -307,9 +317,11 @@ public class SubscriptionService : ISubscriptionService
 
         tx.ConfirmedAt = normalized.PaidAt ?? DateTime.UtcNow;
         await _txRepo.UpdateAsync(tx);
-        await ApplyPremiumByTransactionAsync(tx);
+        var upgradedSub = await ApplyPremiumByTransactionAsync(tx);
         // SCRUM-387: push realtime → FE đóng QR modal ngay, không chờ poll
         await TryNotifyPaymentPaidAsync(tx, orderCode);
+        // Chúc mừng nâng cấp Premium + hóa đơn — best-effort, không làm fail webhook.
+        await TrySendPremiumEmailsAsync(upgradedSub, tx);
 
         return new SePayWebhookProcessResultDto
         {
@@ -333,6 +345,35 @@ public class SubscriptionService : ISubscriptionService
                 orderCode,
                 tx.Amount,
                 tx.Currency);
+        }
+        catch
+        {
+            // Không ném — webhook 200 vẫn quan trọng với SePay.
+        }
+    }
+
+    /// <summary>Gửi email chúc mừng nâng cấp Premium + hóa đơn thanh toán; lỗi gửi mail không làm fail webhook.</summary>
+    private async Task TrySendPremiumEmailsAsync(Subscription sub, SubscriptionTransaction tx)
+    {
+        try
+        {
+            var user = await _userRepo.GetByIdAsync(sub.UserId);
+            if (user is null) return;
+
+            var planName = sub.Plan?.Name ?? "Premium";
+            var frontendUrl = (_config["AppSettings:FrontendUrl"] ?? "https://iqgs.com").TrimEnd('/');
+            var appLink = $"{frontendUrl}/subscription";
+
+            await _emailService.SendPremiumActivatedEmailAsync(
+                user.Email, user.FullName, planName,
+                sub.CurrentPeriodStart, sub.CurrentPeriodEnd, appLink);
+
+            await _emailService.SendSubscriptionInvoiceEmailAsync(
+                user.Email, user.FullName,
+                tx.OrderCode ?? tx.Id.ToString(),
+                planName, tx.Amount, tx.Currency,
+                tx.ConfirmedAt ?? DateTime.UtcNow,
+                sub.CurrentPeriodStart, sub.CurrentPeriodEnd, appLink);
         }
         catch
         {
@@ -475,7 +516,7 @@ public class SubscriptionService : ISubscriptionService
         throw new BadRequestException("audience phải là HR hoặc Candidate.");
     }
 
-    private async Task ApplyPremiumByTransactionAsync(SubscriptionTransaction tx)
+    private async Task<Subscription> ApplyPremiumByTransactionAsync(SubscriptionTransaction tx)
     {
         var sub = await _subscriptionRepo.GetByIdWithPlanAsync(tx.SubscriptionId)
             ?? throw new NotFoundException("Không tìm thấy subscription.");
@@ -502,6 +543,7 @@ public class SubscriptionService : ISubscriptionService
         sub.CurrentPeriodEnd = now.AddMonths(1);
         sub.UpdatedAt = now;
         await _subscriptionRepo.UpdateAsync(sub);
+        return sub;
     }
 
     private static string BuildOrderCode(string audience)
