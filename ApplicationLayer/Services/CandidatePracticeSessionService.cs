@@ -10,6 +10,9 @@ using DomainLayer.Constants;
 using DomainLayer.Entities;
 using DomainLayer.Exceptions;
 using Microsoft.Extensions.Logging;
+using QuestionCompletionXpContext = ApplicationLayer.DTOs.Gamification.QuestionCompletionXpContext;
+using QuestionSetCompletionXpContext = ApplicationLayer.DTOs.Gamification.QuestionSetCompletionXpContext;
+using XpRewardDto = ApplicationLayer.DTOs.Gamification.XpRewardDto;
 
 namespace ApplicationLayer.Services;
 
@@ -29,6 +32,7 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
     private readonly ISubscriptionGateService _subscriptionGate;
     private readonly IUsageMeteringService _usageMetering;
     private readonly IBlobStorageService _blobStorage;
+    private readonly IGamificationService _gamificationService;
     private readonly ILogger<CandidatePracticeSessionService> _logger;
 
     public CandidatePracticeSessionService(
@@ -41,6 +45,7 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
         ISubscriptionGateService subscriptionGate,
         IUsageMeteringService usageMetering,
         IBlobStorageService blobStorage,
+        IGamificationService gamificationService,
         ILogger<CandidatePracticeSessionService> logger)
     {
         _sessionRepository = sessionRepository;
@@ -52,6 +57,7 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
         _subscriptionGate = subscriptionGate;
         _usageMetering = usageMetering;
         _blobStorage = blobStorage;
+        _gamificationService = gamificationService;
         _logger = logger;
     }
 
@@ -65,7 +71,7 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
         if (existingSession is not null)
         {
             var timeLimit = await _sessionRepository.GetTimeLimitMinutesAsync(questionSetId);
-            if (!await AutoSubmitIfExpiredAsync(existingSession, timeLimit))
+            if (await AutoSubmitIfExpiredAsync(existingSession, timeLimit) is null)
                 return await BuildSessionResponseAsync(existingSession);
             // Phiên dở dang đã hết giờ và vừa được tự động nộp — bắt đầu phiên mới bên dưới.
         }
@@ -85,7 +91,7 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
     public async Task<PracticeSessionResponseDto> GetByIdAsync(Guid sessionId, Guid candidateUserId)
     {
         var session = await GetOwnedSessionAsync(sessionId, candidateUserId);
-        await AutoSubmitIfExpiredAsync(session, await _sessionRepository.GetTimeLimitMinutesAsync(session.QuestionSetId));
+        _ = await AutoSubmitIfExpiredAsync(session, await _sessionRepository.GetTimeLimitMinutesAsync(session.QuestionSetId));
         return await BuildSessionResponseAsync(session);
     }
 
@@ -94,7 +100,7 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
     {
         var session = await GetOwnedSessionAsync(sessionId, candidateUserId);
 
-        if (await AutoSubmitIfExpiredAsync(session, await _sessionRepository.GetTimeLimitMinutesAsync(session.QuestionSetId)))
+        if (await AutoSubmitIfExpiredAsync(session, await _sessionRepository.GetTimeLimitMinutesAsync(session.QuestionSetId)) is not null)
             throw new BadRequestException("Đã hết thời gian làm bài — phiên đã được tự động nộp.");
 
         if (session.Status != PracticeSessionStatus.InProgress)
@@ -150,14 +156,15 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
         var session = await GetOwnedSessionAsync(sessionId, candidateUserId);
 
         // Hết giờ thì phiên đã được tự nộp tại đúng deadline — candidate bấm nộp sau đó vẫn nhận kết quả bình thường.
-        if (!await AutoSubmitIfExpiredAsync(session, await _sessionRepository.GetTimeLimitMinutesAsync(session.QuestionSetId)))
+        var xpRewards = await AutoSubmitIfExpiredAsync(session, await _sessionRepository.GetTimeLimitMinutesAsync(session.QuestionSetId));
+        if (xpRewards is null)
         {
             if (session.Status != PracticeSessionStatus.InProgress)
                 throw new BadRequestException("Chỉ có thể hoàn thành phiên đang ở trạng thái IN_PROGRESS.");
 
             session.Status = PracticeSessionStatus.Completed;
             session.CompletedAt = DateTime.UtcNow;
-            await FinalizeCompletedSessionAsync(session);
+            xpRewards = await FinalizeCompletedSessionAsync(session);
         }
 
         return new PracticeSessionCompleteResponseDto
@@ -166,6 +173,7 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
             Status = session.Status,
             CompletedAt = session.CompletedAt,
             OverallScore = session.OverallScore,
+            XpReward = MergeXpRewards(xpRewards),
             DurationSeconds = ComputeDurationSeconds(session.StartedAt, session.CompletedAt),
             AiInsight = MapAiInsight(session)
         };
@@ -194,7 +202,7 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
     {
         var session = await GetOwnedSessionAsync(sessionId, candidateUserId);
 
-        if (await AutoSubmitIfExpiredAsync(session, await _sessionRepository.GetTimeLimitMinutesAsync(session.QuestionSetId)))
+        if (await AutoSubmitIfExpiredAsync(session, await _sessionRepository.GetTimeLimitMinutesAsync(session.QuestionSetId)) is not null)
             throw new BadRequestException("Phiên đã hết thời gian và được tự động nộp — không thể huỷ.");
 
         if (session.Status != PracticeSessionStatus.InProgress)
@@ -494,30 +502,33 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
 
     /// <summary>
     /// Hết giờ làm bài → tự động nộp: chuyển COMPLETED với CompletedAt = đúng deadline (không tính thời gian trễ),
-    /// giữ nguyên các câu trả lời đã submit và chấm điểm như nộp tay. Trả về true nếu vừa tự nộp.
+    /// giữ nguyên các câu trả lời đã submit và chấm điểm như nộp tay.
+    /// Trả về danh sách XP reward vừa award nếu vừa tự nộp — null nếu phiên chưa hết giờ / đã xong từ trước.
     /// </summary>
-    private async Task<bool> AutoSubmitIfExpiredAsync(PracticeSession session, int? timeLimitMinutes)
+    private async Task<List<XpRewardDto>?> AutoSubmitIfExpiredAsync(PracticeSession session, int? timeLimitMinutes)
     {
         if (session.Status != PracticeSessionStatus.InProgress)
-            return false;
+            return null;
 
         var expiresAt = ComputeExpiresAt(session.StartedAt, timeLimitMinutes);
         if (expiresAt is null || DateTime.UtcNow < expiresAt)
-            return false;
+            return null;
 
         session.Status = PracticeSessionStatus.Completed;
         session.CompletedAt = expiresAt;
         session.UpdatedAt = DateTime.UtcNow;
-        await FinalizeCompletedSessionAsync(session);
-        return true;
+        return await FinalizeCompletedSessionAsync(session);
     }
 
     /// <summary>
     /// SCRUM-332 + Teaser Freemium: evaluate answers theo entitlement, rồi overall / insight / recommendation.
+    /// Đồng thời award Gamification XP (QuestionCompleted/ScoreBonus/ImprovementBonus theo từng câu vừa chấm
+    /// AI thành công + QuestionSetCompleted khi phiên hoàn thành) — trả về mọi XpRewardDto vừa phát sinh để
+    /// CompleteAsync gộp lại trả FE. Gamification lỗi không được làm fail việc hoàn thành phiên.
     /// </summary>
-    private async Task FinalizeCompletedSessionAsync(PracticeSession session)
+    private async Task<List<XpRewardDto>> FinalizeCompletedSessionAsync(PracticeSession session)
     {
-        await EvaluateAnswersForSessionAsync(session);
+        var xpRewards = await EvaluateAnswersForSessionAsync(session);
 
         var canDetailed = await _subscriptionGate.CanDetailedAiFeedbackAsync(session.CandidateUserId);
         if (canDetailed)
@@ -526,27 +537,38 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
             await TryGenerateAiInsightAsync(session);
             await _sessionRepository.UpdateAsync(session);
             await TryGenerateRecommendationAsync(session);
-            return;
+        }
+        else
+        {
+            // Free: overall = điểm câu teaser (không chia cho N câu — tránh điểm bị kéo thấp giả tạo)
+            session.OverallScore = await ComputeTeaserOverallScoreAsync(session);
+            await _sessionRepository.UpdateAsync(session);
+            // Free không sinh insight đầy đủ / không persist recommendation HR
         }
 
-        // Free: overall = điểm câu teaser (không chia cho N câu — tránh điểm bị kéo thấp giả tạo)
-        session.OverallScore = await ComputeTeaserOverallScoreAsync(session);
-        await _sessionRepository.UpdateAsync(session);
-        // Free không sinh insight đầy đủ / không persist recommendation HR
+        var setReward = await TryAwardQuestionSetCompletionXpAsync(session);
+        if (setReward is not null)
+            xpRewards.Add(setReward);
+
+        return xpRewards;
     }
 
     /// <summary>
     /// Premium: chấm mọi answer. Free: chỉ chấm FreeTeaserFeedbackCount câu (ưu tiên answer dài nhất).
-    /// Idempotent nếu đã có Succeeded feedback.
+    /// Idempotent nếu đã có Succeeded feedback. Với mỗi câu có kết quả AI chấm Succeeded (kể cả câu đã chấm
+    /// từ lần gọi trước — retry-safe) thử award Gamification XP; câu bị skip-gate (rỗng/spam, auto score 0)
+    /// KHÔNG được coi là hoạt động luyện tập có ý nghĩa nên không award XP.
     /// </summary>
-    private async Task EvaluateAnswersForSessionAsync(PracticeSession session)
+    private async Task<List<XpRewardDto>> EvaluateAnswersForSessionAsync(PracticeSession session)
     {
+        var xpRewards = new List<XpRewardDto>();
+
         var questions = (await _marketplaceRepository.GetQuestionsSnapshotAsync(session.QuestionSetId))
             .OrderBy(q => q.Order)
             .ToList();
         var answers = await _answerRepository.GetEntitiesBySessionIdAsync(session.Id);
         if (answers.Count == 0)
-            return;
+            return xpRewards;
 
         var feedbacks = await _feedbackRepository.GetBySessionIdAsync(session.Id);
         var feedbackByAnswerId = feedbacks.ToDictionary(f => f.CandidateAnswerId);
@@ -567,14 +589,18 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
 
         foreach (var answer in toEvaluate)
         {
+            var answerText = answer.AnswerText?.Trim() ?? string.Empty;
+            // Pure/deterministic theo answerText — tính lại được ở cả câu đã có feedback Succeeded từ trước,
+            // để phân biệt "AI chấm thật" với "skip-gate auto score 0" khi retry (không dựa vào field đã lưu).
+            var isSkipGated = AnswerEvaluationGate.TrySkip(answerText, out var skipReason);
+
+            double? score;
             if (feedbackByAnswerId.TryGetValue(answer.Id, out var existing)
                 && existing.EvaluationStatus == AiFeedbackEvaluationStatus.Succeeded)
             {
-                continue;
+                score = existing.Score;
             }
-
-            var answerText = answer.AnswerText?.Trim() ?? string.Empty;
-            if (AnswerEvaluationGate.TrySkip(answerText, out var skipReason))
+            else if (isSkipGated)
             {
                 _logger.LogInformation(
                     "Bỏ qua RAG evaluate cho answer {AnswerId}: {Reason}",
@@ -591,10 +617,103 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
                     errorMessage: null);
                 continue;
             }
+            else
+            {
+                var (evalStatus, evalScore, _, _, _, _, _) = await EvaluateAndPersistAsync(answer, answer.QuestionSetQuestionId);
+                await _usageMetering.IncrementAsync(session.CandidateUserId, UsageType.CandidateFeedback);
 
-            await EvaluateAndPersistAsync(answer, answer.QuestionSetQuestionId);
-            await _usageMetering.IncrementAsync(session.CandidateUserId, UsageType.CandidateFeedback);
+                if (evalStatus != AiFeedbackEvaluationStatus.Succeeded)
+                    continue;
+
+                score = evalScore;
+            }
+
+            if (isSkipGated || !score.HasValue)
+                continue;
+
+            var reward = await TryAwardQuestionCompletionXpAsync(session, answer, score.Value, questions);
+            if (reward is not null)
+                xpRewards.Add(reward);
         }
+
+        return xpRewards;
+    }
+
+    /// <summary>Award QuestionCompleted/ScoreBonus/ImprovementBonus cho 1 câu vừa có điểm AI Succeeded. Lỗi gamification không làm fail việc chấm bài.</summary>
+    private async Task<XpRewardDto?> TryAwardQuestionCompletionXpAsync(
+        PracticeSession session, CandidateAnswer answer, double score, IReadOnlyList<PublishedQuestionRow> questions)
+    {
+        try
+        {
+            var questionType = questions.FirstOrDefault(q => q.Id == answer.QuestionSetQuestionId)?.QuestionType ?? string.Empty;
+            var previousBestScore = await _feedbackRepository.GetPreviousBestSucceededScoreAsync(
+                session.CandidateUserId, answer.QuestionSetQuestionId, session.Id);
+
+            return await _gamificationService.AwardQuestionCompletionAsync(new QuestionCompletionXpContext
+            {
+                UserId = session.CandidateUserId,
+                QuestionSetQuestionId = answer.QuestionSetQuestionId,
+                CandidateAnswerId = answer.Id,
+                QuestionSetId = session.QuestionSetId,
+                PracticeSessionId = session.Id,
+                Score = score,
+                QuestionType = questionType,
+                PreviousBestScore = previousBestScore,
+                OccurredAtUtc = DateTime.UtcNow
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "Award QuestionCompleted XP thất bại cho answer {AnswerId} (session {SessionId}) — không ảnh hưởng kết quả chấm bài.",
+                answer.Id, session.Id);
+            return null;
+        }
+    }
+
+    /// <summary>Award QuestionSetCompleted (+20 XP mặc định) khi phiên chuyển COMPLETED. Lỗi gamification không làm fail việc hoàn thành phiên.</summary>
+    private async Task<XpRewardDto?> TryAwardQuestionSetCompletionXpAsync(PracticeSession session)
+    {
+        try
+        {
+            return await _gamificationService.AwardQuestionSetCompletionAsync(new QuestionSetCompletionXpContext
+            {
+                UserId = session.CandidateUserId,
+                PracticeSessionId = session.Id,
+                QuestionSetId = session.QuestionSetId,
+                OccurredAtUtc = session.CompletedAt ?? DateTime.UtcNow
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "Award QuestionSetCompleted XP thất bại cho session {SessionId} — không ảnh hưởng kết quả hoàn thành phiên.",
+                session.Id);
+            return null;
+        }
+    }
+
+    /// <summary>Gộp mọi XpRewardDto phát sinh trong 1 lần Complete() (nhiều câu + set-completion) thành 1 tổng để trả FE.</summary>
+    private static XpRewardDto? MergeXpRewards(IReadOnlyList<XpRewardDto> rewards)
+    {
+        if (rewards.Count == 0)
+            return null;
+
+        var first = rewards[0];
+        var last = rewards[^1];
+
+        return new XpRewardDto
+        {
+            TotalEarned = rewards.Sum(r => r.TotalEarned),
+            Rewards = rewards.SelectMany(r => r.Rewards).ToList(),
+            PreviousLevel = first.PreviousLevel,
+            CurrentLevel = last.CurrentLevel,
+            PreviousTotalXp = first.PreviousTotalXp,
+            CurrentTotalXp = last.CurrentTotalXp,
+            LevelUp = last.CurrentLevel > first.PreviousLevel,
+            UnlockedAchievementCodes = rewards.SelectMany(r => r.UnlockedAchievementCodes).Distinct().ToList(),
+            Progress = last.Progress
+        };
     }
 
     /// <summary>Free overall = điểm Succeeded của (các) câu teaser — lấy trung bình nếu >1 teaser.</summary>
