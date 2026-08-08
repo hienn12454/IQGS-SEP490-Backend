@@ -2,8 +2,24 @@ using DomainLayer.Studio.Enums;
 
 namespace ApplicationLayer.Studio.Contracts;
 
+// ── Studio project DTO (Save/Publish linkage)
 public sealed record StudioProjectDto(Guid Id, string Name, string? Description, InterviewProjectStatus Status);
-public sealed record StudioProjectDetailDto(Guid Id, Guid OwnerId, string Name, string? Description, InterviewProjectStatus Status, int LatestPlanRevision);
+public sealed record StudioProjectDetailDto(
+    Guid Id,
+    Guid OwnerId,
+    string Name,
+    string? Description,
+    InterviewProjectStatus Status,
+    int LatestPlanRevision,
+    Guid? QuestionSetId = null,
+    bool IsPublished = false,
+    string? QuestionSetStatus = null);
+
+public sealed record StudioSaveQuestionSetResponseDto(
+    Guid QuestionSetId,
+    string Status,
+    int QuestionCount,
+    DateTime SavedAt);
 
 public sealed record CreateStudioProjectRequest(string Name, string? Description);
 public sealed record UpdateStudioProjectRequest(string Name, string? Description);
@@ -30,8 +46,24 @@ public sealed record UploadJobDescriptionResponse(
     AnalyzeJobDescriptionResponse Summary);
 
 public sealed record PlanSummaryDto(Guid Id, int Revision, string Title, InterviewPlanStatus Status, int TotalQuestions);
+
+/// <summary>SCRUM-388: Kết quả refine chat — plan + settings đã sync + citations.</summary>
+public sealed record PlanRefineResultDto(
+    Guid Id,
+    int Revision,
+    string Title,
+    InterviewPlanStatus Status,
+    int TotalQuestions,
+    StudioSettingsDto Settings,
+    IReadOnlyList<string> ChangedFields,
+    IReadOnlyList<string> CitationSourceFiles,
+    string AssistantMessage);
+
 public sealed record PlanApprovalHistoryDto(Guid Id, int Revision, PlanApprovalAction Action, Guid ActorId, DateTime CreatedAt, string? Notes);
 public sealed record RejectPlanRequest(string? Notes);
+
+/// <summary>SCRUM-393: đổi tiêu đề / tên công việc trên plan Studio.</summary>
+public sealed record RenamePlanTitleRequest(string Title);
 public sealed record PlanDifficultyMixDto(int Easy, int Medium, int Hard);
 public sealed record PlanFocusAreaItemDto(
     string Name,
@@ -61,6 +93,12 @@ public sealed record GenerateQuestionsRequest(Guid PlanId, bool ReplaceExisting,
 public sealed record RegenerateQuestionRequest(bool IncludeSampleAnswers, bool IncludeScoringRubric);
 public sealed record GenerationRunDto(Guid Id, Guid PlanId, DomainLayer.Studio.Enums.QuestionGenerationStatus Status, int RequestedQuestionCount, int GeneratedQuestionCount, DateTime StartedAt, DateTime? CompletedAt, string? ErrorCode, string? ErrorMessage);
 
+/// <summary>SCRUM-390: Citation RAG gắn từng câu hỏi (source_file + excerpt).</summary>
+public sealed record StudioQuestionCitationDto(
+    string SourceFile,
+    int? ChunkIndex = null,
+    string? Excerpt = null);
+
 public sealed record StudioQuestionDto(
     Guid Id,
     string Content,
@@ -68,7 +106,15 @@ public sealed record StudioQuestionDto(
     QuestionType Type,
     int OrderIndex,
     string? ExpectedAnswer = null,
-    string? ScoringRubric = null);
+    string? ScoringRubric = null,
+    IReadOnlyList<StudioQuestionCitationDto>? Citations = null,
+    string? CodeTemplateType = null,
+    string? CodeSnippet = null,
+    // SCRUM-396: gợi ý text hình ảnh cho HR + SAS URL ảnh đính kèm
+    string? ImageHint = null,
+    string? AttachedImageUrl = null,
+    // SCRUM-400: Text | Code
+    string? AnswerMethod = null);
 public sealed record StudioQuestionListRequest(Guid? PlanId, Guid? SectionId, QuestionDifficulty? Difficulty, QuestionType? Type, string? Search, int Page = 1, int PageSize = 20);
 public sealed record StudioQuestionListResponse(int Page, int PageSize, int Total, IReadOnlyList<StudioQuestionDto> Items);
 public sealed record UpdateQuestionRequest(string Content, QuestionDifficulty Difficulty, QuestionType Type, int EstimatedMinutes, string? ExpectedAnswer, string? ScoringRubric);
@@ -82,7 +128,12 @@ public sealed record UpdateStudioSettingsRequest(
     bool IncludeSampleAnswers,
     bool IncludeScoringRubric,
     string OutputFormat,
-    IReadOnlyList<string>? QuestionTypes = null);
+    IReadOnlyList<string>? QuestionTypes = null,
+    string? ContentMode = null,
+    IReadOnlyList<string>? EnabledCodeTemplates = null,
+    // Vietnamese | English — ngôn ngữ câu hỏi đầu ra
+    string? Language = null,
+    string? OutputLanguage = null);
 public sealed record StudioSettingsDto(
     Guid ProjectId,
     Guid? AppliedPlanId,
@@ -94,7 +145,11 @@ public sealed record StudioSettingsDto(
     bool IncludeScoringRubric,
     string OutputFormat,
     StudioReadinessDto Readiness,
-    IReadOnlyList<string> QuestionTypes);
+    IReadOnlyList<string> QuestionTypes,
+    // Vietnamese | English
+    string Language = "Vietnamese",
+    string ContentMode = "Mixed",
+    IReadOnlyList<string>? EnabledCodeTemplates = null);
 public sealed record ApplyPlanSettingsRequest(
     int NumberOfQuestions,
     QuestionDifficulty Difficulty,

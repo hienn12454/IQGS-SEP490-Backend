@@ -63,4 +63,6 @@ public static class SubscriptionTransactionStatus
     public const string Paid = "Paid";
     public const string Failed = "Failed";
     public const string Expired = "Expired";
+    /// <summary>Hủy khi user tạo đơn mới (supersede).</summary>
+    public const string Cancelled = "Cancelled";
 }

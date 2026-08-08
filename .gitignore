@@ -53,6 +53,12 @@ appsettings.Production.json
 *.backup.*
 **/*.backup.*
 
+## Full DB dumps (PII) — chỉ giữ README / PENDING local
+../backup_db/*.dump
+../backup_db/*.sql
+backup_db/*.dump
+backup_db/*.sql
+
 ## Local unit tests — giữ trên máy, không push GitHub
 ApplicationLayer.Tests/
 

@@ -1,213 +1,87 @@
 ﻿using ApplicationLayer.DTOs.QuestionGeneration;
 using ApplicationLayer.Interfaces.Services;
 using ApplicationLayer.DTOs.QuestionSet;
-using ApplicationLayer.ResponseCode;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
-using WebAPI.Helpers;
 
 namespace WebAPI.Controllers.Hr;
 
+/// <summary>
+/// Generate V1 API đã retired (Studio generate-v2). Mọi endpoint trả 410 Gone.
+/// Bảng V1 sẽ drop ở migration Phase 4.
+/// </summary>
 [ApiController]
 [Route("api/hr/question-generation-jobs")]
 [Authorize(Roles = "HR")]
 public class HrQuestionGenerationJobsController : ControllerBase
 {
-    private readonly IQuestionGenerationJobService _service;
-    private readonly IQuestionSetService _questionSetService;
-    private readonly IQuestionAiAssistService _questionAiAssistService;
+    private const string GoneMessage =
+        "Generate V1 đã ngừng. Dùng Studio: /hr/generate-v2 và /api/studio/projects.";
 
-    public HrQuestionGenerationJobsController(
-        IQuestionGenerationJobService service,
-        IQuestionSetService questionSetService,
-        IQuestionAiAssistService questionAiAssistService)
-    {
-        _service = service;
-        _questionSetService = questionSetService;
-        _questionAiAssistService = questionAiAssistService;
-    }
+    private static IActionResult Gone()
+        => new ObjectResult(new { error = "V1_GENERATE_RETIRED", message = GoneMessage })
+        {
+            StatusCode = StatusCodes.Status410Gone
+        };
 
     [HttpPost("plan")]
-    public async Task<IActionResult> CreatePlanJob([FromBody] CreatePlanJobRequestDto dto, CancellationToken ct)
-    {
-        var result = await _service.CreatePlanJobAsync(GetCurrentUserId(), dto, ct);
-        return SuccessResp.Accepted(result);
-    }
+    public IActionResult CreatePlanJob([FromBody] CreatePlanJobRequestDto? dto, CancellationToken ct) => Gone();
 
     [HttpPost("plan/upload")]
-    [Consumes("multipart/form-data")]
-    public async Task<IActionResult> CreatePlanJobFromUpload(
-        [FromForm] CreatePlanJobUploadForm form,
-        CancellationToken ct)
-    {
-        Stream? fileStream = null;
-        if (form.File is { Length: > 0 })
-            fileStream = form.File.OpenReadStream();
-
-        var questionTypes = FormFieldListParser.Parse(form.QuestionTypes);
-        var skills = FormFieldListParser.Parse(form.Skills);
-
-        var result = await _service.CreatePlanJobFromUploadAsync(
-            GetCurrentUserId(),
-            form.JobDescription,
-            form.HrNote,
-            fileStream,
-            form.File?.FileName,
-            form.File?.Length ?? 0,
-            form.NumberOfQuestions,
-            form.Difficulty,
-            questionTypes,
-            skills,
-            ct);
-
-        return SuccessResp.Accepted(result);
-    }
+    public IActionResult CreatePlanJobFromUpload() => Gone();
 
     [HttpGet]
-    public async Task<IActionResult> ListJobs([FromQuery] QuestionGenerationListQueryDto query)
-    {
-        var result = await _service.ListJobsAsync(GetCurrentUserId(), query);
-        return SuccessResp.Ok(result);
-    }
+    public IActionResult List() => Gone();
 
     [HttpGet("{jobId:guid}")]
-    public async Task<IActionResult> GetJob(Guid jobId)
-    {
-        var result = await _service.GetJobAsync(jobId, GetCurrentUserId());
-        return SuccessResp.Ok(result);
-    }
-
-    [HttpPut("{jobId:guid}/plan")]
-    public async Task<IActionResult> UpdatePlan(Guid jobId, [FromBody] UpdatePlanRequestDto dto)
-    {
-        var result = await _service.UpdatePlanAsync(jobId, GetCurrentUserId(), dto);
-        return SuccessResp.Ok(result);
-    }
+    public IActionResult Get(Guid jobId) => Gone();
 
     [HttpPost("{jobId:guid}/approve-plan")]
-    public async Task<IActionResult> ApprovePlan(Guid jobId)
-    {
-        var result = await _service.ApprovePlanAsync(jobId, GetCurrentUserId());
-        return SuccessResp.Accepted(new { jobId = result.JobId, status = result.Status });
-    }
-
-    [HttpGet("{jobId:guid}/questions")]
-    public async Task<IActionResult> GetQuestions(Guid jobId)
-    {
-        var result = await _service.GetQuestionsAsync(jobId, GetCurrentUserId());
-        return SuccessResp.Ok(result);
-    }
-
-
-    [HttpPut("{jobId:guid}/questions/{questionId:guid}")]
-    public async Task<IActionResult> UpdateQuestion(
-        Guid jobId, Guid questionId, [FromBody] UpdateQuestionRequestDto dto)
-    {
-        var result = await _service.UpdateQuestionAsync(jobId, questionId, GetCurrentUserId(), dto);
-        return SuccessResp.Ok(result);
-    }
-
-    [HttpPost("{jobId:guid}/questions")]
-    public async Task<IActionResult> AddQuestion(Guid jobId, [FromBody] CreateQuestionRequestDto dto)
-    {
-        var result = await _service.AddQuestionAsync(jobId, GetCurrentUserId(), dto);
-        return SuccessResp.Created(result);
-    }
-
-    [HttpDelete("{jobId:guid}/questions/{questionId:guid}")]
-    public async Task<IActionResult> DeleteQuestion(Guid jobId, Guid questionId)
-    {
-        await _service.DeleteQuestionAsync(jobId, questionId, GetCurrentUserId());
-        return SuccessResp.NoContent();
-    }
-
-    [HttpPut("{jobId:guid}/questions/reorder")]
-    public async Task<IActionResult> ReorderQuestions(
-        Guid jobId, [FromBody] ReorderQuestionsRequestDto dto)
-    {
-        var result = await _service.ReorderQuestionsAsync(jobId, GetCurrentUserId(), dto);
-        return SuccessResp.Ok(result);
-    }
-
-    [HttpPost("{jobId:guid}/questions/{questionId:guid}/ask-ai")]
-    public async Task<IActionResult> AskQuestionAi(
-        Guid jobId, Guid questionId, [FromBody] AskQuestionAiRequestDto dto, CancellationToken ct)
-    {
-        var result = await _questionAiAssistService.AskAsync(jobId, questionId, GetCurrentUserId(), dto, ct);
-        return SuccessResp.Ok(result);
-    }
-
-    [HttpGet("{jobId:guid}/questions/{questionId:guid}/ai-chat")]
-    public async Task<IActionResult> GetQuestionAiChat(Guid jobId, Guid questionId, CancellationToken ct)
-    {
-        var result = await _questionAiAssistService.GetChatHistoryAsync(jobId, questionId, GetCurrentUserId(), ct);
-        return SuccessResp.Ok(result);
-    }
-
-    [HttpPost("{jobId:guid}/save-draft")]
-    public async Task<IActionResult> SaveDraft(Guid jobId)
-    {
-        var result = await _questionSetService.SaveDraftFromJobAsync(jobId, GetCurrentUserId());
-        return SuccessResp.Created(result);
-    }
-    [HttpPut("{jobId:guid}/input")]
-    public async Task<IActionResult> UpdateJobInput(
-        Guid jobId, [FromBody] CreatePlanJobRequestDto dto, CancellationToken ct)
-    {
-        var result = await _service.UpdateJobInputAsync(jobId, GetCurrentUserId(), dto, ct);
-        return SuccessResp.Accepted(new { jobId = result.JobId, status = result.Status });
-    }
-
-    [HttpPut("{jobId:guid}/input/upload")]
-    [Consumes("multipart/form-data")]
-    public async Task<IActionResult> UpdateJobInputFromUpload(
-        Guid jobId,
-        [FromForm] CreatePlanJobUploadForm form,
-        CancellationToken ct)
-    {
-        Stream? fileStream = null;
-        if (form.File is { Length: > 0 })
-            fileStream = form.File.OpenReadStream();
-
-        var questionTypes = FormFieldListParser.Parse(form.QuestionTypes);
-        var skills = FormFieldListParser.Parse(form.Skills);
-
-        var result = await _service.UpdateJobInputFromUploadAsync(
-            jobId,
-            GetCurrentUserId(),
-            form.JobDescription,
-            form.HrNote,
-            fileStream,
-            form.File?.FileName,
-            form.File?.Length ?? 0,
-            form.NumberOfQuestions,
-            form.Difficulty,
-            questionTypes,
-            skills,
-            ct);
-
-        return SuccessResp.Accepted(new { jobId = result.JobId, status = result.Status });
-    }
+    public IActionResult ApprovePlan(Guid jobId) => Gone();
 
     [HttpPost("{jobId:guid}/retry-plan")]
-    public async Task<IActionResult> RetryPlan(Guid jobId)
-    {
-        var result = await _service.RetryPlanAsync(jobId, GetCurrentUserId());
-        return SuccessResp.Accepted(new { jobId = result.JobId, status = result.Status });
-    }
+    public IActionResult RetryPlan(Guid jobId) => Gone();
 
     [HttpPost("{jobId:guid}/retry-questions")]
-    public async Task<IActionResult> RetryQuestions(Guid jobId)
-    {
-        var result = await _service.RetryQuestionsAsync(jobId, GetCurrentUserId());
-        return SuccessResp.Accepted(new { jobId = result.JobId, status = result.Status });
-    }
+    public IActionResult RetryQuestions(Guid jobId) => Gone();
+
+    [HttpPut("{jobId:guid}/plan")]
+    public IActionResult UpdatePlan(Guid jobId) => Gone();
+
+    [HttpPut("{jobId:guid}/input")]
+    public IActionResult UpdateInput(Guid jobId) => Gone();
+
+    [HttpPut("{jobId:guid}/input/upload")]
+    public IActionResult UpdateInputUpload(Guid jobId) => Gone();
+
+    [HttpGet("{jobId:guid}/questions")]
+    public IActionResult GetQuestions(Guid jobId) => Gone();
+
+    [HttpPost("{jobId:guid}/questions")]
+    public IActionResult AddQuestion(Guid jobId) => Gone();
+
+    [HttpPut("{jobId:guid}/questions/{questionId:guid}")]
+    public IActionResult UpdateQuestion(Guid jobId, Guid questionId) => Gone();
+
+    [HttpDelete("{jobId:guid}/questions/{questionId:guid}")]
+    public IActionResult DeleteQuestion(Guid jobId, Guid questionId) => Gone();
+
+    [HttpPut("{jobId:guid}/questions/reorder")]
+    public IActionResult Reorder(Guid jobId) => Gone();
+
+    [HttpPost("{jobId:guid}/save-draft")]
+    public IActionResult SaveDraft(Guid jobId) => Gone();
+
+    [HttpPost("{jobId:guid}/questions/{questionId:guid}/ask-ai")]
+    public IActionResult AskAi(Guid jobId, Guid questionId) => Gone();
+
+    [HttpGet("{jobId:guid}/questions/{questionId:guid}/ai-chat")]
+    public IActionResult GetAiChat(Guid jobId, Guid questionId) => Gone();
 
     private Guid GetCurrentUserId()
     {
-        var userIdStr = User.FindFirst("sub")?.Value
-            ?? User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        return Guid.Parse(userIdStr!);
+        var sub = User.FindFirstValue("sub") ?? User.FindFirstValue(ClaimTypes.NameIdentifier);
+        return Guid.Parse(sub!);
     }
 }

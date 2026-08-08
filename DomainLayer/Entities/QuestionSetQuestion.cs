@@ -11,6 +11,10 @@ public class QuestionSetQuestion : BaseEntity
     public string? FocusArea { get; set; }
     public string? Rationale { get; set; }
     public string? SampleAnswer { get; set; }
+    /// <summary>SCRUM-396: path Azure Blob ảnh HR đính kèm (History / Question Set).</summary>
+    public string? AttachedImageBlobPath { get; set; }
+    /// <summary>SCRUM-400: Text | Code — phương thức trả lời Candidate.</summary>
+    public string AnswerMethod { get; set; } = "Text";
     public string EvaluationCriteriaJson { get; set; } = "[]";
     public string CitationsJson { get; set; } = "[]";
 

@@ -17,6 +17,9 @@ public class CandidateQuestionSetListQueryDto
 
     /// <summary>Lọc theo kỹ năng của câu hỏi (question_set_questions.Skill), OR match — có thể truyền nhiều lần.</summary>
     public List<string>? Skills { get; set; }
+
+    /// <summary>SCRUM-404: featured | newest | most_practiced | highest_rated — mặc định featured.</summary>
+    public string? SortBy { get; set; }
 }
 
 /// <summary>1 item hiển thị trên card marketplace.</summary>
@@ -49,6 +52,12 @@ public class CandidateQuestionSetListItemDto
 
     /// <summary>Số lượt luyện tập trên bộ này.</summary>
     public int AttemptCount { get; set; }
+
+    /// <summary>SCRUM-404: Admin đã ghim bộ này.</summary>
+    public bool IsPinned { get; set; }
+
+    /// <summary>SCRUM-404: AttemptCount đạt ngưỡng MinAttemptsForTrending.</summary>
+    public bool IsTrending { get; set; }
 }
 
 /// <summary>Chi tiết 1 bộ câu hỏi public — KHÔNG chứa sampleAnswer/evaluationCriteria (AC-04 SCRUM-269).</summary>
@@ -82,13 +91,19 @@ public class CandidateQuestionSetDetailDto
     /// <summary>Số lượt luyện tập trên bộ này.</summary>
     public int AttemptCount { get; set; }
 
+    /// <summary>SCRUM-404: Admin đã ghim bộ này.</summary>
+    public bool IsPinned { get; set; }
+
+    /// <summary>SCRUM-404: AttemptCount đạt ngưỡng MinAttemptsForTrending.</summary>
+    public bool IsTrending { get; set; }
+
     /// <summary>Số câu Free được mở theo LimitsSnapshot (Premium = TotalQuestions).</summary>
     public int VisibleQuestionCount { get; set; }
 
     public List<CandidateQuestionItemDto> Questions { get; set; } = new();
 }
 
-/// <summary>1 câu hỏi hiển thị cho candidate — cố tình không có SampleAnswer/EvaluationCriteria.</summary>
+/// <summary>1 câu hỏi hiển thị cho candidate — cố tình không có SampleAnswer/EvaluationCriteria/ImageHint.</summary>
 public class CandidateQuestionItemDto
 {
     public Guid Id { get; set; }
@@ -100,6 +115,18 @@ public class CandidateQuestionItemDto
     public string? FocusArea { get; set; }
     public string? Rationale { get; set; }
     public List<object> Citations { get; set; } = new();
+
+    /// <summary>SCRUM-399: loại code template (BUG_DETECTION, …) — parse từ rationale meta.</summary>
+    public string? CodeTemplateType { get; set; }
+
+    /// <summary>SCRUM-399: starter code của đề bài (không phải sample answer).</summary>
+    public string? CodeSnippet { get; set; }
+
+    /// <summary>SCRUM-399: SAS URL ảnh đính kèm (Azure Blob, ~2h) — null nếu không có / bị lock.</summary>
+    public string? AttachedImageUrl { get; set; }
+
+    /// <summary>SCRUM-400: Text | Code — luôn trả kể cả khi Free lock (không leak nội dung).</summary>
+    public string AnswerMethod { get; set; } = "Text";
 
     /// <summary>True nếu gói Free chưa unlock câu này (~20%).</summary>
     public bool IsLocked { get; set; }

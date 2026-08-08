@@ -17,12 +17,9 @@ public class AppDbContext : DbContext
     public DbSet<CandidateProfile> CandidateProfiles { get; set; }
     public DbSet<KnowledgeDocument> KnowledgeDocuments { get; set; }
     public DbSet<KnowledgeChunk> KnowledgeChunks { get; set; }
-    public DbSet<QuestionGenerationJob> QuestionGenerationJobs { get; set; }
-    public DbSet<QuestionGenerationPlan> QuestionGenerationPlans { get; set; }
-    public DbSet<GeneratedQuestion> GeneratedQuestions { get; set; }
+    // V1 generate pipeline dropped (Phase 4) — no DbSet for jobs/plans/generated/ai-chat
     public DbSet<QuestionSet> QuestionSets { get; set; }
     public DbSet<QuestionSetQuestion> QuestionSetQuestions { get; set; }
-    public DbSet<QuestionAiChatMessage> QuestionAiChatMessages { get; set; }
     public DbSet<QuestionSetBookmark> QuestionSetBookmarks { get; set; }
     public DbSet<HrQuestionSetBookmark> HrQuestionSetBookmarks { get; set; }
     public DbSet<PracticeSession> PracticeSessions { get; set; }
@@ -56,6 +53,13 @@ public class AppDbContext : DbContext
         base.OnModelCreating(modelBuilder);
 
         modelBuilder.HasPostgresExtension("vector");
+
+        // Domain classes kept for DTOs/services compile — tables dropped Phase 4
+        modelBuilder.Ignore<QuestionGenerationJob>();
+        modelBuilder.Ignore<QuestionGenerationPlan>();
+        modelBuilder.Ignore<GeneratedQuestion>();
+        modelBuilder.Ignore<QuestionAiChatMessage>();
+
         modelBuilder.ApplyConfigurationsFromAssembly(
             typeof(AppDbContext).Assembly,
             type => type.Namespace is not null && type.Namespace.Contains(".Configurations.Studio"));
@@ -63,6 +67,7 @@ public class AppDbContext : DbContext
         // ── Role (lookup table) ─────────────────────────────────────
         modelBuilder.Entity<Role>(entity =>
         {
+            entity.ToTable("tbl_roles");
             entity.HasKey(r => r.Id);
             entity.Property(r => r.Id).ValueGeneratedNever();   // seed cố định
             entity.Property(r => r.Name).IsRequired().HasMaxLength(50);
@@ -79,6 +84,7 @@ public class AppDbContext : DbContext
         // ── User ────────────────────────────────────────────────────
         modelBuilder.Entity<User>(entity =>
         {
+            entity.ToTable("tbl_users");
             entity.HasKey(u => u.Id);
             entity.Property(u => u.Email).IsRequired().HasMaxLength(255);
             entity.HasIndex(u => u.Email).IsUnique();
@@ -117,6 +123,7 @@ public class AppDbContext : DbContext
         // ── Company ─────────────────────────────────────────────────
         modelBuilder.Entity<Company>(entity =>
         {
+            entity.ToTable("tbl_companies");
             entity.HasKey(c => c.Id);
             entity.Property(c => c.Name).IsRequired().HasMaxLength(255);
             entity.Property(c => c.LogoUrl).HasMaxLength(500);
@@ -127,6 +134,7 @@ public class AppDbContext : DbContext
         // ── HRProfile ───────────────────────────────────────────────
         modelBuilder.Entity<HRProfile>(entity =>
         {
+            entity.ToTable("tbl_hr_profiles");
             entity.HasKey(p => p.Id);
             entity.Property(p => p.JobTitle).HasMaxLength(150);
             entity.Property(p => p.PhoneNumber).HasMaxLength(20);
@@ -149,6 +157,7 @@ public class AppDbContext : DbContext
         // ── CandidateProfile ────────────────────────────────────────
         modelBuilder.Entity<CandidateProfile>(entity =>
         {
+            entity.ToTable("tbl_candidate_profiles");
             entity.HasKey(p => p.Id);
             entity.Property(p => p.TargetRole).HasMaxLength(150);
             entity.Property(p => p.SeniorityLevel).HasMaxLength(50);
@@ -172,7 +181,7 @@ public class AppDbContext : DbContext
         // ── KnowledgeDocument (snake_case — shared DB với RAG/migration thủ công) ─
         modelBuilder.Entity<KnowledgeDocument>(entity =>
         {
-            entity.ToTable("knowledge_documents");
+            entity.ToTable("tbl_knowledge_documents");
             entity.HasKey(d => d.Id);
             entity.Property(d => d.Id).HasColumnName("id");
             entity.Property(d => d.Scope).HasColumnName("scope").IsRequired().HasMaxLength(20);
@@ -199,7 +208,7 @@ public class AppDbContext : DbContext
         // ── KnowledgeChunk (pgvector — RAG ghi trực tiếp, snake_case) ─
         modelBuilder.Entity<KnowledgeChunk>(entity =>
         {
-            entity.ToTable("knowledge_chunks");
+            entity.ToTable("tbl_knowledge_chunks");
             entity.HasKey(c => c.Id);
             entity.Property(c => c.DocumentId).HasColumnName("document_id");
             entity.Property(c => c.OwnerId).HasColumnName("owner_id");
@@ -219,64 +228,12 @@ public class AppDbContext : DbContext
             entity.HasIndex(c => new { c.Scope, c.OwnerId }).HasDatabaseName("ix_knowledge_chunks_scope_owner");
         });
 
-        // ── QuestionGenerationJob ───────────────────────────────────
-        modelBuilder.Entity<QuestionGenerationJob>(entity =>
-        {
-            entity.ToTable("question_generation_jobs");
-            entity.HasKey(j => j.Id);
-            entity.Property(j => j.JobDescription).IsRequired();
-            entity.Property(j => j.HrNote).HasMaxLength(2000);
-            entity.Property(j => j.JdInputType).IsRequired().HasMaxLength(10).HasDefaultValue(JdInputType.Text);
-            entity.Property(j => j.JdFileName).HasMaxLength(500);
-            entity.Property(j => j.Difficulty).IsRequired().HasMaxLength(20);
-            entity.Property(j => j.QuestionTypesJson).IsRequired().HasColumnType("jsonb");
-            entity.Property(j => j.SkillsJson).IsRequired().HasColumnType("jsonb");
-            entity.Property(j => j.Status).IsRequired().HasMaxLength(30);
-            entity.Property(j => j.ErrorMessage).HasMaxLength(2000);
-            entity.HasIndex(j => j.OwnerId);
-            entity.HasIndex(j => j.Status);
-        });
+        // V1 QuestionGenerationJob / Plan / GeneratedQuestion / QuestionAiChatMessage — tables dropped (Ignore above)
 
-        // ── QuestionGenerationPlan ──────────────────────────────────
-        modelBuilder.Entity<QuestionGenerationPlan>(entity =>
-        {
-            entity.ToTable("question_generation_plans");
-            entity.HasKey(p => p.Id);
-            entity.Property(p => p.PlanJson).IsRequired().HasColumnType("jsonb");
-
-            entity.HasOne(p => p.Job)
-                  .WithOne(j => j.Plan)
-                  .HasForeignKey<QuestionGenerationPlan>(p => p.JobId)
-                  .OnDelete(DeleteBehavior.Cascade);
-
-            entity.HasIndex(p => p.JobId).IsUnique();
-        });
-
-        // ── GeneratedQuestion ───────────────────────────────────────
-        modelBuilder.Entity<GeneratedQuestion>(entity =>
-        {
-            entity.ToTable("generated_questions");
-            entity.HasKey(q => q.Id);
-            entity.Property(q => q.Question).IsRequired();
-            entity.Property(q => q.QuestionType).IsRequired().HasMaxLength(50);
-            entity.Property(q => q.Difficulty).IsRequired().HasMaxLength(20);
-            entity.Property(q => q.Skill).HasMaxLength(200);
-            entity.Property(q => q.FocusArea).HasMaxLength(200);
-            entity.Property(q => q.EvaluationCriteriaJson).IsRequired().HasColumnType("jsonb");
-            entity.Property(q => q.CitationsJson).IsRequired().HasColumnType("jsonb");
-
-            entity.HasOne(q => q.Job)
-                  .WithMany(j => j.Questions)
-                  .HasForeignKey(q => q.JobId)
-                  .OnDelete(DeleteBehavior.Cascade);
-
-            entity.HasIndex(q => q.JobId);
-        });
-
-        // ── QuestionSet (draft snapshot sau khi HR review) ─────────
+        // ── QuestionSet (snapshot Save private / Publish marketplace) ─
         modelBuilder.Entity<QuestionSet>(entity =>
         {
-            entity.ToTable("question_sets");
+            entity.ToTable("tbl_question_sets");
             entity.HasKey(qs => qs.Id);
             entity.Property(qs => qs.Status).IsRequired().HasMaxLength(20);
             entity.Property(qs => qs.Title).HasMaxLength(500);
@@ -284,25 +241,52 @@ public class AppDbContext : DbContext
             entity.Property(qs => qs.HrNote).HasMaxLength(2000);
             entity.Property(qs => qs.PlanJson).IsRequired().HasColumnType("jsonb");
 
-            entity.HasOne(qs => qs.SourceJob)
+            // SourceJobId optional legacy — no FK after V1 tables dropped
+            entity.Ignore(qs => qs.SourceJob);
+
+            // Cầu product ← Studio (thay SourceJobId → job V1): Restrict để hard-delete project không nuốt set published
+            entity.HasOne(qs => qs.SourceProject)
                   .WithMany()
-                  .HasForeignKey(qs => qs.SourceJobId)
+                  .HasForeignKey(qs => qs.SourceProjectId)
                   .OnDelete(DeleteBehavior.Restrict);
 
+            entity.HasOne(qs => qs.SourcePlan)
+                  .WithMany()
+                  .HasForeignKey(qs => qs.SourcePlanId)
+                  .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasOne(qs => qs.SourceRun)
+                  .WithMany()
+                  .HasForeignKey(qs => qs.SourceRunId)
+                  .OnDelete(DeleteBehavior.SetNull);
+
             entity.HasIndex(qs => qs.OwnerId);
-            entity.HasIndex(qs => qs.SourceJobId).IsUnique();
+            entity.HasIndex(qs => qs.SourceJobId)
+                  .IsUnique()
+                  .HasFilter("\"SourceJobId\" IS NOT NULL");
+            entity.HasIndex(qs => qs.SourceProjectId)
+                  .IsUnique()
+                  .HasFilter("\"SourceProjectId\" IS NOT NULL");
+
+            // SCRUM-404: pin Marketplace — mặc định false/null; index hỗ trợ sort featured
+            entity.Property(qs => qs.IsPinned).IsRequired().HasDefaultValue(false);
+            entity.HasIndex(qs => new { qs.IsPinned, qs.PinnedAt });
+            entity.HasIndex(qs => qs.SourcePlanId);
+            entity.HasIndex(qs => qs.SourceRunId);
         });
 
         // ── QuestionSetQuestion ─────────────────────────────────────
         modelBuilder.Entity<QuestionSetQuestion>(entity =>
         {
-            entity.ToTable("question_set_questions");
+            entity.ToTable("tbl_question_set_questions");
             entity.HasKey(q => q.Id);
             entity.Property(q => q.Question).IsRequired();
             entity.Property(q => q.QuestionType).IsRequired().HasMaxLength(50);
             entity.Property(q => q.Difficulty).IsRequired().HasMaxLength(20);
             entity.Property(q => q.Skill).HasMaxLength(200);
             entity.Property(q => q.FocusArea).HasMaxLength(200);
+            entity.Property(q => q.AttachedImageBlobPath).HasMaxLength(1000);
+            entity.Property(q => q.AnswerMethod).IsRequired().HasMaxLength(20).HasDefaultValue("Text");
             entity.Property(q => q.EvaluationCriteriaJson).IsRequired().HasColumnType("jsonb");
             entity.Property(q => q.CitationsJson).IsRequired().HasColumnType("jsonb");
 
@@ -314,32 +298,10 @@ public class AppDbContext : DbContext
             entity.HasIndex(q => new { q.QuestionSetId, q.Order });
         });
 
-        // ── QuestionAiChatMessage (Ask AI per question — SCRUM-215) ─
-        modelBuilder.Entity<QuestionAiChatMessage>(entity =>
-        {
-            entity.ToTable("question_ai_chat_messages");
-            entity.HasKey(m => m.Id);
-            entity.Property(m => m.Role).IsRequired().HasMaxLength(10);
-            entity.Property(m => m.Content).IsRequired();
-            entity.Property(m => m.SuggestionJson).HasColumnType("jsonb");
-
-            entity.HasOne(m => m.Job)
-                  .WithMany()
-                  .HasForeignKey(m => m.JobId)
-                  .OnDelete(DeleteBehavior.Cascade);
-
-            entity.HasOne(m => m.Question)
-                  .WithMany()
-                  .HasForeignKey(m => m.QuestionId)
-                  .OnDelete(DeleteBehavior.Cascade);
-
-            entity.HasIndex(m => new { m.JobId, m.QuestionId, m.CreatedAt });
-        });
-
         // ── QuestionSetBookmark (Candidate — SCRUM-275) ─────────────
         modelBuilder.Entity<QuestionSetBookmark>(entity =>
         {
-            entity.ToTable("question_set_bookmarks");
+            entity.ToTable("tbl_question_set_bookmarks");
             entity.HasKey(b => b.Id);
 
             entity.HasOne(b => b.QuestionSet)
@@ -353,7 +315,7 @@ public class AppDbContext : DbContext
         // ── HrQuestionSetBookmark (HR — SCRUM-324) ──────────────────
         modelBuilder.Entity<HrQuestionSetBookmark>(entity =>
         {
-            entity.ToTable("hr_question_set_bookmarks");
+            entity.ToTable("tbl_hr_question_set_bookmarks");
             entity.HasKey(b => b.Id);
 
             entity.HasOne(b => b.QuestionSet)
@@ -367,7 +329,7 @@ public class AppDbContext : DbContext
         // ── PracticeSession (Candidate — SCRUM-277) ─────────────────
         modelBuilder.Entity<PracticeSession>(entity =>
         {
-            entity.ToTable("practice_sessions");
+            entity.ToTable("tbl_practice_sessions");
             entity.HasKey(s => s.Id);
             entity.Property(s => s.Status).IsRequired().HasMaxLength(20);
             // SCRUM-305: AI Insight song ngữ + skillsToImprove
@@ -386,7 +348,7 @@ public class AppDbContext : DbContext
         // ── CandidateAnswer (Candidate — SCRUM-278) ─────────────────
         modelBuilder.Entity<CandidateAnswer>(entity =>
         {
-            entity.ToTable("candidate_answers");
+            entity.ToTable("tbl_candidate_answers");
             entity.HasKey(a => a.Id);
             entity.Property(a => a.AnswerText).IsRequired();
 
@@ -406,7 +368,7 @@ public class AppDbContext : DbContext
         // ── AiFeedback (Candidate — SCRUM-282) ──────────────────────
         modelBuilder.Entity<AiFeedback>(entity =>
         {
-            entity.ToTable("ai_feedbacks");
+            entity.ToTable("tbl_ai_feedbacks");
             entity.HasKey(f => f.Id);
             entity.Property(f => f.StrengthsJson).IsRequired().HasColumnType("jsonb");
             entity.Property(f => f.ImprovementsJson).IsRequired().HasColumnType("jsonb");
@@ -427,7 +389,7 @@ public class AppDbContext : DbContext
         // ── CandidateRecommendation (SCRUM-291) ─────────────────────
         modelBuilder.Entity<CandidateRecommendation>(entity =>
         {
-            entity.ToTable("candidate_recommendations");
+            entity.ToTable("tbl_candidate_recommendations");
             entity.HasKey(r => r.Id);
             entity.Property(r => r.Status).IsRequired().HasMaxLength(20);
 
@@ -448,7 +410,7 @@ public class AppDbContext : DbContext
         // ── CandidateInvitation (SCRUM-295) ─────────────────────────
         modelBuilder.Entity<CandidateInvitation>(entity =>
         {
-            entity.ToTable("candidate_invitations");
+            entity.ToTable("tbl_candidate_invitations");
             entity.HasKey(i => i.Id);
             entity.Property(i => i.Status).IsRequired().HasMaxLength(20);
             entity.Property(i => i.Message).HasMaxLength(2000);
@@ -467,7 +429,7 @@ public class AppDbContext : DbContext
         // ── CandidateOffer (offer phỏng vấn qua email — độc lập với CandidateInvitation) ─
         modelBuilder.Entity<CandidateOffer>(entity =>
         {
-            entity.ToTable("candidate_offers");
+            entity.ToTable("tbl_candidate_offers");
             entity.HasKey(o => o.Id);
             entity.Property(o => o.Status).IsRequired().HasMaxLength(20);
             entity.Property(o => o.Message).IsRequired().HasMaxLength(5000);
@@ -486,15 +448,20 @@ public class AppDbContext : DbContext
         // ── PlatformSettings (singleton — Admin runtime config) ─────
         modelBuilder.Entity<DomainLayer.Entities.PlatformSettings>(entity =>
         {
-            entity.ToTable("platform_settings");
+            entity.ToTable("tbl_platform_settings");
             entity.HasKey(p => p.Id);
             entity.Property(p => p.MinQuestionsToPublish).IsRequired().HasDefaultValue(10);
+            // SCRUM-404: quy tắc hiển thị Marketplace
+            entity.Property(p => p.MaxPinnedSets).IsRequired().HasDefaultValue(5);
+            entity.Property(p => p.MinAttemptsForTrending).IsRequired().HasDefaultValue(10);
 
             // Seed đúng 1 dòng cố định — repository luôn đọc/ghi dòng này, không tự tạo mới.
             entity.HasData(new DomainLayer.Entities.PlatformSettings
             {
                 Id = DomainLayer.Entities.PlatformSettings.SingletonId,
                 MinQuestionsToPublish = 10,
+                MaxPinnedSets = 5,
+                MinAttemptsForTrending = 10,
                 CreatedAt = new DateTime(2026, 7, 21, 0, 0, 0, DateTimeKind.Utc),
                 IsActive = true
             });
@@ -503,7 +470,7 @@ public class AppDbContext : DbContext
         // ── SubscriptionPlan (Free/Premium templates) ───────────────
         modelBuilder.Entity<SubscriptionPlan>(entity =>
         {
-            entity.ToTable("subscription_plans");
+            entity.ToTable("tbl_subscription_plans");
             entity.HasKey(p => p.Id);
             entity.Property(p => p.Code).IsRequired().HasMaxLength(50);
             entity.HasIndex(p => p.Code).IsUnique();
@@ -515,14 +482,15 @@ public class AppDbContext : DbContext
 
             var seedAt = new DateTime(2026, 7, 30, 0, 0, 0, DateTimeKind.Utc);
             // JSON cố định (camelCase) khớp SubscriptionPlanLimits — không gọi helper lúc design-time
+            // Teaser Freemium: Free làm full bài (freeVisiblePercent=100), AI chi tiết chỉ Premium (canDetailedAiFeedback).
             const string hrFreeLimits =
-                "{\"generateCooldownHours\":24,\"generateUnlimited\":false,\"planRegeneratePerDraft\":5,\"canExport\":false,\"askAiPerMonth\":0,\"canPublish\":true,\"freeVisiblePercent\":100,\"canPersistHrRecommendation\":false,\"feedbackOnlyOnVisible\":false}";
+                "{\"generateCooldownHours\":24,\"generateUnlimited\":false,\"planRegeneratePerDraft\":5,\"canExport\":false,\"askAiPerMonth\":0,\"canPublish\":true,\"freeVisiblePercent\":100,\"canPersistHrRecommendation\":false,\"feedbackOnlyOnVisible\":false,\"canDetailedAiFeedback\":true,\"freeTeaserFeedbackCount\":0}";
             const string hrPremiumLimits =
-                "{\"generateCooldownHours\":0,\"generateUnlimited\":true,\"planRegeneratePerDraft\":5,\"canExport\":true,\"askAiPerMonth\":1000,\"canPublish\":true,\"freeVisiblePercent\":100,\"canPersistHrRecommendation\":false,\"feedbackOnlyOnVisible\":false}";
+                "{\"generateCooldownHours\":0,\"generateUnlimited\":true,\"planRegeneratePerDraft\":5,\"canExport\":true,\"askAiPerMonth\":1000,\"canPublish\":true,\"freeVisiblePercent\":100,\"canPersistHrRecommendation\":false,\"feedbackOnlyOnVisible\":false,\"canDetailedAiFeedback\":true,\"freeTeaserFeedbackCount\":0}";
             const string candidateFreeLimits =
-                "{\"generateCooldownHours\":0,\"generateUnlimited\":false,\"planRegeneratePerDraft\":0,\"canExport\":false,\"askAiPerMonth\":0,\"canPublish\":false,\"freeVisiblePercent\":20,\"canPersistHrRecommendation\":false,\"feedbackOnlyOnVisible\":true}";
+                "{\"generateCooldownHours\":0,\"generateUnlimited\":false,\"planRegeneratePerDraft\":0,\"canExport\":false,\"askAiPerMonth\":0,\"canPublish\":false,\"freeVisiblePercent\":100,\"canPersistHrRecommendation\":false,\"feedbackOnlyOnVisible\":false,\"canDetailedAiFeedback\":false,\"freeTeaserFeedbackCount\":1}";
             const string candidatePremiumLimits =
-                "{\"generateCooldownHours\":0,\"generateUnlimited\":false,\"planRegeneratePerDraft\":0,\"canExport\":false,\"askAiPerMonth\":0,\"canPublish\":false,\"freeVisiblePercent\":100,\"canPersistHrRecommendation\":true,\"feedbackOnlyOnVisible\":false}";
+                "{\"generateCooldownHours\":0,\"generateUnlimited\":false,\"planRegeneratePerDraft\":0,\"canExport\":false,\"askAiPerMonth\":0,\"canPublish\":false,\"freeVisiblePercent\":100,\"canPersistHrRecommendation\":true,\"feedbackOnlyOnVisible\":false,\"canDetailedAiFeedback\":true,\"freeTeaserFeedbackCount\":0}";
 
             entity.HasData(
                 new SubscriptionPlan
@@ -578,7 +546,7 @@ public class AppDbContext : DbContext
         // ── Subscription (per user, anniversary period + snapshot) ──
         modelBuilder.Entity<Subscription>(entity =>
         {
-            entity.ToTable("subscriptions");
+            entity.ToTable("tbl_subscriptions");
             entity.HasKey(s => s.Id);
             entity.Property(s => s.Status).IsRequired().HasMaxLength(20);
             entity.Property(s => s.LimitsSnapshotJson).IsRequired().HasColumnType("jsonb");
@@ -598,7 +566,7 @@ public class AppDbContext : DbContext
         // ── UsageCounter ────────────────────────────────────────────
         modelBuilder.Entity<UsageCounter>(entity =>
         {
-            entity.ToTable("usage_counters");
+            entity.ToTable("tbl_usage_counters");
             entity.HasKey(c => c.Id);
             entity.Property(c => c.UsageType).IsRequired().HasMaxLength(50);
             entity.Property(c => c.ScopeKey).IsRequired().HasMaxLength(100).HasDefaultValue(string.Empty);
@@ -616,7 +584,7 @@ public class AppDbContext : DbContext
         // ── SubscriptionTransaction (sandbox) ───────────────────────
         modelBuilder.Entity<SubscriptionTransaction>(entity =>
         {
-            entity.ToTable("subscription_transactions");
+            entity.ToTable("tbl_subscription_transactions");
             entity.HasKey(t => t.Id);
             entity.Property(t => t.Type).IsRequired().HasMaxLength(30);
             entity.Property(t => t.Status).IsRequired().HasMaxLength(20);

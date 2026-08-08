@@ -1,9 +1,11 @@
 using ApplicationLayer.DTOs.Rag;
+using ApplicationLayer.Helpers;
 using ApplicationLayer.Interfaces.Services;
 using ApplicationLayer.Services;
 using ApplicationLayer.Studio.Contracts;
 using ApplicationLayer.Studio.Helpers;
 using ApplicationLayer.Studio.Interfaces;
+using DomainLayer.Entities;
 using DomainLayer.Exceptions;
 using DomainLayer.Studio;
 using DomainLayer.Studio.Enums;
@@ -13,11 +15,20 @@ using Microsoft.EntityFrameworkCore;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace InfrastructureLayer.Services.Studio;
 
-public sealed class InterviewProjectService(AppDbContext dbContext) : IInterviewProjectService
+public sealed class InterviewProjectService(
+    AppDbContext dbContext,
+    IQuestionSetService questionSetService) : IInterviewProjectService
 {
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        PropertyNameCaseInsensitive = true
+    };
+
     public async Task<StudioProjectDto> CreateAsync(Guid userId, CreateStudioProjectRequest request, CancellationToken ct)
     {
         var entity = new InterviewProject
@@ -43,7 +54,7 @@ public sealed class InterviewProjectService(AppDbContext dbContext) : IInterview
     public async Task<StudioProjectDetailDto> GetAsync(Guid projectId, Guid userId, CancellationToken ct)
     {
         var project = await EnsureProjectAccessAsync(projectId, userId, false, ct);
-        return ToDetail(project);
+        return await ToDetailAsync(project, ct);
     }
 
     public async Task<StudioProjectDetailDto> UpdateAsync(Guid projectId, Guid userId, UpdateStudioProjectRequest request, CancellationToken ct)
@@ -53,9 +64,13 @@ public sealed class InterviewProjectService(AppDbContext dbContext) : IInterview
         project.Description = request.Description;
         project.UpdatedAt = DateTime.UtcNow;
         await dbContext.SaveChangesAsync(ct);
-        return ToDetail(project);
+        return await ToDetailAsync(project, ct);
     }
 
+    /// <summary>
+    /// Soft-delete thôi — IsActive=false. Không Remove entity vì FK Restrict
+    /// (question_sets.SourceProjectId + children Studio) sẽ chặn hard-delete.
+    /// </summary>
     public async Task DeleteAsync(Guid projectId, Guid userId, CancellationToken ct)
     {
         var project = await EnsureProjectAccessAsync(projectId, userId, true, ct);
@@ -74,8 +89,234 @@ public sealed class InterviewProjectService(AppDbContext dbContext) : IInterview
         return project;
     }
 
-    private static StudioProjectDetailDto ToDetail(InterviewProject p)
-        => new(p.Id, p.OwnerId, p.Name, p.Description, p.Status, p.LatestPlanRevision);
+    public async Task<StudioSaveQuestionSetResponseDto> SaveQuestionSetAsync(Guid projectId, Guid userId, CancellationToken ct)
+    {
+        var project = await EnsureProjectAccessAsync(projectId, userId, true, ct);
+
+        var interviewQuestions = await dbContext.InterviewQuestions
+            .Where(q => q.ProjectId == projectId && q.IsActive)
+            .OrderBy(q => q.OrderIndex)
+            .ToListAsync(ct);
+
+        if (interviewQuestions.Count == 0)
+            throw new StudioBusinessException("NO_QUESTIONS", StatusCodes.Status400BadRequest, "Chưa có câu hỏi để lưu. Hãy generate trước.");
+
+        var plan = await dbContext.InterviewPlans
+            .Where(p => p.ProjectId == projectId && p.IsActive)
+            .OrderByDescending(p => p.Revision)
+            .FirstOrDefaultAsync(ct);
+
+        var jd = await dbContext.StudioJobDescriptions
+            .FirstOrDefaultAsync(j => j.ProjectId == projectId && j.IsActive, ct);
+
+        var latestRun = await dbContext.QuestionGenerationRuns
+            .Where(r => r.ProjectId == projectId && r.IsActive)
+            .OrderByDescending(r => r.CompletedAt ?? r.CreatedAt)
+            .FirstOrDefaultAsync(ct);
+
+        var existing = await dbContext.QuestionSets
+            .Include(qs => qs.Questions)
+            .FirstOrDefaultAsync(qs => qs.SourceProjectId == projectId && qs.IsActive, ct);
+
+        if (existing is not null && existing.Status == DomainLayer.Constants.QuestionSetStatus.Published)
+            throw new StudioBusinessException(
+                "SET_PUBLISHED",
+                StatusCodes.Status409Conflict,
+                "Bộ câu hỏi đang PUBLISHED — unpublish trước khi Save lại.");
+
+        if (existing is not null && existing.Questions.Count > 0)
+        {
+            var qIds = existing.Questions.Select(q => q.Id).ToList();
+            var hasAnswers = await dbContext.CandidateAnswers
+                .AnyAsync(a => qIds.Contains(a.QuestionSetQuestionId), ct);
+            if (hasAnswers)
+                throw new StudioBusinessException(
+                    "SET_HAS_PRACTICE",
+                    StatusCodes.Status409Conflict,
+                    "Bộ câu hỏi đã có bài practice — không thể thay snapshot. Tạo project mới hoặc giữ set hiện tại.");
+        }
+
+        var title = FirstNonEmpty(plan?.Title, jd?.DetectedRole, jd?.Title, project.Name);
+        var jdContent = string.IsNullOrWhiteSpace(jd?.Content)
+            ? "(Studio) Job description trống."
+            : jd!.Content.Trim();
+        var planJson = string.IsNullOrWhiteSpace(plan?.SourcePlanJson) ? "{}" : plan!.SourcePlanJson!;
+        var ownerId = project.OwnerId != Guid.Empty ? project.OwnerId : userId;
+
+        // Section name làm fallback FocusArea (nếu TagsJson thiếu)
+        var sectionNames = await dbContext.PlanSections.AsNoTracking()
+            .Where(s => s.IsActive && interviewQuestions.Select(q => q.PlanSectionId).Contains(s.Id))
+            .ToDictionaryAsync(s => s.Id, s => s.Name, ct);
+
+        var snapshot = interviewQuestions.Select((q, index) =>
+        {
+            var meta = StudioRagQuestionMapper.ParseMeta(q.TagsJson);
+            sectionNames.TryGetValue(q.PlanSectionId, out var sectionName);
+
+            var skill = FirstNonEmpty(meta.Skill);
+            var focus = FirstNonEmpty(meta.FocusArea, sectionName);
+            var rationaleCore = FirstNonEmpty(meta.Rationale, q.ScoringRubric);
+            // Sample answer giữ nguyên đáp án mẫu — KHÔNG nhét starter code câu hỏi vào đây
+            // (trước đây append "Code snippet:" làm UI sampleAnswer hiện nhầm stub đề bài).
+            var sample = FirstNonEmpty(q.ExpectedAnswer);
+
+            var rationaleParts = new List<string>();
+            if (!string.IsNullOrWhiteSpace(rationaleCore))
+                rationaleParts.Add(rationaleCore!);
+            if (!string.IsNullOrWhiteSpace(meta.CodeTemplateType))
+                rationaleParts.Add("template=" + meta.CodeTemplateType.Trim());
+            // Starter code câu hỏi → rationale meta để History infer template card
+            if (!string.IsNullOrWhiteSpace(meta.CodeSnippet))
+            {
+                var snipFlat = meta.CodeSnippet.Trim()
+                    .Replace("\r\n", "\n", StringComparison.Ordinal)
+                    .Replace("\n", "\\n", StringComparison.Ordinal)
+                    .Replace(';', ',');
+                rationaleParts.Add("snippet=" + snipFlat);
+            }
+            if (!string.IsNullOrWhiteSpace(meta.ImageHint))
+                rationaleParts.Add("imageHint=" + meta.ImageHint.Trim().Replace(';', ','));
+            var rationale = rationaleParts.Count > 0 ? string.Join(";", rationaleParts) : null;
+
+            var criteriaJson = meta.EvaluationCriteria is { Count: > 0 }
+                ? JsonSerializer.Serialize(meta.EvaluationCriteria, JsonOptions)
+                : (string.IsNullOrWhiteSpace(q.ScoringRubric)
+                    ? "[]"
+                    : JsonSerializer.Serialize(
+                        q.ScoringRubric.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
+                        JsonOptions));
+
+            var citationsJson = meta.Citations is { Count: > 0 }
+                ? JsonSerializer.Serialize(meta.Citations, JsonOptions)
+                : "[]";
+
+            return new DomainLayer.Entities.QuestionSetQuestion
+            {
+                Order = q.OrderIndex > 0 ? q.OrderIndex : index + 1,
+                Question = q.Content,
+                QuestionType = MapQuestionType(q.Type),
+                Difficulty = MapDifficulty(q.Difficulty),
+                Skill = skill,
+                FocusArea = focus,
+                Rationale = rationale,
+                SampleAnswer = sample,
+                AttachedImageBlobPath = string.IsNullOrWhiteSpace(meta.AttachedImageBlobPath)
+                    ? null
+                    : meta.AttachedImageBlobPath.Trim(),
+                AnswerMethod = ApplicationLayer.Helpers.AnswerMethodNormalizer.Resolve(
+                    meta.AnswerMethod, meta.CodeTemplateType, meta.CodeSnippet),
+                EvaluationCriteriaJson = criteriaJson,
+                CitationsJson = citationsJson
+            };
+        }).ToList();
+
+        if (existing is null)
+        {
+            var set = new DomainLayer.Entities.QuestionSet
+            {
+                OwnerId = ownerId,
+                SourceJobId = null,
+                SourceProjectId = projectId,
+                SourcePlanId = plan?.Id,
+                SourceRunId = latestRun?.Id,
+                Status = DomainLayer.Constants.QuestionSetStatus.Draft,
+                Title = title,
+                JobDescription = jdContent,
+                HrNote = $"STUDIO_SAVE; project={projectId}",
+                PlanJson = planJson,
+                GeneratedAt = latestRun?.CompletedAt ?? DateTime.UtcNow
+            };
+
+            foreach (var q in snapshot)
+                q.QuestionSetId = set.Id;
+
+            dbContext.QuestionSets.Add(set);
+            dbContext.QuestionSetQuestions.AddRange(snapshot);
+            await dbContext.SaveChangesAsync(ct);
+            return new StudioSaveQuestionSetResponseDto(set.Id, set.Status, snapshot.Count, set.CreatedAt);
+        }
+
+        existing.Title = title;
+        existing.JobDescription = jdContent;
+        existing.HrNote = $"STUDIO_SAVE; project={projectId}";
+        existing.PlanJson = planJson;
+        existing.SourcePlanId = plan?.Id;
+        existing.SourceRunId = latestRun?.Id;
+        existing.GeneratedAt = latestRun?.CompletedAt ?? DateTime.UtcNow;
+        existing.UpdatedAt = DateTime.UtcNow;
+        existing.OwnerId = ownerId;
+
+        if (existing.Questions.Count > 0)
+            dbContext.QuestionSetQuestions.RemoveRange(existing.Questions);
+
+        foreach (var q in snapshot)
+            q.QuestionSetId = existing.Id;
+
+        dbContext.QuestionSetQuestions.AddRange(snapshot);
+        await dbContext.SaveChangesAsync(ct);
+        return new StudioSaveQuestionSetResponseDto(existing.Id, existing.Status, snapshot.Count, existing.UpdatedAt ?? existing.CreatedAt);
+    }
+
+    public async Task PublishFromProjectAsync(Guid projectId, Guid userId, CancellationToken ct)
+    {
+        var detail = await GetAsync(projectId, userId, ct);
+        var questionSetId = detail.QuestionSetId;
+        if (questionSetId is null)
+        {
+            var saved = await SaveQuestionSetAsync(projectId, userId, ct);
+            questionSetId = saved.QuestionSetId;
+        }
+
+        await questionSetService.PublishAsync(questionSetId.Value, userId);
+    }
+
+    public async Task UnpublishFromProjectAsync(Guid projectId, Guid userId, CancellationToken ct)
+    {
+        var detail = await GetAsync(projectId, userId, ct);
+        if (detail.QuestionSetId is null)
+            throw new StudioBusinessException("SET_NOT_FOUND", StatusCodes.Status404NotFound, "Project chưa có bộ câu hỏi đã Save.");
+
+        await questionSetService.UnpublishAsync(detail.QuestionSetId.Value, userId);
+    }
+
+    private async Task<StudioProjectDetailDto> ToDetailAsync(InterviewProject p, CancellationToken ct)
+    {
+        var set = await dbContext.QuestionSets.AsNoTracking()
+            .Where(qs => qs.SourceProjectId == p.Id && qs.IsActive)
+            .Select(qs => new { qs.Id, qs.Status })
+            .FirstOrDefaultAsync(ct);
+
+        return new StudioProjectDetailDto(
+            p.Id,
+            p.OwnerId,
+            p.Name,
+            p.Description,
+            p.Status,
+            p.LatestPlanRevision,
+            set?.Id,
+            set is not null && set.Status == DomainLayer.Constants.QuestionSetStatus.Published,
+            set?.Status);
+    }
+
+    private static string MapQuestionType(QuestionType type) => type switch
+    {
+        QuestionType.Behavioral => "behavioral",
+        QuestionType.SystemDesign => "system-design",
+        QuestionType.ProblemSolving => "problem-solving",
+        QuestionType.Situational => "situational",
+        QuestionType.FollowUp => "follow-up",
+        _ => "technical"
+    };
+
+    private static string MapDifficulty(QuestionDifficulty d) => d switch
+    {
+        QuestionDifficulty.Easy => "easy",
+        QuestionDifficulty.Hard => "hard",
+        _ => "medium"
+    };
+
+    private static string? FirstNonEmpty(params string?[] values)
+        => values.FirstOrDefault(v => !string.IsNullOrWhiteSpace(v))?.Trim();
 }
 
 public sealed class JobDescriptionService(
@@ -169,6 +410,44 @@ public sealed class InterviewPlanService(
     ISubscriptionGateService subscriptionGate,
     IUsageMeteringService usageMetering) : IInterviewPlanService
 {
+    /// <summary>
+    /// Plan bắt buộc có SessionId (FK → ai_chat_sessions). Lúc generate/refine
+    /// user thường chưa mở chat → tạo session project+user trước khi Save plan.
+    /// </summary>
+    private async Task<Guid> EnsureProjectChatSessionIdAsync(Guid projectId, Guid userId, CancellationToken ct)
+    {
+        var session = await dbContext.AiChatSessions
+            .FirstOrDefaultAsync(x => x.ProjectId == projectId && x.UserId == userId && x.IsActive, ct);
+        if (session is not null)
+            return session.Id;
+
+        session = new AiChatSession
+        {
+            ProjectId = projectId,
+            UserId = userId,
+            SelectionMode = AiModelSelectionMode.Auto,
+            SelectedModelDisplayName = "Studio"
+        };
+        dbContext.AiChatSessions.Add(session);
+        await dbContext.SaveChangesAsync(ct);
+        return session.Id;
+    }
+
+    /// <summary>
+    /// Cấp revision kế tiếp. Không chỉ tin LatestPlanRevision trên project —
+    /// sau fail/orphan data MAX(Revision) trong DB có thể cao hơn → tránh unique IX (ProjectId, Revision).
+    /// </summary>
+    private async Task<int> AllocateNextPlanRevisionAsync(InterviewProject project, CancellationToken ct)
+    {
+        var maxInDb = await dbContext.InterviewPlans
+            .Where(x => x.ProjectId == project.Id)
+            .Select(x => (int?)x.Revision)
+            .MaxAsync(ct) ?? 0;
+        var next = Math.Max(project.LatestPlanRevision, maxInDb) + 1;
+        project.LatestPlanRevision = next;
+        return next;
+    }
+
     public async Task<IReadOnlyList<PlanSummaryDto>> ListAsync(Guid projectId, Guid userId, CancellationToken ct)
     {
         await projectService.EnsureProjectAccessAsync(projectId, userId, false, ct);
@@ -288,8 +567,14 @@ public sealed class InterviewPlanService(
         if (string.IsNullOrWhiteSpace(jd.Content))
             throw new StudioBusinessException("JD_EMPTY", StatusCodes.Status422UnprocessableEntity, "Job Description đang trống.");
 
-        var selectedReady = await dbContext.StudioKnowledgeDocuments.CountAsync(
-            x => x.ProjectId == projectId && x.IsActive && x.IsSelected && x.ProcessingStatus == DocumentProcessingStatus.Completed, ct);
+        var selectedDocs = await dbContext.StudioKnowledgeDocuments.AsNoTracking()
+            .Where(x => x.ProjectId == projectId && x.IsActive && x.IsSelected
+                        && x.ProcessingStatus == DocumentProcessingStatus.Completed
+                        && x.KnowledgeDocumentId != null)
+            .Select(x => new { x.KnowledgeDocumentId, x.FileName })
+            .ToListAsync(ct);
+        var selectedReady = selectedDocs.Count;
+        var documentIds = selectedDocs.Select(x => x.KnowledgeDocumentId!.Value).Distinct().ToList();
         // Knowledge documents optional — chỉ JD là bắt buộc để lập plan (SCRUM: JD-only)
 
         var settings = await dbContext.StudioSettings.AsNoTracking().FirstOrDefaultAsync(x => x.ProjectId == projectId && x.IsActive, ct);
@@ -300,6 +585,7 @@ public sealed class InterviewPlanService(
         var interviewMinutes = preferredMinutes is > 0 ? preferredMinutes.Value : Math.Clamp(numberOfQuestions * 4, 30, 120);
         // SCRUM-370: loại câu từ Studio settings (fallback 4 loại mặc định)
         var studioQuestionTypes = StudioQuestionTypesHelper.ParseOrDefault(settings?.QuestionTypesJson);
+        var outputLanguage = StudioOutputLanguage.Normalize(settings?.Language);
 
         GeneratePlanResult ragResult;
         try
@@ -312,7 +598,10 @@ public sealed class InterviewPlanService(
                 Difficulty = difficulty,
                 QuestionTypes = studioQuestionTypes,
                 Skills = skills,
-                HrNote = StudioRagPlanHrNoteBuilder.BuildInitial(projectId, selectedReady, numberOfQuestions, interviewMinutes)
+                Language = outputLanguage,
+                DocumentIds = documentIds.Count > 0 ? documentIds : null,
+                HrNote = StudioRagPlanHrNoteBuilder.BuildInitial(
+                    projectId, selectedReady, numberOfQuestions, interviewMinutes, outputLanguage)
             }, ct);
         }
         catch (Exception ex)
@@ -332,10 +621,12 @@ public sealed class InterviewPlanService(
                 $"Không map được plan RAG: {ex.Message}");
         }
 
-        var revision = project.LatestPlanRevision + 1;
+        var revision = await AllocateNextPlanRevisionAsync(project, ct);
+        var sessionId = await EnsureProjectChatSessionIdAsync(projectId, userId, ct);
         var plan = new InterviewPlan
         {
             ProjectId = projectId,
+            SessionId = sessionId,
             Revision = revision,
             Status = InterviewPlanStatus.AwaitingApproval,
             Title = mapped.Title,
@@ -343,7 +634,7 @@ public sealed class InterviewPlanService(
             InterviewLengthMinutes = mapped.InterviewLengthMinutes,
             SeniorityLevel = mapped.SeniorityLevel,
             Difficulty = mapped.Difficulty,
-            Language = settings?.Language ?? jd.DetectedLanguage ?? "en",
+            Language = outputLanguage,
             GeneratedByModelName = "RAG",
             SourcePlanJson = mapped.SourcePlanJson
         };
@@ -407,12 +698,11 @@ public sealed class InterviewPlanService(
         }
     }
 
-    public async Task<PlanSummaryDto> RefineAsync(Guid projectId, Guid planId, Guid userId, string instruction, CancellationToken ct)
+    public async Task<PlanRefineResultDto> RefineAsync(Guid projectId, Guid planId, Guid userId, string instruction, CancellationToken ct)
     {
-        // SCRUM-368: refine qua RAG (retrieve) — không mock; chỉ instruction liên quan plan
+        // SCRUM-368 / SCRUM-388: refine qua RAG + sync Studio settings từ intent
         PlanChatScopeGuard.EnsurePlanRelated(instruction);
 
-        // SCRUM-382: ≤5 lần regenerate / draft (planId)
         var draftKey = planId.ToString("N");
         await subscriptionGate.CheckPlanRegenerateAsync(userId, draftKey);
 
@@ -429,7 +719,14 @@ public sealed class InterviewPlanService(
         if (string.IsNullOrWhiteSpace(jd.Content))
             throw new StudioBusinessException("JD_EMPTY", StatusCodes.Status422UnprocessableEntity, "Job Description đang trống.");
 
-        // Knowledge documents optional khi refine — giống GenerateInitial (SCRUM-375)
+        var selectedDocs = await dbContext.StudioKnowledgeDocuments.AsNoTracking()
+            .Where(x => x.ProjectId == projectId && x.IsActive && x.IsSelected
+                        && x.ProcessingStatus == DocumentProcessingStatus.Completed
+                        && x.KnowledgeDocumentId != null)
+            .Select(x => new { x.KnowledgeDocumentId, x.FileName })
+            .ToListAsync(ct);
+        var documentIds = selectedDocs.Select(x => x.KnowledgeDocumentId!.Value).Distinct().ToList();
+        var selectedDocNames = selectedDocs.Select(x => x.FileName).Where(n => !string.IsNullOrWhiteSpace(n)).Distinct().ToList();
 
         var sectionRows = await dbContext.PlanSections
             .Where(x => x.InterviewPlanId == source.Id && x.IsActive)
@@ -438,23 +735,47 @@ public sealed class InterviewPlanService(
             .ToListAsync(ct);
         var sectionTuples = sectionRows.Select(x => (x.Name, x.NumberOfQuestions)).ToList();
 
-        var settings = await dbContext.StudioSettings.AsNoTracking().FirstOrDefaultAsync(x => x.ProjectId == projectId && x.IsActive, ct);
-        var baselineQuestions = settings?.NumberOfQuestions > 0
-            ? settings.NumberOfQuestions
+        var settingsSnap = await dbContext.StudioSettings.AsNoTracking().FirstOrDefaultAsync(x => x.ProjectId == projectId && x.IsActive, ct);
+        var baselineQuestions = settingsSnap?.NumberOfQuestions > 0
+            ? settingsSnap.NumberOfQuestions
             : Math.Max(1, source.TotalQuestions);
-        // Ưu tiên số câu / độ khó / loại câu trong instruction chat (vd. "20 câu technical")
-        var parsed = StudioRefineInstructionParser.Parse(instruction);
-        var numberOfQuestions = StudioRefineInstructionParser.ResolveNumberOfQuestions(baselineQuestions, parsed);
-        var difficultyEnum = parsed.Difficulty ?? settings?.Difficulty ?? source.Difficulty;
+
+        var intent = StudioRefineInstructionParser.ParseIntent(instruction);
+        var numberOfQuestions = StudioRefineInstructionParser.ResolveNumberOfQuestions(baselineQuestions, intent);
+        var difficultyEnum = intent.Difficulty ?? settingsSnap?.Difficulty ?? source.Difficulty;
         var difficulty = difficultyEnum.ToString().ToLowerInvariant();
         var skills = ParseSkillsJson(jd.DetectedSkillsJson);
-        var preferredMinutes = settings?.InterviewLengthMinutes > 0 ? settings.InterviewLengthMinutes : source.InterviewLengthMinutes;
-        // Scale thời lượng nhẹ khi đổi số câu
-        if (numberOfQuestions != baselineQuestions && preferredMinutes > 0 && baselineQuestions > 0)
+        var baselineTypes = StudioQuestionTypesHelper.ParseOrDefault(settingsSnap?.QuestionTypesJson);
+        var questionTypes = StudioRefineInstructionParser.ResolveQuestionTypes(intent, baselineTypes);
+        var outputLanguage = StudioOutputLanguage.Normalize(
+            intent.Language ?? settingsSnap?.Language ?? source.Language);
+
+        var preferredMinutes = settingsSnap?.InterviewLengthMinutes > 0
+            ? settingsSnap.InterviewLengthMinutes
+            : source.InterviewLengthMinutes;
+        if (intent.InterviewLengthMinutes is int explicitMinutes)
+            preferredMinutes = explicitMinutes;
+        else if (numberOfQuestions != baselineQuestions && preferredMinutes > 0 && baselineQuestions > 0)
             preferredMinutes = Math.Clamp((int)Math.Round(preferredMinutes * (numberOfQuestions / (double)baselineQuestions)), 20, 180);
-        var baselineTypes = StudioQuestionTypesHelper.ParseOrDefault(settings?.QuestionTypesJson);
-        var questionTypes = StudioRefineInstructionParser.ResolveQuestionTypes(parsed, baselineTypes);
-        var hrNote = StudioRagRefineHrNoteBuilder.Build(instruction, source, sectionTuples, numberOfQuestions, difficulty, questionTypes);
+        preferredMinutes = Math.Clamp(preferredMinutes <= 0 ? Math.Clamp(numberOfQuestions * 3, 20, 180) : preferredMinutes, 15, 180);
+
+        // SCRUM-389 fast-path: settings-only → patch local, không RAG
+        if (StudioRefineInstructionParser.CanUseLocalSettingsPatch(intent, instruction))
+        {
+            if (string.IsNullOrWhiteSpace(source.SourcePlanJson))
+                throw new StudioBusinessException("PLAN_SOURCE_JSON_MISSING", StatusCodes.Status422UnprocessableEntity,
+                    "Plan không có SourcePlanJson — cần lập plan bằng RAG trước khi chỉnh settings nhanh.");
+
+            var localMapped = await BuildLocalPatchedMappedPlanAsync(
+                source, numberOfQuestions, difficultyEnum, preferredMinutes, questionTypes, ct);
+            return await PersistRefinedPlanAsync(
+                project, source, userId, instruction, intent, localMapped, questionTypes, outputLanguage,
+                usedLocalPatch: true, draftKey, ct);
+        }
+
+        var hrNote = StudioRagRefineHrNoteBuilder.Build(
+            instruction, source, sectionTuples, numberOfQuestions, difficulty, questionTypes,
+            outputLanguage, selectedDocNames, intent.FocusHints, intent.ExclusiveFocus);
 
         GeneratePlanResult ragResult;
         try
@@ -467,6 +788,8 @@ public sealed class InterviewPlanService(
                 Difficulty = difficulty,
                 QuestionTypes = questionTypes,
                 Skills = skills,
+                Language = outputLanguage,
+                DocumentIds = documentIds.Count > 0 ? documentIds : null,
                 HrNote = hrNote
             }, ct);
         }
@@ -487,30 +810,134 @@ public sealed class InterviewPlanService(
                 $"Không map được plan RAG: {ex.Message}");
         }
 
-        // Plan cũ → Superseded nếu đang AwaitingApproval/Draft/Rejected
+        var resolvedMinutes = StudioRefineInstructionParser.ResolveInterviewMinutes(
+            intent, mapped.InterviewLengthMinutes, numberOfQuestions, preferredMinutes);
+        mapped = mapped with { InterviewLengthMinutes = resolvedMinutes };
+        if (intent.Difficulty is not null)
+            mapped = mapped with { Difficulty = intent.Difficulty.Value };
+
+        // SCRUM-389: exclusive → lọc coverage/focus ngoài ALLOWED_TOPICS; 1 lần retry nếu vẫn lệch
+        if (intent.ExclusiveFocus && intent.FocusHints.Count > 0)
+        {
+            if (StudioExclusiveCoverageFilter.HasDisallowedFocus(mapped, intent.FocusHints))
+            {
+                try
+                {
+                    var retryNote = hrNote + "\nVALIDATION_RETRY: drop non-allowed coverage; ONLY ALLOWED_TOPICS.";
+                    var retry = await ragService.GeneratePlanAsync(new GeneratePlanRequest
+                    {
+                        OwnerId = userId,
+                        JobDescription = jd.Content,
+                        NumberOfQuestions = numberOfQuestions,
+                        Difficulty = difficulty,
+                        QuestionTypes = questionTypes,
+                        Skills = skills,
+                        Language = outputLanguage,
+                        DocumentIds = documentIds.Count > 0 ? documentIds : null,
+                        HrNote = retryNote.Length <= 2000 ? retryNote : retryNote[..2000]
+                    }, ct);
+                    mapped = StudioRagPlanMapper.MapFromRagPlanObject(retry.Plan, numberOfQuestions, preferredMinutes);
+                    mapped = mapped with { InterviewLengthMinutes = resolvedMinutes };
+                    if (intent.Difficulty is not null)
+                        mapped = mapped with { Difficulty = intent.Difficulty.Value };
+                }
+                catch
+                {
+                    // Fallback filter local
+                }
+            }
+            mapped = StudioExclusiveCoverageFilter.Filter(
+                mapped, intent.FocusHints, numberOfQuestions, resolvedMinutes, difficultyEnum);
+        }
+
+        return await PersistRefinedPlanAsync(
+            project, source, userId, instruction, intent, mapped, questionTypes, outputLanguage,
+            usedLocalPatch: false, draftKey, ct);
+    }
+
+    private async Task<StudioRagPlanMapper.MappedPlan> BuildLocalPatchedMappedPlanAsync(
+        InterviewPlan source,
+        int numberOfQuestions,
+        QuestionDifficulty difficulty,
+        int minutes,
+        IReadOnlyList<string> questionTypes,
+        CancellationToken ct)
+    {
+        var sectionRows = await dbContext.PlanSections
+            .Where(x => x.InterviewPlanId == source.Id && x.IsActive)
+            .OrderBy(x => x.OrderIndex)
+            .Select(x => new { x.Name, x.Description, x.OrderIndex, x.NumberOfQuestions, x.Difficulty, x.EstimatedMinutes })
+            .ToListAsync(ct);
+        var focusRows = await dbContext.PlanFocusAreas
+            .Where(x => x.InterviewPlanId == source.Id && x.IsActive)
+            .OrderBy(x => x.OrderIndex)
+            .Select(x => new { x.Name, x.Weight, x.OrderIndex })
+            .ToListAsync(ct);
+        try
+        {
+            return StudioPlanSettingsPatcher.Apply(
+                source,
+                sectionRows.Select(s => new StudioPlanSettingsPatcher.SectionInput(
+                    s.Name, s.Description, s.OrderIndex, s.NumberOfQuestions, s.Difficulty, s.EstimatedMinutes)).ToList(),
+                focusRows.Select(f => new StudioPlanSettingsPatcher.FocusInput(f.Name, f.Weight, f.OrderIndex)).ToList(),
+                numberOfQuestions,
+                difficulty,
+                minutes,
+                questionTypes);
+        }
+        catch (Exception ex)
+        {
+            throw new StudioBusinessException("PLAN_SETTINGS_PATCH_FAILED", StatusCodes.Status422UnprocessableEntity,
+                $"Không áp dụng settings vào plan: {ex.Message}");
+        }
+    }
+
+    private async Task<PlanRefineResultDto> PersistRefinedPlanAsync(
+        InterviewProject project,
+        InterviewPlan source,
+        Guid userId,
+        string instruction,
+        StudioRefineInstructionParser.StudioChatSettingsIntent intent,
+        StudioRagPlanMapper.MappedPlan mapped,
+        IReadOnlyList<string> questionTypes,
+        string outputLanguage,
+        bool usedLocalPatch,
+        string draftKey,
+        CancellationToken ct)
+    {
         if (source.Status is InterviewPlanStatus.AwaitingApproval or InterviewPlanStatus.Draft or InterviewPlanStatus.Rejected)
         {
             source.Status = InterviewPlanStatus.Superseded;
             source.UpdatedAt = DateTime.UtcNow;
         }
 
-        var revision = project.LatestPlanRevision + 1;
+        var revision = await AllocateNextPlanRevisionAsync(project, ct);
+        var sessionId = source.SessionId != Guid.Empty
+            ? source.SessionId
+            : await EnsureProjectChatSessionIdAsync(project.Id, userId, ct);
+        if (source.SessionId != Guid.Empty
+            && !await dbContext.AiChatSessions.AnyAsync(x => x.Id == source.SessionId && x.IsActive, ct))
+        {
+            sessionId = await EnsureProjectChatSessionIdAsync(project.Id, userId, ct);
+        }
+
         var refined = new InterviewPlan
         {
-            ProjectId = projectId,
+            ProjectId = project.Id,
+            SessionId = sessionId,
             Revision = revision,
             Status = InterviewPlanStatus.AwaitingApproval,
             Title = mapped.Title,
             TotalQuestions = mapped.TotalQuestions,
             InterviewLengthMinutes = mapped.InterviewLengthMinutes,
             Difficulty = mapped.Difficulty,
-            QuestionTone = source.QuestionTone,
-            Language = source.Language,
+            QuestionTone = intent.QuestionTone ?? source.QuestionTone,
+            Language = outputLanguage,
             SeniorityLevel = mapped.SeniorityLevel,
-            IncludeSampleAnswers = source.IncludeSampleAnswers,
-            IncludeScoringRubric = source.IncludeScoringRubric,
-            OutputFormat = source.OutputFormat,
-            GeneratedByModelName = "RAG",
+            IncludeSampleAnswers = intent.IncludeSampleAnswers ?? source.IncludeSampleAnswers,
+            IncludeScoringRubric = intent.IncludeScoringRubric ?? source.IncludeScoringRubric,
+            OutputFormat = intent.OutputFormat ?? source.OutputFormat,
+            GeneratedByModelName = usedLocalPatch ? "StudioSettingsPatch" : "RAG",
             SourcePlanJson = mapped.SourcePlanJson
         };
         dbContext.InterviewPlans.Add(refined);
@@ -542,21 +969,41 @@ public sealed class InterviewPlanService(
 
         project.LatestPlanRevision = revision;
         project.Status = InterviewProjectStatus.AwaitingApproval;
-        await SyncStudioSettingsFromPlanAsync(projectId, mapped, questionTypes, ct);
+        await SyncStudioSettingsFromPlanAsync(project.Id, mapped, questionTypes, ct, intent);
         await dbContext.SaveChangesAsync(ct);
 
-        // SCRUM-376: persist transcript refine chat
+        var citationFiles = usedLocalPatch
+            ? StudioRagPlanMapper.ExtractCitationSourceFiles(mapped.SourcePlanJson).Take(8).ToList()
+            : StudioRagPlanMapper.ExtractCitationSourceFiles(mapped.SourcePlanJson).Take(8).ToList();
+        var settingsDto = await BuildSettingsDtoAsync(project.Id, ct);
+        var changedFields = StudioChatRefineMessageBuilder.DescribeChanges(
+            intent,
+            settingsDto.NumberOfQuestions,
+            settingsDto.InterviewLengthMinutes,
+            settingsDto.Difficulty,
+            settingsDto.QuestionTypes,
+            settingsDto.Language,
+            settingsDto.QuestionTone,
+            settingsDto.OutputFormat,
+            settingsDto.IncludeSampleAnswers,
+            settingsDto.IncludeScoringRubric);
+        var assistantMessage = StudioChatRefineMessageBuilder.Build(
+            refined.Revision, refined.Title, refined.TotalQuestions, changedFields, citationFiles,
+            intent.FocusHints, intent.ExclusiveFocus, usedLocalPatch);
+
         await aiChatService.AppendUserAndAssistantAsync(
-            projectId,
+            project.Id,
             userId,
             instruction.Trim(),
-            $"Đã cập nhật plan (revision {refined.Revision}): {refined.Title} — {refined.TotalQuestions} câu hỏi.",
+            assistantMessage,
             refined.Id,
             refined.Revision,
             ct);
 
         await usageMetering.IncrementAsync(userId, DomainLayer.Constants.UsageType.HrPlanRegenerate, draftKey);
-        return new PlanSummaryDto(refined.Id, refined.Revision, refined.Title, refined.Status, refined.TotalQuestions);
+        return new PlanRefineResultDto(
+            refined.Id, refined.Revision, refined.Title, refined.Status, refined.TotalQuestions,
+            settingsDto, changedFields, citationFiles, assistantMessage);
     }
 
     /// <summary>
@@ -582,11 +1029,11 @@ public sealed class InterviewPlanService(
             throw new StudioBusinessException("PLAN_SOURCE_JSON_MISSING", StatusCodes.Status422UnprocessableEntity,
                 "Plan không có SourcePlanJson — cần lập plan bằng RAG trước.");
 
-        // Cập nhật settings trước
+        // Cập nhật settings trước (AppliedPlanId nullable — chưa gán đến khi approve / sync từ plan mới)
         var settings = await dbContext.StudioSettings.FirstOrDefaultAsync(x => x.ProjectId == projectId && x.IsActive, ct);
         if (settings is null)
         {
-            settings = new StudioSettings { ProjectId = projectId };
+            settings = new StudioSettings { ProjectId = projectId, AppliedPlanId = null };
             dbContext.StudioSettings.Add(settings);
         }
         settings.NumberOfQuestions = request.NumberOfQuestions;
@@ -631,10 +1078,20 @@ public sealed class InterviewPlanService(
             source.UpdatedAt = DateTime.UtcNow;
         }
 
-        var revision = project.LatestPlanRevision + 1;
+        var revision = await AllocateNextPlanRevisionAsync(project, ct);
+        var sessionId = source.SessionId != Guid.Empty
+            ? source.SessionId
+            : await EnsureProjectChatSessionIdAsync(projectId, userId, ct);
+        if (source.SessionId != Guid.Empty
+            && !await dbContext.AiChatSessions.AnyAsync(x => x.Id == source.SessionId && x.IsActive, ct))
+        {
+            sessionId = await EnsureProjectChatSessionIdAsync(projectId, userId, ct);
+        }
+
         var patched = new InterviewPlan
         {
             ProjectId = projectId,
+            SessionId = sessionId,
             Revision = revision,
             Status = InterviewPlanStatus.AwaitingApproval,
             Title = mapped.Title,
@@ -699,12 +1156,13 @@ public sealed class InterviewPlanService(
         Guid projectId,
         StudioRagPlanMapper.MappedPlan mapped,
         IReadOnlyList<string> questionTypes,
-        CancellationToken ct)
+        CancellationToken ct,
+        StudioRefineInstructionParser.StudioChatSettingsIntent? intent = null)
     {
         var settings = await dbContext.StudioSettings.FirstOrDefaultAsync(x => x.ProjectId == projectId && x.IsActive, ct);
         if (settings is null)
         {
-            settings = new StudioSettings { ProjectId = projectId };
+            settings = new StudioSettings { ProjectId = projectId, AppliedPlanId = null };
             dbContext.StudioSettings.Add(settings);
         }
         settings.NumberOfQuestions = mapped.TotalQuestions;
@@ -712,7 +1170,72 @@ public sealed class InterviewPlanService(
         settings.InterviewLengthMinutes = mapped.InterviewLengthMinutes;
         settings.SeniorityLevel = mapped.SeniorityLevel;
         settings.QuestionTypesJson = StudioQuestionTypesHelper.ToJson(questionTypes);
+        // SCRUM-388: chỉ ghi đè preference khi user nêu trong chat
+        if (intent?.Language is not null)
+            settings.Language = StudioOutputLanguage.Normalize(intent.Language);
+        if (intent?.QuestionTone is not null)
+            settings.QuestionTone = intent.QuestionTone;
+        if (intent?.OutputFormat is not null)
+            settings.OutputFormat = intent.OutputFormat;
+        if (intent?.IncludeSampleAnswers is not null)
+            settings.IncludeSampleAnswers = intent.IncludeSampleAnswers.Value;
+        if (intent?.IncludeScoringRubric is not null)
+            settings.IncludeScoringRubric = intent.IncludeScoringRubric.Value;
         settings.UpdatedAt = DateTime.UtcNow;
+    }
+
+    private async Task<StudioSettingsDto> BuildSettingsDtoAsync(Guid projectId, CancellationToken ct)
+    {
+        var settings = await dbContext.StudioSettings.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.ProjectId == projectId && x.IsActive, ct);
+        var appliedPlanId = settings?.AppliedPlanId;
+        var hasJd = await dbContext.StudioJobDescriptions.AnyAsync(x => x.ProjectId == projectId && x.IsActive, ct);
+        var hasSelectedDoc = await dbContext.StudioKnowledgeDocuments.AnyAsync(
+            x => x.ProjectId == projectId && x.IsActive && x.IsSelected && x.ProcessingStatus == DocumentProcessingStatus.Completed, ct);
+        var hasAwaiting = await dbContext.InterviewPlans.AnyAsync(
+            x => x.ProjectId == projectId && x.IsActive && x.Status == InterviewPlanStatus.AwaitingApproval, ct);
+        var hasApproved = await dbContext.InterviewPlans.AnyAsync(
+            x => x.ProjectId == projectId && x.IsActive && x.Status == InterviewPlanStatus.Approved, ct);
+        var canGenerate = hasApproved && appliedPlanId.HasValue && await dbContext.InterviewPlans.AnyAsync(
+            x => x.Id == appliedPlanId && x.ProjectId == projectId && x.Status == InterviewPlanStatus.Approved && x.IsActive, ct);
+        var readiness = new StudioReadinessDto(hasJd, hasSelectedDoc, hasAwaiting, hasApproved, canGenerate);
+        if (settings is null)
+        {
+            return new StudioSettingsDto(
+                projectId, null, 60, 15, QuestionDifficulty.Medium, "Professional",
+                true, true, "StructuredInterviewKit", readiness,
+                StudioQuestionTypesHelper.DefaultTypes, StudioOutputLanguage.Vietnamese,
+                "Mixed", new[] { "BUG_DETECTION", "CODE_COMPLETION", "REFACTORING", "PERFORMANCE_ANALYSIS" });
+        }
+        return new StudioSettingsDto(
+            projectId,
+            settings.AppliedPlanId,
+            settings.InterviewLengthMinutes,
+            settings.NumberOfQuestions,
+            settings.Difficulty,
+            settings.QuestionTone,
+            settings.IncludeSampleAnswers,
+            settings.IncludeScoringRubric,
+            settings.OutputFormat,
+            readiness,
+            StudioQuestionTypesHelper.ParseOrDefault(settings.QuestionTypesJson),
+            StudioOutputLanguage.Normalize(settings.Language),
+            string.IsNullOrWhiteSpace(settings.ContentMode) ? "Mixed" : settings.ContentMode,
+            ParseCodeTemplatesOrDefault(settings.CodeTemplatesJson));
+    }
+
+    private static IReadOnlyList<string> ParseCodeTemplatesOrDefault(string? json)
+    {
+        try
+        {
+            var items = JsonSerializer.Deserialize<List<string>>(json ?? "[]") ?? new List<string>();
+            var cleaned = items.Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            return cleaned.Count > 0 ? cleaned : new[] { "BUG_DETECTION", "CODE_COMPLETION", "REFACTORING", "PERFORMANCE_ANALYSIS" };
+        }
+        catch
+        {
+            return new[] { "BUG_DETECTION", "CODE_COMPLETION", "REFACTORING", "PERFORMANCE_ANALYSIS" };
+        }
     }
 
     public async Task<PlanSummaryDto> SubmitForApprovalAsync(Guid projectId, Guid planId, Guid userId, CancellationToken ct)
@@ -833,6 +1356,69 @@ public sealed class InterviewPlanService(
         return new PlanSummaryDto(plan.Id, plan.Revision, plan.Title, plan.Status, plan.TotalQuestions);
     }
 
+    /// <summary>SCRUM-393: HR đổi tiêu đề plan (tên công việc) ngay trên PlanWorkspace.</summary>
+    public async Task<PlanSummaryDto> RenameTitleAsync(
+        Guid projectId, Guid planId, Guid userId, RenamePlanTitleRequest request, CancellationToken ct)
+    {
+        await projectService.EnsureProjectAccessAsync(projectId, userId, true, ct);
+        var plan = await dbContext.InterviewPlans.FirstOrDefaultAsync(
+                x => x.Id == planId && x.ProjectId == projectId && x.IsActive, ct)
+            ?? throw new StudioBusinessException("PLAN_NOT_FOUND", StatusCodes.Status404NotFound, "Không tìm thấy plan.");
+
+        if (plan.Status == InterviewPlanStatus.Superseded)
+            throw new StudioBusinessException("PLAN_STATUS_INVALID", StatusCodes.Status422UnprocessableEntity,
+                "Plan đã bị thay thế, không thể đổi tiêu đề.");
+
+        var title = (request.Title ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(title))
+            throw new StudioBusinessException("PLAN_TITLE_EMPTY", StatusCodes.Status400BadRequest, "Tiêu đề không được để trống.");
+        if (title.Length > 500)
+            throw new StudioBusinessException("PLAN_TITLE_TOO_LONG", StatusCodes.Status400BadRequest,
+                "Tiêu đề không được vượt quá 500 ký tự.");
+
+        plan.Title = title;
+        SyncRoleTitleInSourcePlanJson(plan, title);
+        plan.UpdatedAt = DateTime.UtcNow;
+        await dbContext.SaveChangesAsync(ct);
+
+        return new PlanSummaryDto(plan.Id, plan.Revision, plan.Title, plan.Status, plan.TotalQuestions);
+    }
+
+    /// <summary>Đồng bộ roleTitle trong SourcePlanJson khi HR đổi tên hiển thị (không đụng summary/coverage).</summary>
+    private static void SyncRoleTitleInSourcePlanJson(InterviewPlan plan, string displayTitle)
+    {
+        if (string.IsNullOrWhiteSpace(plan.SourcePlanJson)) return;
+        try
+        {
+            var node = JsonNode.Parse(plan.SourcePlanJson);
+            if (node is null) return;
+
+            var role = displayTitle;
+            var colon = displayTitle.IndexOf(':');
+            if (colon > 0)
+                role = displayTitle[..colon].Trim();
+            if (role.Length > 80)
+                role = role[..80];
+
+            JsonObject? target = node as JsonObject;
+            if (node["plan"] is JsonObject nested)
+                target = nested;
+            if (target is null) return;
+
+            target["roleTitle"] = role;
+            target["role_title"] = role;
+            plan.SourcePlanJson = node.ToJsonString(new JsonSerializerOptions
+            {
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                WriteIndented = false
+            });
+        }
+        catch
+        {
+            // Không chặn rename Title nếu JSON cũ lỗi — Title DB vẫn được lưu
+        }
+    }
+
     public async Task<IReadOnlyList<PlanApprovalHistoryDto>> GetApprovalHistoryAsync(Guid projectId, Guid planId, Guid userId, CancellationToken ct)
     {
         await projectService.EnsureProjectAccessAsync(projectId, userId, false, ct);
@@ -850,7 +1436,8 @@ public sealed class QuestionGenerationService(
     AppDbContext dbContext,
     IInterviewProjectService projectService,
     IStudioMockAiService mockAiService,
-    IRagService ragService) : IQuestionGenerationService
+    IRagService ragService,
+    IBlobStorageService blobStorage) : IQuestionGenerationService
 {
     public async Task<GenerationRunDto> GenerateAsync(Guid projectId, Guid userId, GenerateQuestionsRequest request, CancellationToken ct)
     {
@@ -910,12 +1497,24 @@ public sealed class QuestionGenerationService(
 
         try
         {
+            // Ưu tiên settings Studio (UI Ngôn ngữ đầu ra) → plan.Language
+            var settingsPref = await dbContext.StudioSettings.AsNoTracking()
+                .Where(x => x.ProjectId == projectId && x.IsActive)
+                .Select(x => new { x.Language, x.ContentMode, x.CodeTemplatesJson })
+                .FirstOrDefaultAsync(ct);
+            var outputLanguage = StudioOutputLanguage.Normalize(settingsPref?.Language ?? plan.Language);
+            var langInstruction = StudioOutputLanguage.RagInstruction(outputLanguage);
+            var contentMode = string.IsNullOrWhiteSpace(settingsPref?.ContentMode) ? "Mixed" : settingsPref!.ContentMode.Trim();
+            var codeTemplates = ParseCodeTemplatesOrDefault(settingsPref?.CodeTemplatesJson);
+            var templatesSegment = codeTemplates.Count > 0 ? string.Join(",", codeTemplates) : "BUG_DETECTION,CODE_COMPLETION";
+
             await ragService.EnqueueGenerateQuestionsFromPlanAsync(run.Id, new GenerateQuestionsFromPlanRequest
             {
                 OwnerId = userId,
                 JobDescription = jd.Content,
                 ApprovedPlan = approvedPlan,
-                HrNote = $"STUDIO_UI=1; Studio project {projectId}; plan {plan.Id}; run {run.Id}"
+                Language = outputLanguage,
+                HrNote = $"STUDIO_UI=1; Studio project {projectId}; plan {plan.Id}; run {run.Id}; CONTENT_MODE={contentMode}; CODE_TEMPLATES={templatesSegment}; {langInstruction}"
             }, ct);
         }
         catch (Exception ex)
@@ -1019,8 +1618,8 @@ public sealed class QuestionGenerationService(
             run.ErrorCode = null;
             run.ErrorMessage = null;
 
-            // SCRUM-372: mirror sang QuestionGenerationJob để History (/hr/history) thấy bộ câu hỏi Studio
-            await StudioHistoryMirror.MirrorCompletedRunAsync(dbContext, run, questions, ct);
+            // Không còn mirror dual-write sang V1 jobs — Save/Publish qua Studio Save → question_sets.
+            // (StudioHistoryMirror deprecated — Phase 4 drop V1 tables.)
 
             await dbContext.SaveChangesAsync(ct);
             await tx.CommitAsync(ct);
@@ -1050,9 +1649,12 @@ public sealed class QuestionGenerationService(
         var total = await query.CountAsync(ct);
         var page = request.Page < 1 ? 1 : request.Page;
         var pageSize = request.PageSize is < 1 or > 100 ? 20 : request.PageSize;
-        var items = await query.OrderBy(x => x.OrderIndex).Skip((page - 1) * pageSize).Take(pageSize)
-            .Select(x => new StudioQuestionDto(x.Id, x.Content, x.Difficulty, x.Type, x.OrderIndex, x.ExpectedAnswer, x.ScoringRubric))
+        // SCRUM-390: load TagsJson rồi map citations in-memory (không parse JSON trong SQL)
+        var rows = await query.OrderBy(x => x.OrderIndex).Skip((page - 1) * pageSize).Take(pageSize)
             .ToListAsync(ct);
+        var items = new List<StudioQuestionDto>(rows.Count);
+        foreach (var row in rows)
+            items.Add(await MapQuestionWithImageSasAsync(row, ct));
         return new StudioQuestionListResponse(page, pageSize, total, items);
     }
 
@@ -1069,7 +1671,7 @@ public sealed class QuestionGenerationService(
         q.ScoringRubric = request.ScoringRubric;
         q.UpdatedAt = DateTime.UtcNow;
         await dbContext.SaveChangesAsync(ct);
-        return new StudioQuestionDto(q.Id, q.Content, q.Difficulty, q.Type, q.OrderIndex, q.ExpectedAnswer, q.ScoringRubric);
+        return await MapQuestionWithImageSasAsync(q, ct);
     }
 
     public async Task DeleteQuestionAsync(Guid projectId, Guid questionId, Guid userId, CancellationToken ct)
@@ -1092,7 +1694,94 @@ public sealed class QuestionGenerationService(
         q.ScoringRubric = request.IncludeScoringRubric ? "Regenerated rubric." : null;
         q.UpdatedAt = DateTime.UtcNow;
         await dbContext.SaveChangesAsync(ct);
-        return new StudioQuestionDto(q.Id, q.Content, q.Difficulty, q.Type, q.OrderIndex, q.ExpectedAnswer, q.ScoringRubric);
+        // Mock regen giữ TagsJson/citations cũ — chưa gọi RAG lại
+        return await MapQuestionWithImageSasAsync(q, ct);
+    }
+
+    private static readonly HashSet<string> AllowedQuestionImageContentTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "image/jpeg", "image/jpg", "image/png", "image/webp"
+    };
+    private const long MaxQuestionImageBytes = 5 * 1024 * 1024;
+
+    public async Task<StudioQuestionDto> UploadQuestionImageAsync(
+        Guid projectId,
+        Guid questionId,
+        Guid userId,
+        Stream fileStream,
+        string fileName,
+        string contentType,
+        long fileLength,
+        CancellationToken ct)
+    {
+        await projectService.EnsureProjectAccessAsync(projectId, userId, true, ct);
+        var q = await dbContext.InterviewQuestions.FirstOrDefaultAsync(x => x.Id == questionId && x.ProjectId == projectId && x.IsActive, ct)
+            ?? throw new StudioBusinessException("QUESTION_NOT_FOUND", 404, "Không tìm thấy câu hỏi.");
+
+        if (fileLength <= 0)
+            throw new StudioBusinessException("IMAGE_EMPTY", 400, "File ảnh trống.");
+        if (fileLength > MaxQuestionImageBytes)
+            throw new StudioBusinessException("IMAGE_TOO_LARGE", 400, "Ảnh tối đa 5MB.");
+        var ctNorm = string.IsNullOrWhiteSpace(contentType) ? "application/octet-stream" : contentType.Trim();
+        if (!AllowedQuestionImageContentTypes.Contains(ctNorm)
+            && !fileName.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase)
+            && !fileName.EndsWith(".jpeg", StringComparison.OrdinalIgnoreCase)
+            && !fileName.EndsWith(".png", StringComparison.OrdinalIgnoreCase)
+            && !fileName.EndsWith(".webp", StringComparison.OrdinalIgnoreCase))
+            throw new StudioBusinessException("IMAGE_INVALID_TYPE", 400, "Chỉ chấp nhận jpg/jpeg/png/webp.");
+
+        var meta = StudioRagQuestionMapper.ParseMeta(q.TagsJson);
+        if (!string.IsNullOrWhiteSpace(meta.AttachedImageBlobPath))
+        {
+            try { await blobStorage.DeleteAsync(meta.AttachedImageBlobPath, ct); }
+            catch { /* bỏ qua nếu blob cũ không còn */ }
+        }
+
+        var blobPath = BlobPathHelper.BuildQuestionImagePath(projectId, questionId, fileName);
+        await blobStorage.UploadAsync(fileStream, ctNorm, blobPath, ct);
+        meta.AttachedImageBlobPath = blobPath;
+        q.TagsJson = StudioRagQuestionMapper.SerializeMeta(meta);
+        q.UpdatedAt = DateTime.UtcNow;
+        await dbContext.SaveChangesAsync(ct);
+        return await MapQuestionWithImageSasAsync(q, ct);
+    }
+
+    public async Task<StudioQuestionDto> DeleteQuestionImageAsync(Guid projectId, Guid questionId, Guid userId, CancellationToken ct)
+    {
+        await projectService.EnsureProjectAccessAsync(projectId, userId, true, ct);
+        var q = await dbContext.InterviewQuestions.FirstOrDefaultAsync(x => x.Id == questionId && x.ProjectId == projectId && x.IsActive, ct)
+            ?? throw new StudioBusinessException("QUESTION_NOT_FOUND", 404, "Không tìm thấy câu hỏi.");
+
+        var meta = StudioRagQuestionMapper.ParseMeta(q.TagsJson);
+        if (!string.IsNullOrWhiteSpace(meta.AttachedImageBlobPath))
+        {
+            try { await blobStorage.DeleteAsync(meta.AttachedImageBlobPath, ct); }
+            catch { /* ignore */ }
+            meta.AttachedImageBlobPath = null;
+            q.TagsJson = StudioRagQuestionMapper.SerializeMeta(meta);
+            q.UpdatedAt = DateTime.UtcNow;
+            await dbContext.SaveChangesAsync(ct);
+        }
+
+        return await MapQuestionWithImageSasAsync(q, ct);
+    }
+
+    private async Task<StudioQuestionDto> MapQuestionWithImageSasAsync(InterviewQuestion q, CancellationToken ct)
+    {
+        var meta = StudioRagQuestionMapper.ParseMeta(q.TagsJson);
+        string? url = null;
+        if (!string.IsNullOrWhiteSpace(meta.AttachedImageBlobPath))
+        {
+            try
+            {
+                url = await blobStorage.GenerateReadSasUrlAsync(meta.AttachedImageBlobPath, TimeSpan.FromHours(2), ct);
+            }
+            catch
+            {
+                url = null;
+            }
+        }
+        return StudioRagQuestionMapper.MapToStudioQuestionDto(q, url);
     }
 
     public async Task<IReadOnlyList<GenerationRunDto>> ListRunsAsync(Guid projectId, Guid userId, CancellationToken ct)
@@ -1111,6 +1800,26 @@ public sealed class QuestionGenerationService(
         var row = await dbContext.QuestionGenerationRuns.FirstOrDefaultAsync(x => x.Id == runId && x.ProjectId == projectId && x.IsActive, ct)
             ?? throw new StudioBusinessException("GENERATION_RUN_NOT_FOUND", 404, "Không tìm thấy generation run.");
         return new GenerationRunDto(row.Id, row.InterviewPlanId, row.Status, row.RequestedQuestionCount, row.GeneratedQuestionCount, row.StartedAt, row.CompletedAt, row.ErrorCode, row.ErrorMessage);
+    }
+
+    private static IReadOnlyList<string> ParseCodeTemplatesOrDefault(string? json)
+    {
+        try
+        {
+            var items = JsonSerializer.Deserialize<List<string>>(json ?? "[]") ?? new List<string>();
+            var cleaned = items
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Select(x => x.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            return cleaned.Count > 0
+                ? cleaned
+                : new[] { "BUG_DETECTION", "CODE_COMPLETION", "REFACTORING", "PERFORMANCE_ANALYSIS" };
+        }
+        catch
+        {
+            return new[] { "BUG_DETECTION", "CODE_COMPLETION", "REFACTORING", "PERFORMANCE_ANALYSIS" };
+        }
     }
 }
 
@@ -1284,7 +1993,10 @@ public sealed class StudioSettingsService(AppDbContext dbContext, IInterviewProj
         var readiness = await BuildReadinessAsync(projectId, settings?.AppliedPlanId, ct);
         if (settings is null)
         {
-            return new StudioSettingsDto(projectId, null, 0, 0, QuestionDifficulty.Medium, "Professional", false, false, "Markdown", readiness, StudioQuestionTypesHelper.DefaultTypes);
+            return new StudioSettingsDto(
+                projectId, null, 0, 0, QuestionDifficulty.Medium, "Professional", false, false, "Markdown",
+                readiness, StudioQuestionTypesHelper.DefaultTypes, StudioOutputLanguage.Vietnamese,
+                "Mixed", new[] { "BUG_DETECTION", "CODE_COMPLETION", "REFACTORING", "PERFORMANCE_ANALYSIS" });
         }
         return new StudioSettingsDto(
             projectId,
@@ -1297,7 +2009,10 @@ public sealed class StudioSettingsService(AppDbContext dbContext, IInterviewProj
             settings.IncludeScoringRubric,
             settings.OutputFormat,
             readiness,
-            StudioQuestionTypesHelper.ParseOrDefault(settings.QuestionTypesJson));
+            StudioQuestionTypesHelper.ParseOrDefault(settings.QuestionTypesJson),
+            StudioOutputLanguage.Normalize(settings.Language),
+            string.IsNullOrWhiteSpace(settings.ContentMode) ? "Mixed" : settings.ContentMode,
+            ParseCodeTemplatesOrDefault(settings.CodeTemplatesJson));
     }
 
     public async Task<StudioSettingsDto> UpdateAsync(Guid projectId, Guid userId, UpdateStudioSettingsRequest request, CancellationToken ct)
@@ -1312,12 +2027,15 @@ public sealed class StudioSettingsService(AppDbContext dbContext, IInterviewProj
         var settings = await dbContext.StudioSettings.FirstOrDefaultAsync(x => x.ProjectId == projectId && x.IsActive, ct);
         if (settings is null)
         {
-            settings = new StudioSettings { ProjectId = projectId };
+            settings = new StudioSettings { ProjectId = projectId, AppliedPlanId = null };
             dbContext.StudioSettings.Add(settings);
         }
         var types = StudioQuestionTypesHelper.Normalize(request.QuestionTypes);
         if (types.Count == 0) types = StudioQuestionTypesHelper.DefaultTypes.ToList();
         StudioQuestionTypesHelper.EnsureValidOrThrow(types);
+
+        // FE gửi outputLanguage; một số client cũ gửi language
+        var language = StudioOutputLanguage.Normalize(request.OutputLanguage ?? request.Language);
 
         settings.InterviewLengthMinutes = request.InterviewLengthMinutes;
         settings.NumberOfQuestions = request.NumberOfQuestions;
@@ -1326,7 +2044,15 @@ public sealed class StudioSettingsService(AppDbContext dbContext, IInterviewProj
         settings.IncludeSampleAnswers = request.IncludeSampleAnswers;
         settings.IncludeScoringRubric = request.IncludeScoringRubric;
         settings.OutputFormat = request.OutputFormat;
+        settings.Language = language;
         settings.QuestionTypesJson = StudioQuestionTypesHelper.ToJson(types);
+        settings.ContentMode = string.IsNullOrWhiteSpace(request.ContentMode) ? "Mixed" : request.ContentMode.Trim();
+        settings.CodeTemplatesJson = JsonSerializer.Serialize(
+            (request.EnabledCodeTemplates ?? Array.Empty<string>())
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray());
         settings.UpdatedAt = DateTime.UtcNow;
         await dbContext.SaveChangesAsync(ct);
         var readiness = await BuildReadinessAsync(projectId, settings.AppliedPlanId, ct);
@@ -1341,7 +2067,10 @@ public sealed class StudioSettingsService(AppDbContext dbContext, IInterviewProj
             settings.IncludeScoringRubric,
             settings.OutputFormat,
             readiness,
-            types);
+            types,
+            language,
+            settings.ContentMode,
+            ParseCodeTemplatesOrDefault(settings.CodeTemplatesJson));
     }
 
     private async Task<StudioReadinessDto> BuildReadinessAsync(Guid projectId, Guid? appliedPlanId, CancellationToken ct)
@@ -1352,6 +2081,20 @@ public sealed class StudioSettingsService(AppDbContext dbContext, IInterviewProj
         var hasApproved = await dbContext.InterviewPlans.AnyAsync(x => x.ProjectId == projectId && x.IsActive && x.Status == InterviewPlanStatus.Approved, ct);
         var canGenerate = hasApproved && appliedPlanId.HasValue && await dbContext.InterviewPlans.AnyAsync(x => x.Id == appliedPlanId && x.ProjectId == projectId && x.Status == InterviewPlanStatus.Approved && x.IsActive, ct);
         return new StudioReadinessDto(hasJd, hasSelectedDoc, hasAwaiting, hasApproved, canGenerate);
+    }
+
+    private static IReadOnlyList<string> ParseCodeTemplatesOrDefault(string? json)
+    {
+        try
+        {
+            var items = JsonSerializer.Deserialize<List<string>>(json ?? "[]") ?? new List<string>();
+            var cleaned = items.Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            return cleaned.Count > 0 ? cleaned : new[] { "BUG_DETECTION", "CODE_COMPLETION", "REFACTORING", "PERFORMANCE_ANALYSIS" };
+        }
+        catch
+        {
+            return new[] { "BUG_DETECTION", "CODE_COMPLETION", "REFACTORING", "PERFORMANCE_ANALYSIS" };
+        }
     }
 }
 

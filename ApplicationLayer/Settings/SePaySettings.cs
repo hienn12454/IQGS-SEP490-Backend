@@ -11,7 +11,8 @@ public class SePaySettings
     public string VietQrBaseUrl { get; set; } = "https://vietqr.app/img";
     public string ApiKey { get; set; } = string.Empty;
     public string WebhookSecret { get; set; } = string.Empty;
-    public int OrderTtlMinutes { get; set; } = 30;
+    /// <summary>Thời gian hiệu lực QR/đơn upgrade (phút). Quá hạn → Expired.</summary>
+    public int OrderTtlMinutes { get; set; } = 10;
     public string BankName { get; set; } = "Vietcombank";
     public string BankAccountName { get; set; } = string.Empty;
     public string BankAccountNumber { get; set; } = string.Empty;

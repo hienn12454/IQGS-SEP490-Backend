@@ -100,6 +100,10 @@ public class GeneratePlanRequest
     public List<string> QuestionTypes { get; set; } = new();
     public List<string> Skills { get; set; } = new();
     public string? HrNote { get; set; }
+    /// <summary>Vietnamese | English — ngôn ngữ plan/câu hỏi.</summary>
+    public string? Language { get; set; }
+    /// <summary>SCRUM-388: KnowledgeDocumentIds Selected → filter HR retrieve.</summary>
+    public List<Guid>? DocumentIds { get; set; }
 }
 
 public class GeneratePlanResult
@@ -120,6 +124,8 @@ public class GenerateQuestionsFromPlanRequest
     public string JobDescription { get; set; } = string.Empty;
     public object ApprovedPlan { get; set; } = new();
     public string? HrNote { get; set; }
+    /// <summary>Vietnamese | English — ngôn ngữ câu hỏi sinh ra.</summary>
+    public string? Language { get; set; }
 }
 
 public class RagGeneratedQuestionDto
@@ -134,6 +140,12 @@ public class RagGeneratedQuestionDto
     public string? Skill { get; set; }
     public string? FocusArea { get; set; }
     public List<string>? EvaluationCriteria { get; set; }
+    public string? CodeTemplateType { get; set; }
+    public string? CodeSnippet { get; set; }
+    /// <summary>SCRUM-396: gợi ý text hình ảnh/diagram cho HR (không AI gen ảnh).</summary>
+    public string? ImageHint { get; set; }
+    /// <summary>SCRUM-400: Text | Code — phương thức trả lời Candidate.</summary>
+    public string? AnswerMethod { get; set; }
 }
 
 public class GenerateQuestionsFromPlanResult

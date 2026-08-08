@@ -6,7 +6,8 @@ namespace ApplicationLayer.Interfaces.Repositories;
 public interface ICandidateMarketplaceRepository
 {
     Task<(IReadOnlyList<PublishedQuestionSetRow> Items, int TotalCount)> ListPublishedAsync(
-        int page, int pageSize, string? keyword, Guid? companyId, string? difficulty, IReadOnlyList<string>? skills);
+        int page, int pageSize, string? keyword, Guid? companyId, string? difficulty,
+        IReadOnlyList<string>? skills, string sortBy = "featured");
 
     Task<PublishedQuestionSetDetail?> GetPublishedByIdAsync(Guid id);
 

@@ -31,12 +31,34 @@ public class QuestionSetRepository : IQuestionSetRepository
             .Include(qs => qs.Questions.OrderBy(q => q.Order))
             .FirstOrDefaultAsync(qs => qs.SourceJobId == sourceJobId);
 
+    public Task<QuestionSet?> GetBySourceProjectIdWithQuestionsAsync(Guid sourceProjectId)
+        => _context.QuestionSets
+            .Include(qs => qs.Questions.OrderBy(q => q.Order))
+            .FirstOrDefaultAsync(qs => qs.SourceProjectId == sourceProjectId && qs.IsActive);
+
     public async Task AddAsync(QuestionSet questionSet, IEnumerable<QuestionSetQuestion> questions)
     {
         await _context.QuestionSets.AddAsync(questionSet);
         await _context.QuestionSetQuestions.AddRangeAsync(questions);
         await _context.SaveChangesAsync();
     }
+
+    public async Task ReplaceQuestionsAsync(QuestionSet questionSet, IEnumerable<QuestionSetQuestion> newQuestions)
+    {
+        var old = await _context.QuestionSetQuestions
+            .Where(q => q.QuestionSetId == questionSet.Id)
+            .ToListAsync();
+        if (old.Count > 0)
+            _context.QuestionSetQuestions.RemoveRange(old);
+
+        await _context.QuestionSetQuestions.AddRangeAsync(newQuestions);
+        _context.QuestionSets.Update(questionSet);
+        await _context.SaveChangesAsync();
+    }
+
+    public Task<bool> HasPracticeAnswersAsync(Guid questionSetId)
+        => _context.CandidateAnswers.AnyAsync(a =>
+            a.QuestionSetQuestion.QuestionSetId == questionSetId);
 
     public Task<QuestionSet?> GetByIdWithQuestionsAsync(Guid id)
         => _context.QuestionSets
@@ -56,8 +78,8 @@ public class QuestionSetRepository : IQuestionSetRepository
             return new HashSet<Guid>();
 
         var matched = await _context.QuestionSets
-            .Where(qs => ids.Contains(qs.SourceJobId))
-            .Select(qs => qs.SourceJobId)
+            .Where(qs => qs.SourceJobId != null && ids.Contains(qs.SourceJobId.Value))
+            .Select(qs => qs.SourceJobId!.Value)
             .ToListAsync();
 
         return matched.ToHashSet();
@@ -67,7 +89,7 @@ public class QuestionSetRepository : IQuestionSetRepository
     {
         var query = _context.QuestionSets
             .AsNoTracking()
-            .Where(qs => qs.OwnerId == ownerId);
+            .Where(qs => qs.OwnerId == ownerId && qs.IsActive);
 
         if (sourceJobId.HasValue)
             query = query.Where(qs => qs.SourceJobId == sourceJobId.Value);
@@ -75,6 +97,28 @@ public class QuestionSetRepository : IQuestionSetRepository
         return await query
             .OrderByDescending(qs => qs.CreatedAt)
             .ToListAsync();
+    }
+
+    public async Task<Dictionary<Guid, int>> GetQuestionCountsBySetIdsAsync(IEnumerable<Guid> questionSetIds)
+    {
+        var ids = questionSetIds.Distinct().ToList();
+        if (ids.Count == 0)
+            return new Dictionary<Guid, int>();
+
+        return await _context.QuestionSetQuestions
+            .AsNoTracking()
+            .Where(q => ids.Contains(q.QuestionSetId) && q.IsActive)
+            .GroupBy(q => q.QuestionSetId)
+            .Select(g => new { SetId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.SetId, x => x.Count);
+    }
+
+    public async Task SoftDeleteAsync(QuestionSet questionSet)
+    {
+        questionSet.IsActive = false;
+        questionSet.UpdatedAt = DateTime.UtcNow;
+        _context.QuestionSets.Update(questionSet);
+        await _context.SaveChangesAsync();
     }
 
     public Task<QuestionSetQuestion?> GetQuestionByIdAsync(Guid questionId)

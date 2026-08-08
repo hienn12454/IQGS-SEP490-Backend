@@ -4,8 +4,8 @@ using Microsoft.AspNetCore.Http;
 namespace ApplicationLayer.Studio.Helpers;
 
 /// <summary>
-/// SCRUM-368: Chat Studio chỉ được dùng để tinh chỉnh interview plan.
-/// Chặn câu hỏi ngoài phạm vi (thời tiết, code help, chat xã giao…).
+/// SCRUM-368 / SCRUM-388 / SCRUM-389: Chat Studio tinh chỉnh interview plan + settings + tài liệu RAG.
+/// Cho phép câu ngắn kiểu "Chỉ git syntax thôi" (exclusive topic).
 /// </summary>
 public static class PlanChatScopeGuard
 {
@@ -15,13 +15,33 @@ public static class PlanChatScopeGuard
         "difficulty", "harder", "easier", "easy", "medium", "hard",
         "behavioral", "technical", "system design", "system_design", "coding",
         "focus", "skill", "skills", "coverage", "seniority", "junior", "senior", "mid",
-        "duration", "minutes", "length", "tone", "language", "rubric",
+        "duration", "minutes", "length", "tone", "language", "rubric", "sample",
         "add", "remove", "more", "less", "reduce", "increase", "decrease",
         "refine", "adjust", "change", "update", "outline", "structure",
+        // tài liệu RAG / knowledge
+        "tài liệu", "tai lieu", "document", "documents", "knowledge", "file", "files",
+        "rag", "upload", "đã upload", "da upload", "selected", "nguồn", "nguon",
+        "markdown", "english", "vietnamese", "tiếng anh", "tiếng việt",
         // tiếng Việt thường dùng
-        "câu hỏi", "độ khó", "khó hơn", "dễ hơn", "thêm", "bớt", "giảm", "tăng",
+        "câu hỏi", "câu ", " cau ", "độ khó", "khó hơn", "dễ hơn", "thêm", "bớt", "giảm", "tăng",
         "phỏng vấn", "kỹ năng", "kỹ thuật", "kĩ thuật", "thời lượng", "phút", "chỉnh", "sửa plan", "tinh chỉnh",
-        "apply_studio_settings", "apply studio", "áp dụng", "ap dung"
+        "apply_studio_settings", "apply studio", "áp dụng", "ap dung",
+        "văn phong", "định dạng", "scoring", "đáp án mẫu",
+        // exclusive / thu hẹp topic
+        "chỉ ", "chi ", " only", "only ", "cụ thể", "cu the", "toàn về", "toan ve",
+        "toàn hỏi", "toan hoi", "riêng ", "rieng ", "thôi", "thoi",
+        "hỏi ", "hoi ", "syntax", "thao tác", "thao tac"
+    ];
+
+    /// <summary>Skill/topic phổ biến — đủ để coi là chỉnh focus plan (vd. "Chỉ git thôi").</summary>
+    private static readonly string[] SkillHints =
+    [
+        "git", "docker", "kubernetes", "k8s", "redis", "kafka", "graphql", "grpc",
+        "ef core", "entity framework", "asp.net", "dotnet", ".net", "csharp", "c#",
+        "react", "next.js", "nextjs", "typescript", "javascript", "nodejs", "node.js",
+        "postgresql", "postgres", "sql server", "mysql", "mongodb",
+        "oauth", "jwt", "rest api", "microservices", "ci/cd", "devops",
+        "linux", "nginx", "aws", "azure"
     ];
 
     private static readonly string[] DenyHints =
@@ -55,13 +75,27 @@ public static class PlanChatScopeGuard
         if (AllowHints.Any(a => lower.Contains(a)))
             return;
 
-        // Không khớp allow → coi là ngoài phạm vi (an toàn hơn mở rộng)
+        // "Chỉ git syntax thôi" — skill token đủ coi là chỉnh focus plan
+        if (HasSkillHint(lower))
+            return;
+
+        if (RegexHasQuestionIntent(lower))
+            return;
+
         throw OffTopic();
     }
+
+    private static bool HasSkillHint(string lower)
+        => SkillHints.Any(s => lower.Contains(s, StringComparison.Ordinal));
+
+    private static bool RegexHasQuestionIntent(string lower)
+        => System.Text.RegularExpressions.Regex.IsMatch(lower, @"\d+\s*(câu|cau|question)")
+           || lower.Contains("phỏng vấn", StringComparison.Ordinal)
+           || lower.Contains("interview", StringComparison.Ordinal);
 
     private static StudioBusinessException OffTopic()
         => new(
             "PLAN_CHAT_OFF_TOPIC",
             StatusCodes.Status422UnprocessableEntity,
-            "Chỉ hỗ trợ chỉnh sửa interview plan (số câu, độ khó, section, focus, thời lượng…). Không trả lời câu hỏi ngoài plan.");
+            "Chỉ hỗ trợ chỉnh sửa interview plan (số câu, độ khó, section, focus, thời lượng, tài liệu RAG…). Không trả lời câu hỏi ngoài plan.");
 }
