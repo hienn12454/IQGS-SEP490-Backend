@@ -352,7 +352,7 @@ public sealed class JobDescriptionService(
             row.UpdatedAt = DateTime.UtcNow;
         }
 
-        row.WordCount = content.Split([' ', '\n', '\r', '\t'], StringSplitOptions.RemoveEmptyEntries).Length;
+        row.WordCount = content.Split(new char[] { ' ', '\n', '\r', '\t' }, StringSplitOptions.RemoveEmptyEntries).Length;
         row.CharacterCount = content.Length;
         await dbContext.SaveChangesAsync(ct);
     }

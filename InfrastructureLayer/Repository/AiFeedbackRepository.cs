@@ -50,4 +50,21 @@ public class AiFeedbackRepository : IAiFeedbackRepository
             .Select(f => f.Score!.Value)
             .ToListAsync();
     }
+
+    public async Task<double?> GetPreviousBestSucceededScoreAsync(
+        Guid candidateUserId, Guid questionSetQuestionId, Guid excludePracticeSessionId)
+    {
+        return await _context.AiFeedbacks
+            .AsNoTracking()
+            .Where(f =>
+                f.EvaluationStatus == AiFeedbackEvaluationStatus.Succeeded
+                && f.Score != null
+                && f.CandidateAnswer.QuestionSetQuestionId == questionSetQuestionId
+                && f.CandidateAnswer.PracticeSessionId != excludePracticeSessionId
+                && f.CandidateAnswer.PracticeSession.CandidateUserId == candidateUserId
+                && f.CandidateAnswer.PracticeSession.Status == PracticeSessionStatus.Completed)
+            .OrderByDescending(f => f.CandidateAnswer.PracticeSession.CompletedAt)
+            .Select(f => (double?)f.Score!.Value)
+            .FirstOrDefaultAsync();
+    }
 }
