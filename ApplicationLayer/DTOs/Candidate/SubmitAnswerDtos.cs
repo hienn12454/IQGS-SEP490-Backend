@@ -18,7 +18,10 @@ public class SubmitAnswerResponseDto
     public string AnswerText { get; set; } = string.Empty;
     public DateTime SubmittedAt { get; set; }
 
-    /// <summary>Succeeded | Failed — answer luôn được lưu kể cả khi evaluate fail (AC-03 SCRUM-282).</summary>
+    /// <summary>
+    /// SCRUM-332: submit chỉ lưu answer → Pending.
+    /// Score/feedback có sau complete (Succeeded | Failed).
+    /// </summary>
     public string EvaluationStatus { get; set; } = string.Empty;
 
     public double? Score { get; set; }

@@ -1,60 +1,33 @@
-using ApplicationLayer.DTOs.QuestionGeneration;
-using ApplicationLayer.Interfaces.Services;
-using ApplicationLayer.ResponseCode;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using System.Security.Claims;
 
 namespace WebAPI.Controllers.Hr;
 
+/// <summary>Plan API V1 retired — dùng Studio.</summary>
 [ApiController]
 [Route("api/hr/question-generation-plans")]
 [Authorize(Roles = "HR")]
 public class HrQuestionGenerationPlansController : ControllerBase
 {
-    private readonly IQuestionGenerationJobService _service;
+    private static IActionResult Gone()
+        => new ObjectResult(new
+        {
+            error = "V1_GENERATE_RETIRED",
+            message = "Generate V1 đã ngừng. Dùng Studio: /hr/generate-v2 và /api/studio/projects."
+        })
+        {
+            StatusCode = StatusCodes.Status410Gone
+        };
 
-    public HrQuestionGenerationPlansController(IQuestionGenerationJobService service)
-    {
-        _service = service;
-    }
-
-    /// <summary>Danh sách plan đã tạo của HR — phân trang, lọc status/ngày.</summary>
     [HttpGet]
-    public async Task<IActionResult> ListPlans([FromQuery] QuestionGenerationListQueryDto query)
-    {
-        var result = await _service.ListPlansAsync(GetCurrentUserId(), query);
-        return SuccessResp.Ok(result);
-    }
+    public IActionResult ListPlans() => Gone();
 
-    /// <summary>Chi tiết plan theo jobId — full PlanJson + input gốc HR.</summary>
     [HttpGet("{jobId:guid}")]
-    public async Task<IActionResult> GetPlan(Guid jobId)
-    {
-        var result = await _service.GetPlanAsync(jobId, GetCurrentUserId());
-        return SuccessResp.Ok(result);
-    }
+    public IActionResult GetPlan(Guid jobId) => Gone();
 
-    /// <summary>Tải file Excel chi tiết các câu hỏi đã sinh (chỉ khi COMPLETED).</summary>
     [HttpGet("{jobId:guid}/questions/export")]
-    public async Task<IActionResult> ExportQuestions(Guid jobId)
-    {
-        var result = await _service.ExportPlanQuestionsExcelAsync(jobId, GetCurrentUserId());
-        return File(result.Content, result.ContentType, result.FileName);
-    }
+    public IActionResult ExportQuestions(Guid jobId) => Gone();
 
-    /// <summary>Xóa session plan (job + plan + câu hỏi đã sinh).</summary>
     [HttpDelete("{jobId:guid}")]
-    public async Task<IActionResult> DeletePlan(Guid jobId)
-    {
-        await _service.DeletePlanAsync(jobId, GetCurrentUserId());
-        return SuccessResp.NoContent();
-    }
-
-    private Guid GetCurrentUserId()
-    {
-        var userIdStr = User.FindFirst("sub")?.Value
-            ?? User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        return Guid.Parse(userIdStr!);
-    }
+    public IActionResult DeletePlan(Guid jobId) => Gone();
 }

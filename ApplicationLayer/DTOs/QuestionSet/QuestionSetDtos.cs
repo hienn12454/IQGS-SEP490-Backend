@@ -13,8 +13,11 @@ public class QuestionSetListItemDto
     /// <summary>ID của bộ câu hỏi đã lưu draft.</summary>
     public Guid QuestionSetId { get; set; }
 
-    /// <summary>ID generation session (job) đã tạo ra bộ câu hỏi này.</summary>
-    public Guid JobId { get; set; }
+    /// <summary>ID generation session (job) nguồn — null nếu set từ Studio Save.</summary>
+    public Guid? JobId { get; set; }
+
+    /// <summary>Studio project nguồn (nếu Save từ generate-v2).</summary>
+    public Guid? SourceProjectId { get; set; }
 
     public string? Title { get; set; }
     public string Status { get; set; } = string.Empty;
@@ -27,13 +30,20 @@ public class QuestionSetListItemDto
 
     public DateTime SavedAt { get; set; }
     public DateTime? PublishedAt { get; set; }
+
+    /// <summary>SCRUM-391: số câu hỏi active trong bộ.</summary>
+    public int QuestionCount { get; set; }
+
+    /// <summary>SCRUM-391: HR đã bookmark bộ này chưa.</summary>
+    public bool IsBookmarked { get; set; }
 }
 
 public class SaveDraftResponseDto
 {
     public Guid QuestionSetId { get; set; }
     public string Status { get; set; } = string.Empty;
-    public Guid SourceJobId { get; set; }
+    public Guid? SourceJobId { get; set; }
+    public Guid? SourceProjectId { get; set; }
     public int QuestionCount { get; set; }
     public DateTime SavedAt { get; set; }
 
@@ -48,7 +58,8 @@ public class QuestionSetDetailResponseDto
 {
     public Guid QuestionSetId { get; set; }
     public string Status { get; set; } = string.Empty;
-    public Guid SourceJobId { get; set; }
+    public Guid? SourceJobId { get; set; }
+    public Guid? SourceProjectId { get; set; }
     public string? Title { get; set; }
 
     /// <summary>Tên công ty của HR sở hữu bộ này — chính là công ty candidate sẽ thấy trên marketplace sau khi publish.</summary>
@@ -88,6 +99,19 @@ public class SetTimeLimitResponseDto
 {
     public Guid QuestionSetId { get; set; }
     public int? TimeLimitMinutes { get; set; }
+}
+
+/// <summary>SCRUM-397: tạo bộ câu hỏi DRAFT rỗng từ Question Builder (không qua Studio).</summary>
+public class CreateManualDraftQuestionSetRequestDto
+{
+    [System.ComponentModel.DataAnnotations.Required(ErrorMessage = "Tiêu đề không được để trống.")]
+    [System.ComponentModel.DataAnnotations.MinLength(1, ErrorMessage = "Tiêu đề không được để trống.")]
+    [System.ComponentModel.DataAnnotations.MaxLength(500, ErrorMessage = "Tiêu đề không được vượt quá 500 ký tự.")]
+    public string Title { get; set; } = string.Empty;
+
+    /// <summary>Mô tả ngắn — lưu vào HrNote (entity chưa có cột Description riêng).</summary>
+    [System.ComponentModel.DataAnnotations.MaxLength(2000, ErrorMessage = "Mô tả không được vượt quá 2000 ký tự.")]
+    public string? Description { get; set; }
 }
 
 /// <summary>SCRUM-330: request đổi tên bộ câu hỏi sau khi đã tạo.</summary>
@@ -168,6 +192,12 @@ public class PublishedQuestionSetRow
 
     /// <summary>Số phiên luyện tập đã tạo trên bộ này.</summary>
     public int AttemptCount { get; set; }
+
+    /// <summary>SCRUM-404: Admin đã ghim.</summary>
+    public bool IsPinned { get; set; }
+
+    public DateTime? PinnedAt { get; set; }
+    public DateTime? PublishedAt { get; set; }
 }
 
 /// <summary>Read-model chi tiết 1 bộ đã publish, dùng nội bộ bởi repository — KHÔNG chứa SampleAnswer/EvaluationCriteria.</summary>
@@ -188,6 +218,10 @@ public class PublishedQuestionSetDetail
     public double? Rating { get; set; }
 
     public int AttemptCount { get; set; }
+
+    /// <summary>SCRUM-404: Admin đã ghim.</summary>
+    public bool IsPinned { get; set; }
+
     public List<PublishedQuestionRow> Questions { get; set; } = new();
 }
 
@@ -203,6 +237,12 @@ public class PublishedQuestionRow
     public string? FocusArea { get; set; }
     public string? Rationale { get; set; }
     public string CitationsJson { get; set; } = "[]";
+
+    /// <summary>SCRUM-399: path Blob ảnh đính kèm — map sang SAS URL ở service Candidate.</summary>
+    public string? AttachedImageBlobPath { get; set; }
+
+    /// <summary>SCRUM-400: Text | Code (có thể null trên bộ cũ trước khi backfill).</summary>
+    public string? AnswerMethod { get; set; }
 }
 
 /// <summary>Rubric nội bộ cho RAG evaluate — không expose qua Candidate marketplace API (SCRUM-282).</summary>
@@ -228,6 +268,10 @@ public class QuestionSetQuestionResponseDto
     public string? FocusArea { get; set; }
     public string? Rationale { get; set; }
     public string? SampleAnswer { get; set; }
+    /// <summary>SCRUM-396: SAS URL ảnh đính kèm (Azure Blob).</summary>
+    public string? AttachedImageUrl { get; set; }
+    /// <summary>SCRUM-400: Text | Code.</summary>
+    public string AnswerMethod { get; set; } = "Text";
     public List<object> EvaluationCriteria { get; set; } = new();
     public List<object> Citations { get; set; } = new();
 }

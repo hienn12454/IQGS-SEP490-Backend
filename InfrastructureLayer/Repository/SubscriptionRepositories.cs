@@ -226,4 +226,25 @@ public class SubscriptionTransactionRepository : ISubscriptionTransactionReposit
                 && t.Type == DomainLayer.Constants.SubscriptionTransactionTypes.Upgrade
                 && t.CreatedAt >= sinceUtc)
             .ToListAsync();
+
+    public Task<List<SubscriptionTransaction>> ListPendingUpgradesBySubscriptionAsync(Guid subscriptionId)
+        => _db.SubscriptionTransactions
+            .Where(t =>
+                t.IsActive
+                && t.SubscriptionId == subscriptionId
+                && t.Type == DomainLayer.Constants.SubscriptionTransactionTypes.Upgrade
+                && t.Status == DomainLayer.Constants.SubscriptionTransactionStatus.Pending)
+            .ToListAsync();
+
+    public Task<List<SubscriptionTransaction>> ListExpiredPendingUpgradesAsync(DateTime utcNow, int take = 200)
+        => _db.SubscriptionTransactions
+            .Where(t =>
+                t.IsActive
+                && t.Type == DomainLayer.Constants.SubscriptionTransactionTypes.Upgrade
+                && t.Status == DomainLayer.Constants.SubscriptionTransactionStatus.Pending
+                && t.ExpiresAt != null
+                && t.ExpiresAt <= utcNow)
+            .OrderBy(t => t.ExpiresAt)
+            .Take(Math.Clamp(take, 1, 500))
+            .ToListAsync();
 }

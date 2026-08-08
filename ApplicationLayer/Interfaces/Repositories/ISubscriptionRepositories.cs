@@ -47,4 +47,10 @@ public interface ISubscriptionTransactionRepository
     Task<List<SubscriptionTransaction>> ListRecentWithDetailsAsync(int take = 20);
     /// <summary>Tất cả giao dịch SePay Upgrade trong khoảng (để aggregate KPI).</summary>
     Task<List<SubscriptionTransaction>> ListSePayUpgradesSinceAsync(DateTime sinceUtc);
+
+    /// <summary>Pending Upgrade của 1 subscription (để Cancel khi user tạo đơn mới).</summary>
+    Task<List<SubscriptionTransaction>> ListPendingUpgradesBySubscriptionAsync(Guid subscriptionId);
+
+    /// <summary>Pending Upgrade đã quá ExpiresAt (Hangfire expire job).</summary>
+    Task<List<SubscriptionTransaction>> ListExpiredPendingUpgradesAsync(DateTime utcNow, int take = 200);
 }

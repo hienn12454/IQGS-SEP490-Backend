@@ -17,6 +17,15 @@ public class QuestionSetService : IQuestionSetService
     private readonly IPlatformSettingsRepository _platformSettingsRepository;
     private readonly IHrCompanyInfoService _hrCompanyInfoService;
     private readonly IPracticeSessionRepository _practiceSessionRepository;
+    private readonly IHrQuestionSetBookmarkRepository _bookmarkRepository;
+    private readonly ISubscriptionGateService _subscriptionGate;
+    private readonly IBlobStorageService _blobStorage;
+
+    private static readonly HashSet<string> AllowedQuestionImageContentTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "image/jpeg", "image/jpg", "image/png", "image/webp"
+    };
+    private const long MaxQuestionImageBytes = 5 * 1024 * 1024;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -29,13 +38,19 @@ public class QuestionSetService : IQuestionSetService
         IQuestionGenerationJobRepository jobRepository,
         IPlatformSettingsRepository platformSettingsRepository,
         IHrCompanyInfoService hrCompanyInfoService,
-        IPracticeSessionRepository practiceSessionRepository)
+        IPracticeSessionRepository practiceSessionRepository,
+        IHrQuestionSetBookmarkRepository bookmarkRepository,
+        ISubscriptionGateService subscriptionGate,
+        IBlobStorageService blobStorage)
     {
         _questionSetRepository = questionSetRepository;
         _jobRepository = jobRepository;
         _platformSettingsRepository = platformSettingsRepository;
         _hrCompanyInfoService = hrCompanyInfoService;
         _practiceSessionRepository = practiceSessionRepository;
+        _bookmarkRepository = bookmarkRepository;
+        _subscriptionGate = subscriptionGate;
+        _blobStorage = blobStorage;
     }
 
     public async Task<SaveDraftResponseDto> SaveDraftFromJobAsync(Guid jobId, Guid ownerId)
@@ -101,6 +116,49 @@ public class QuestionSetService : IQuestionSetService
         };
     }
 
+    /// <summary>SCRUM-397: tạo bộ DRAFT rỗng để HR soạn câu hỏi thủ công trên Question Builder.</summary>
+    public async Task<SaveDraftResponseDto> CreateManualDraftAsync(
+        Guid ownerId, CreateManualDraftQuestionSetRequestDto dto)
+    {
+        var title = (dto.Title ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(title))
+            throw new BadRequestException("Tiêu đề không được để trống.");
+        if (title.Length > 500)
+            throw new BadRequestException("Tiêu đề không được vượt quá 500 ký tự.");
+
+        var description = dto.Description?.Trim();
+        if (description is { Length: > 2000 })
+            throw new BadRequestException("Mô tả không được vượt quá 2000 ký tự.");
+
+        var questionSet = new QuestionSet
+        {
+            OwnerId = ownerId,
+            Status = QuestionSetStatus.Draft,
+            Title = title,
+            // Không có cột Description — dùng HrNote cho ghi chú bộ thủ công
+            HrNote = string.IsNullOrWhiteSpace(description) ? null : description,
+            JobDescription = string.Empty,
+            PlanJson = "{}",
+            GeneratedAt = null
+        };
+
+        await _questionSetRepository.AddAsync(questionSet, Array.Empty<QuestionSetQuestion>());
+
+        var (companyName, companyLogo) = await _hrCompanyInfoService.GetByHrUserIdAsync(ownerId);
+
+        return new SaveDraftResponseDto
+        {
+            QuestionSetId = questionSet.Id,
+            Status = questionSet.Status,
+            SourceJobId = null,
+            SourceProjectId = null,
+            QuestionCount = 0,
+            SavedAt = questionSet.CreatedAt,
+            CompanyName = companyName,
+            CompanyLogo = companyLogo
+        };
+    }
+
     public async Task<IReadOnlyList<QuestionSetListItemDto>> ListQuestionSetsAsync(
         Guid ownerId, QuestionSetListQueryDto query)
     {
@@ -108,17 +166,22 @@ public class QuestionSetService : IQuestionSetService
 
         // Cùng 1 ownerId -> cùng 1 công ty cho mọi item trong list — chỉ cần lookup 1 lần, tránh N+1 query.
         var (companyName, companyLogo) = await _hrCompanyInfoService.GetByHrUserIdAsync(ownerId);
+        var counts = await _questionSetRepository.GetQuestionCountsBySetIdsAsync(questionSets.Select(q => q.Id));
+        var bookmarkedIds = await _bookmarkRepository.GetBookmarkedQuestionSetIdsAsync(ownerId);
 
         return questionSets.Select(qs => new QuestionSetListItemDto
         {
             QuestionSetId = qs.Id,
             JobId = qs.SourceJobId,
+            SourceProjectId = qs.SourceProjectId,
             Title = qs.Title,
             Status = qs.Status,
             CompanyName = companyName,
             CompanyLogo = companyLogo,
             SavedAt = qs.CreatedAt,
-            PublishedAt = qs.PublishedAt
+            PublishedAt = qs.PublishedAt,
+            QuestionCount = counts.TryGetValue(qs.Id, out var c) ? c : 0,
+            IsBookmarked = bookmarkedIds.Contains(qs.Id)
         }).ToList();
     }
 
@@ -141,6 +204,7 @@ public class QuestionSetService : IQuestionSetService
             QuestionSetId = questionSet.Id,
             Status = questionSet.Status,
             SourceJobId = questionSet.SourceJobId,
+            SourceProjectId = questionSet.SourceProjectId,
             Title = questionSet.Title,
             CompanyName = companyName,
             CompanyLogo = companyLogo,
@@ -151,22 +215,10 @@ public class QuestionSetService : IQuestionSetService
             GeneratedAt = questionSet.GeneratedAt,
             SavedAt = questionSet.CreatedAt,
             PublishedAt = questionSet.PublishedAt,
-            Questions = questionSet.Questions
-                .OrderBy(q => q.Order)
-                .Select(q => new QuestionSetQuestionResponseDto
-                {
-                    Id = q.Id,
-                    Order = q.Order,
-                    Question = q.Question,
-                    QuestionType = q.QuestionType,
-                    Difficulty = q.Difficulty,
-                    Skill = q.Skill,
-                    FocusArea = q.FocusArea,
-                    Rationale = q.Rationale,
-                    SampleAnswer = q.SampleAnswer,
-                    EvaluationCriteria = JsonSerializer.Deserialize<List<object>>(q.EvaluationCriteriaJson, JsonOptions) ?? new(),
-                    Citations = JsonSerializer.Deserialize<List<object>>(q.CitationsJson, JsonOptions) ?? new()
-                })
+            Questions = (await Task.WhenAll(
+                questionSet.Questions
+                    .OrderBy(q => q.Order)
+                    .Select(async q => await MapQuestionAsync(q))))
                 .ToList()
         };
     }
@@ -184,10 +236,10 @@ public class QuestionSetService : IQuestionSetService
 
         ApplyQuestionFields(question, dto.Question, dto.QuestionType, dto.Difficulty,
             dto.Skill, dto.FocusArea, dto.Rationale, dto.SampleAnswer,
-            dto.EvaluationCriteria, dto.Citations);
+            dto.AnswerMethod, dto.EvaluationCriteria, dto.Citations);
 
         await _questionSetRepository.UpdateQuestionAsync(question);
-        return MapQuestion(question);
+        return await MapQuestionAsync(question);
     }
 
     public async Task<QuestionSetQuestionResponseDto> AddQuestionAsync(
@@ -195,6 +247,7 @@ public class QuestionSetService : IQuestionSetService
     {
         await EnsureEditableQuestionSetAsync(questionSetId, ownerId);
         ValidateQuestionInput(dto.Question, dto.QuestionType, dto.Difficulty);
+        var answerMethod = AnswerMethodNormalizer.Require(dto.AnswerMethod);
 
         var order = dto.Order ?? (await _questionSetRepository.GetMaxOrderByQuestionSetIdAsync(questionSetId) + 1);
         if (order <= 0)
@@ -211,12 +264,13 @@ public class QuestionSetService : IQuestionSetService
             FocusArea = dto.FocusArea?.Trim(),
             Rationale = dto.Rationale?.Trim(),
             SampleAnswer = dto.SampleAnswer?.Trim(),
+            AnswerMethod = answerMethod,
             EvaluationCriteriaJson = JsonSerializer.Serialize(dto.EvaluationCriteria, JsonOptions),
             CitationsJson = JsonSerializer.Serialize(dto.Citations, JsonOptions)
         };
 
         await _questionSetRepository.AddQuestionAsync(question);
-        return MapQuestion(question);
+        return await MapQuestionAsync(question);
     }
 
     public async Task DeleteQuestionAsync(Guid questionSetId, Guid questionId, Guid ownerId)
@@ -269,9 +323,10 @@ public class QuestionSetService : IQuestionSetService
             await _questionSetRepository.UpdateQuestionAsync(question);
         }
 
-        return (await _questionSetRepository.GetQuestionsByQuestionSetIdAsync(questionSetId))
-            .OrderBy(q => q.Order)
-            .Select(MapQuestion)
+        return (await Task.WhenAll(
+            (await _questionSetRepository.GetQuestionsByQuestionSetIdAsync(questionSetId))
+                .OrderBy(q => q.Order)
+                .Select(async q => await MapQuestionAsync(q))))
             .ToList();
     }
 
@@ -366,6 +421,9 @@ public class QuestionSetService : IQuestionSetService
 
         questionSet.Status = QuestionSetStatus.Draft;
         questionSet.PublishedAt = null;
+        // SCRUM-404: unpublish thì bỏ pin khỏi Marketplace
+        questionSet.IsPinned = false;
+        questionSet.PinnedAt = null;
         questionSet.UpdatedAt = DateTime.UtcNow;
 
         await _questionSetRepository.UpdateAsync(questionSet);
@@ -378,10 +436,104 @@ public class QuestionSetService : IQuestionSetService
         };
     }
 
+    /// <summary>SCRUM-391: xuất Excel — kiểm tra subscription CanExport.</summary>
+    public async Task<QuestionExportFileDto> ExportExcelAsync(Guid questionSetId, Guid ownerId)
+    {
+        await _subscriptionGate.CheckExportAsync(ownerId);
+        var questionSet = await EnsureOwnedQuestionSetAsync(questionSetId, ownerId);
+        var questions = questionSet.Questions.Where(q => q.IsActive).OrderBy(q => q.Order).ToList();
+        if (questions.Count == 0)
+            throw new BadRequestException("Bộ câu hỏi chưa có câu hỏi để xuất.");
+
+        return GeneratedQuestionsExcelExporter.BuildFromQuestionSet(questionSet, questions);
+    }
+
+    /// <summary>SCRUM-391: soft-delete; unpublish trước nếu đang PUBLISHED.</summary>
+    public async Task SoftDeleteAsync(Guid questionSetId, Guid ownerId)
+    {
+        var questionSet = await EnsureOwnedQuestionSetAsync(questionSetId, ownerId);
+
+        if (questionSet.Status == QuestionSetStatus.Published)
+        {
+            questionSet.Status = QuestionSetStatus.Draft;
+            questionSet.PublishedAt = null;
+        }
+
+        await _questionSetRepository.SoftDeleteAsync(questionSet);
+    }
+
+    public async Task<QuestionSetQuestionResponseDto> UploadQuestionImageAsync(
+        Guid questionSetId,
+        Guid questionId,
+        Guid ownerId,
+        Stream fileStream,
+        string fileName,
+        string contentType,
+        long fileLength)
+    {
+        await EnsureEditableQuestionSetAsync(questionSetId, ownerId);
+
+        var question = await _questionSetRepository.GetQuestionByIdAsync(questionId)
+            ?? throw new NotFoundException("Câu hỏi không tồn tại.");
+        if (question.QuestionSetId != questionSetId)
+            throw new NotFoundException("Câu hỏi không thuộc question set này.");
+
+        if (fileLength <= 0)
+            throw new BadRequestException("File ảnh trống.");
+        if (fileLength > MaxQuestionImageBytes)
+            throw new BadRequestException("Ảnh tối đa 5MB.");
+
+        var ctNorm = string.IsNullOrWhiteSpace(contentType) ? "application/octet-stream" : contentType.Trim();
+        if (!AllowedQuestionImageContentTypes.Contains(ctNorm)
+            && !fileName.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase)
+            && !fileName.EndsWith(".jpeg", StringComparison.OrdinalIgnoreCase)
+            && !fileName.EndsWith(".png", StringComparison.OrdinalIgnoreCase)
+            && !fileName.EndsWith(".webp", StringComparison.OrdinalIgnoreCase))
+            throw new BadRequestException("Chỉ chấp nhận jpg/jpeg/png/webp.");
+
+        if (!string.IsNullOrWhiteSpace(question.AttachedImageBlobPath))
+        {
+            try { await _blobStorage.DeleteAsync(question.AttachedImageBlobPath); }
+            catch { /* ignore */ }
+        }
+
+        var blobPath = BlobPathHelper.BuildQuestionSetImagePath(questionSetId, questionId, fileName);
+        await _blobStorage.UploadAsync(fileStream, ctNorm, blobPath);
+        question.AttachedImageBlobPath = blobPath;
+        question.UpdatedAt = DateTime.UtcNow;
+        await _questionSetRepository.UpdateQuestionAsync(question);
+        return await MapQuestionAsync(question);
+    }
+
+    public async Task<QuestionSetQuestionResponseDto> DeleteQuestionImageAsync(
+        Guid questionSetId, Guid questionId, Guid ownerId)
+    {
+        await EnsureEditableQuestionSetAsync(questionSetId, ownerId);
+
+        var question = await _questionSetRepository.GetQuestionByIdAsync(questionId)
+            ?? throw new NotFoundException("Câu hỏi không tồn tại.");
+        if (question.QuestionSetId != questionSetId)
+            throw new NotFoundException("Câu hỏi không thuộc question set này.");
+
+        if (!string.IsNullOrWhiteSpace(question.AttachedImageBlobPath))
+        {
+            try { await _blobStorage.DeleteAsync(question.AttachedImageBlobPath); }
+            catch { /* ignore */ }
+            question.AttachedImageBlobPath = null;
+            question.UpdatedAt = DateTime.UtcNow;
+            await _questionSetRepository.UpdateQuestionAsync(question);
+        }
+
+        return await MapQuestionAsync(question);
+    }
+
     private async Task<QuestionSet> EnsureOwnedQuestionSetAsync(Guid questionSetId, Guid ownerId)
     {
         var questionSet = await _questionSetRepository.GetByIdWithQuestionsAsync(questionSetId)
             ?? throw new NotFoundException("Question set không tồn tại.");
+
+        if (!questionSet.IsActive)
+            throw new NotFoundException("Question set không tồn tại.");
 
         if (questionSet.OwnerId != ownerId)
             throw new ForbiddenException("Bạn không có quyền truy cập question set này.");
@@ -419,6 +571,7 @@ public class QuestionSetService : IQuestionSetService
         string? focusArea,
         string? rationale,
         string? sampleAnswer,
+        string answerMethod,
         List<object> evaluationCriteria,
         List<object> citations)
     {
@@ -431,6 +584,7 @@ public class QuestionSetService : IQuestionSetService
         question.FocusArea = focusArea?.Trim();
         question.Rationale = rationale?.Trim();
         question.SampleAnswer = sampleAnswer?.Trim();
+        question.AnswerMethod = AnswerMethodNormalizer.Require(answerMethod);
         question.EvaluationCriteriaJson = JsonSerializer.Serialize(evaluationCriteria, JsonOptions);
         question.CitationsJson = JsonSerializer.Serialize(citations, JsonOptions);
     }
@@ -449,20 +603,38 @@ public class QuestionSetService : IQuestionSetService
         }
     }
 
-    private QuestionSetQuestionResponseDto MapQuestion(QuestionSetQuestion q) => new()
+    private async Task<QuestionSetQuestionResponseDto> MapQuestionAsync(QuestionSetQuestion q)
     {
-        Id = q.Id,
-        Order = q.Order,
-        Question = q.Question,
-        QuestionType = q.QuestionType,
-        Difficulty = q.Difficulty,
-        Skill = q.Skill,
-        FocusArea = q.FocusArea,
-        Rationale = q.Rationale,
-        SampleAnswer = q.SampleAnswer,
-        EvaluationCriteria = JsonSerializer.Deserialize<List<object>>(q.EvaluationCriteriaJson, JsonOptions) ?? new(),
-        Citations = JsonSerializer.Deserialize<List<object>>(q.CitationsJson, JsonOptions) ?? new()
-    };
+        string? url = null;
+        if (!string.IsNullOrWhiteSpace(q.AttachedImageBlobPath))
+        {
+            try
+            {
+                url = await _blobStorage.GenerateReadSasUrlAsync(q.AttachedImageBlobPath, TimeSpan.FromHours(2));
+            }
+            catch
+            {
+                url = null;
+            }
+        }
+
+        return new QuestionSetQuestionResponseDto
+        {
+            Id = q.Id,
+            Order = q.Order,
+            Question = q.Question,
+            QuestionType = q.QuestionType,
+            Difficulty = q.Difficulty,
+            Skill = q.Skill,
+            FocusArea = q.FocusArea,
+            Rationale = q.Rationale,
+            SampleAnswer = q.SampleAnswer,
+            AttachedImageUrl = url,
+            AnswerMethod = AnswerMethodNormalizer.Resolve(q.AnswerMethod),
+            EvaluationCriteria = JsonSerializer.Deserialize<List<object>>(q.EvaluationCriteriaJson, JsonOptions) ?? new(),
+            Citations = JsonSerializer.Deserialize<List<object>>(q.CitationsJson, JsonOptions) ?? new()
+        };
+    }
 
     private static string? TryExtractRoleTitle(string? planJson)
     {

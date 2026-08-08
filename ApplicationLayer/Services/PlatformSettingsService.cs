@@ -16,15 +16,24 @@ public class PlatformSettingsService : IPlatformSettingsService
     public async Task<PlatformSettingsDto> GetAsync()
     {
         var settings = await _repository.GetAsync();
-        return new PlatformSettingsDto { MinQuestionsToPublish = settings.MinQuestionsToPublish };
+        return Map(settings);
     }
 
     public async Task<PlatformSettingsDto> UpdateAsync(UpdatePlatformSettingsDto dto)
     {
         var settings = await _repository.GetAsync();
         settings.MinQuestionsToPublish = dto.MinQuestionsToPublish;
+        settings.MaxPinnedSets = dto.MaxPinnedSets;
+        settings.MinAttemptsForTrending = dto.MinAttemptsForTrending;
         await _repository.UpdateAsync(settings);
 
-        return new PlatformSettingsDto { MinQuestionsToPublish = settings.MinQuestionsToPublish };
+        return Map(settings);
     }
+
+    private static PlatformSettingsDto Map(DomainLayer.Entities.PlatformSettings settings) => new()
+    {
+        MinQuestionsToPublish = settings.MinQuestionsToPublish,
+        MaxPinnedSets = settings.MaxPinnedSets,
+        MinAttemptsForTrending = settings.MinAttemptsForTrending
+    };
 }

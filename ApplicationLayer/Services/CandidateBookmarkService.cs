@@ -11,13 +11,16 @@ public class CandidateBookmarkService : ICandidateBookmarkService
 {
     private readonly IQuestionSetBookmarkRepository _bookmarkRepository;
     private readonly ICandidateMarketplaceRepository _marketplaceRepository;
+    private readonly IPlatformSettingsRepository _platformSettingsRepository;
 
     public CandidateBookmarkService(
         IQuestionSetBookmarkRepository bookmarkRepository,
-        ICandidateMarketplaceRepository marketplaceRepository)
+        ICandidateMarketplaceRepository marketplaceRepository,
+        IPlatformSettingsRepository platformSettingsRepository)
     {
         _bookmarkRepository = bookmarkRepository;
         _marketplaceRepository = marketplaceRepository;
+        _platformSettingsRepository = platformSettingsRepository;
     }
 
     public async Task<BookmarkToggleResponseDto> ToggleAsync(Guid questionSetId, Guid candidateUserId)
@@ -44,6 +47,7 @@ public class CandidateBookmarkService : ICandidateBookmarkService
     public async Task<IReadOnlyList<CandidateQuestionSetListItemDto>> ListBookmarkedAsync(Guid candidateUserId)
     {
         var rows = await _marketplaceRepository.ListBookmarkedAsync(candidateUserId);
-        return rows.Select(PublishedQuestionSetMapper.ToListItemDto).ToList();
+        var trendingThreshold = (await _platformSettingsRepository.GetAsync()).MinAttemptsForTrending;
+        return rows.Select(r => PublishedQuestionSetMapper.ToListItemDto(r, trendingThreshold)).ToList();
     }
 }

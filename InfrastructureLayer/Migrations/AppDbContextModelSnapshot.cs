@@ -72,7 +72,7 @@ namespace InfrastructureLayer.Migrations
                     b.HasIndex("CandidateAnswerId")
                         .IsUnique();
 
-                    b.ToTable("ai_feedbacks", (string)null);
+                    b.ToTable("tbl_ai_feedbacks", (string)null);
                 });
 
             modelBuilder.Entity("DomainLayer.Entities.CandidateAnswer", b =>
@@ -110,7 +110,7 @@ namespace InfrastructureLayer.Migrations
                     b.HasIndex("PracticeSessionId", "QuestionSetQuestionId")
                         .IsUnique();
 
-                    b.ToTable("candidate_answers", (string)null);
+                    b.ToTable("tbl_candidate_answers", (string)null);
                 });
 
             modelBuilder.Entity("DomainLayer.Entities.CandidateInvitation", b =>
@@ -164,7 +164,7 @@ namespace InfrastructureLayer.Migrations
 
                     b.HasIndex("CandidateUserId", "Status");
 
-                    b.ToTable("candidate_invitations", (string)null);
+                    b.ToTable("tbl_candidate_invitations", (string)null);
                 });
 
             modelBuilder.Entity("DomainLayer.Entities.CandidateOffer", b =>
@@ -219,7 +219,7 @@ namespace InfrastructureLayer.Migrations
 
                     b.HasIndex("RecommendationId", "CreatedAt");
 
-                    b.ToTable("candidate_offers", (string)null);
+                    b.ToTable("tbl_candidate_offers", (string)null);
                 });
 
             modelBuilder.Entity("DomainLayer.Entities.CandidateProfile", b =>
@@ -308,7 +308,7 @@ namespace InfrastructureLayer.Migrations
                     b.HasIndex("UserId")
                         .IsUnique();
 
-                    b.ToTable("CandidateProfiles");
+                    b.ToTable("tbl_candidate_profiles", (string)null);
                 });
 
             modelBuilder.Entity("DomainLayer.Entities.CandidateRecommendation", b =>
@@ -357,7 +357,7 @@ namespace InfrastructureLayer.Migrations
 
                     b.HasIndex("HrOwnerId", "Status");
 
-                    b.ToTable("candidate_recommendations", (string)null);
+                    b.ToTable("tbl_candidate_recommendations", (string)null);
                 });
 
             modelBuilder.Entity("DomainLayer.Entities.Company", b =>
@@ -395,71 +395,7 @@ namespace InfrastructureLayer.Migrations
 
                     b.HasIndex("Name");
 
-                    b.ToTable("Companies");
-                });
-
-            modelBuilder.Entity("DomainLayer.Entities.GeneratedQuestion", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("CitationsJson")
-                        .IsRequired()
-                        .HasColumnType("jsonb");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Difficulty")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)");
-
-                    b.Property<string>("EvaluationCriteriaJson")
-                        .IsRequired()
-                        .HasColumnType("jsonb");
-
-                    b.Property<string>("FocusArea")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("boolean");
-
-                    b.Property<Guid>("JobId")
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("Order")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("Question")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("QuestionType")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
-
-                    b.Property<string>("Rationale")
-                        .HasColumnType("text");
-
-                    b.Property<string>("SampleAnswer")
-                        .HasColumnType("text");
-
-                    b.Property<string>("Skill")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("JobId");
-
-                    b.ToTable("generated_questions", (string)null);
+                    b.ToTable("tbl_companies", (string)null);
                 });
 
             modelBuilder.Entity("DomainLayer.Entities.HRProfile", b =>
@@ -514,7 +450,7 @@ namespace InfrastructureLayer.Migrations
                     b.HasIndex("UserId")
                         .IsUnique();
 
-                    b.ToTable("HRProfiles");
+                    b.ToTable("tbl_hr_profiles", (string)null);
                 });
 
             modelBuilder.Entity("DomainLayer.Entities.HrQuestionSetBookmark", b =>
@@ -545,7 +481,7 @@ namespace InfrastructureLayer.Migrations
                     b.HasIndex("HrUserId", "QuestionSetId")
                         .IsUnique();
 
-                    b.ToTable("hr_question_set_bookmarks", (string)null);
+                    b.ToTable("tbl_hr_question_set_bookmarks", (string)null);
                 });
 
             modelBuilder.Entity("DomainLayer.Entities.KnowledgeChunk", b =>
@@ -597,7 +533,7 @@ namespace InfrastructureLayer.Migrations
                     b.HasIndex("Scope", "OwnerId")
                         .HasDatabaseName("ix_knowledge_chunks_scope_owner");
 
-                    b.ToTable("knowledge_chunks", (string)null);
+                    b.ToTable("tbl_knowledge_chunks", (string)null);
                 });
 
             modelBuilder.Entity("DomainLayer.Entities.KnowledgeDocument", b =>
@@ -695,7 +631,7 @@ namespace InfrastructureLayer.Migrations
                     b.HasIndex("Status")
                         .HasDatabaseName("ix_knowledge_documents_status");
 
-                    b.ToTable("knowledge_documents", (string)null);
+                    b.ToTable("tbl_knowledge_documents", (string)null);
                 });
 
             modelBuilder.Entity("DomainLayer.Entities.PlatformSettings", b =>
@@ -710,6 +646,16 @@ namespace InfrastructureLayer.Migrations
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
 
+                    b.Property<int>("MaxPinnedSets")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(5);
+
+                    b.Property<int>("MinAttemptsForTrending")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(10);
+
                     b.Property<int>("MinQuestionsToPublish")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("integer")
@@ -720,7 +666,7 @@ namespace InfrastructureLayer.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("platform_settings", (string)null);
+                    b.ToTable("tbl_platform_settings", (string)null);
 
                     b.HasData(
                         new
@@ -728,6 +674,8 @@ namespace InfrastructureLayer.Migrations
                             Id = new Guid("00000000-0000-0000-0000-000000000001"),
                             CreatedAt = new DateTime(2026, 7, 21, 0, 0, 0, 0, DateTimeKind.Utc),
                             IsActive = true,
+                            MaxPinnedSets = 5,
+                            MinAttemptsForTrending = 10,
                             MinQuestionsToPublish = 10
                         });
                 });
@@ -784,159 +732,7 @@ namespace InfrastructureLayer.Migrations
 
                     b.HasIndex("QuestionSetId");
 
-                    b.ToTable("practice_sessions", (string)null);
-                });
-
-            modelBuilder.Entity("DomainLayer.Entities.QuestionAiChatMessage", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Content")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("boolean");
-
-                    b.Property<Guid>("JobId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("QuestionId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Role")
-                        .IsRequired()
-                        .HasMaxLength(10)
-                        .HasColumnType("character varying(10)");
-
-                    b.Property<string>("SuggestionJson")
-                        .HasColumnType("jsonb");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("QuestionId");
-
-                    b.HasIndex("JobId", "QuestionId", "CreatedAt");
-
-                    b.ToTable("question_ai_chat_messages", (string)null);
-                });
-
-            modelBuilder.Entity("DomainLayer.Entities.QuestionGenerationJob", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime?>("CompletedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Difficulty")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)");
-
-                    b.Property<string>("ErrorMessage")
-                        .HasMaxLength(2000)
-                        .HasColumnType("character varying(2000)");
-
-                    b.Property<string>("HrNote")
-                        .HasMaxLength(2000)
-                        .HasColumnType("character varying(2000)");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("JdFileName")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.Property<string>("JdInputType")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasMaxLength(10)
-                        .HasColumnType("character varying(10)")
-                        .HasDefaultValue("TEXT");
-
-                    b.Property<string>("JobDescription")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<int>("NumberOfQuestions")
-                        .HasColumnType("integer");
-
-                    b.Property<Guid>("OwnerId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("QuestionTypesJson")
-                        .IsRequired()
-                        .HasColumnType("jsonb");
-
-                    b.Property<string>("SkillsJson")
-                        .IsRequired()
-                        .HasColumnType("jsonb");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(30)
-                        .HasColumnType("character varying(30)");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("OwnerId");
-
-                    b.HasIndex("Status");
-
-                    b.ToTable("question_generation_jobs", (string)null);
-                });
-
-            modelBuilder.Entity("DomainLayer.Entities.QuestionGenerationPlan", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime?>("ApprovedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("boolean");
-
-                    b.Property<bool>("IsApproved")
-                        .HasColumnType("boolean");
-
-                    b.Property<Guid>("JobId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("PlanJson")
-                        .IsRequired()
-                        .HasColumnType("jsonb");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("JobId")
-                        .IsUnique();
-
-                    b.ToTable("question_generation_plans", (string)null);
+                    b.ToTable("tbl_practice_sessions", (string)null);
                 });
 
             modelBuilder.Entity("DomainLayer.Entities.QuestionSet", b =>
@@ -958,12 +754,20 @@ namespace InfrastructureLayer.Migrations
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
 
+                    b.Property<bool>("IsPinned")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
                     b.Property<string>("JobDescription")
                         .IsRequired()
                         .HasColumnType("text");
 
                     b.Property<Guid>("OwnerId")
                         .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("PinnedAt")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("PlanJson")
                         .IsRequired()
@@ -972,7 +776,16 @@ namespace InfrastructureLayer.Migrations
                     b.Property<DateTime?>("PublishedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<Guid>("SourceJobId")
+                    b.Property<Guid?>("SourceJobId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("SourcePlanId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("SourceProjectId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("SourceRunId")
                         .HasColumnType("uuid");
 
                     b.Property<string>("Status")
@@ -995,9 +808,20 @@ namespace InfrastructureLayer.Migrations
                     b.HasIndex("OwnerId");
 
                     b.HasIndex("SourceJobId")
-                        .IsUnique();
+                        .IsUnique()
+                        .HasFilter("\"SourceJobId\" IS NOT NULL");
 
-                    b.ToTable("question_sets", (string)null);
+                    b.HasIndex("SourcePlanId");
+
+                    b.HasIndex("SourceProjectId")
+                        .IsUnique()
+                        .HasFilter("\"SourceProjectId\" IS NOT NULL");
+
+                    b.HasIndex("SourceRunId");
+
+                    b.HasIndex("IsPinned", "PinnedAt");
+
+                    b.ToTable("tbl_question_sets", (string)null);
                 });
 
             modelBuilder.Entity("DomainLayer.Entities.QuestionSetBookmark", b =>
@@ -1028,7 +852,7 @@ namespace InfrastructureLayer.Migrations
                     b.HasIndex("CandidateUserId", "QuestionSetId")
                         .IsUnique();
 
-                    b.ToTable("question_set_bookmarks", (string)null);
+                    b.ToTable("tbl_question_set_bookmarks", (string)null);
                 });
 
             modelBuilder.Entity("DomainLayer.Entities.QuestionSetQuestion", b =>
@@ -1036,6 +860,17 @@ namespace InfrastructureLayer.Migrations
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
+
+                    b.Property<string>("AnswerMethod")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("Text");
+
+                    b.Property<string>("AttachedImageBlobPath")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
 
                     b.Property<string>("CitationsJson")
                         .IsRequired()
@@ -1092,7 +927,7 @@ namespace InfrastructureLayer.Migrations
 
                     b.HasIndex("QuestionSetId", "Order");
 
-                    b.ToTable("question_set_questions", (string)null);
+                    b.ToTable("tbl_question_set_questions", (string)null);
                 });
 
             modelBuilder.Entity("DomainLayer.Entities.Role", b =>
@@ -1110,7 +945,7 @@ namespace InfrastructureLayer.Migrations
                     b.HasIndex("Name")
                         .IsUnique();
 
-                    b.ToTable("Roles");
+                    b.ToTable("tbl_roles", (string)null);
 
                     b.HasData(
                         new
@@ -1182,7 +1017,7 @@ namespace InfrastructureLayer.Migrations
                     b.HasIndex("UserId")
                         .IsUnique();
 
-                    b.ToTable("subscriptions", (string)null);
+                    b.ToTable("tbl_subscriptions", (string)null);
                 });
 
             modelBuilder.Entity("DomainLayer.Entities.SubscriptionPlan", b =>
@@ -1233,7 +1068,7 @@ namespace InfrastructureLayer.Migrations
                     b.HasIndex("Code")
                         .IsUnique();
 
-                    b.ToTable("subscription_plans", (string)null);
+                    b.ToTable("tbl_subscription_plans", (string)null);
 
                     b.HasData(
                         new
@@ -1244,7 +1079,7 @@ namespace InfrastructureLayer.Migrations
                             CreatedAt = new DateTime(2026, 7, 30, 0, 0, 0, 0, DateTimeKind.Utc),
                             Currency = "VND",
                             IsActive = true,
-                            LimitsJson = "{\"generateCooldownHours\":24,\"generateUnlimited\":false,\"planRegeneratePerDraft\":5,\"canExport\":false,\"askAiPerMonth\":0,\"canPublish\":true,\"freeVisiblePercent\":100,\"canPersistHrRecommendation\":false,\"feedbackOnlyOnVisible\":false}",
+                            LimitsJson = "{\"generateCooldownHours\":24,\"generateUnlimited\":false,\"planRegeneratePerDraft\":5,\"canExport\":false,\"askAiPerMonth\":0,\"canPublish\":true,\"freeVisiblePercent\":100,\"canPersistHrRecommendation\":false,\"feedbackOnlyOnVisible\":false,\"canDetailedAiFeedback\":true,\"freeTeaserFeedbackCount\":0}",
                             Name = "HR Free",
                             PriceMonthly = 0m
                         },
@@ -1256,7 +1091,7 @@ namespace InfrastructureLayer.Migrations
                             CreatedAt = new DateTime(2026, 7, 30, 0, 0, 0, 0, DateTimeKind.Utc),
                             Currency = "VND",
                             IsActive = true,
-                            LimitsJson = "{\"generateCooldownHours\":0,\"generateUnlimited\":true,\"planRegeneratePerDraft\":5,\"canExport\":true,\"askAiPerMonth\":1000,\"canPublish\":true,\"freeVisiblePercent\":100,\"canPersistHrRecommendation\":false,\"feedbackOnlyOnVisible\":false}",
+                            LimitsJson = "{\"generateCooldownHours\":0,\"generateUnlimited\":true,\"planRegeneratePerDraft\":5,\"canExport\":true,\"askAiPerMonth\":1000,\"canPublish\":true,\"freeVisiblePercent\":100,\"canPersistHrRecommendation\":false,\"feedbackOnlyOnVisible\":false,\"canDetailedAiFeedback\":true,\"freeTeaserFeedbackCount\":0}",
                             Name = "HR Premium",
                             PriceMonthly = 699000m
                         },
@@ -1268,7 +1103,7 @@ namespace InfrastructureLayer.Migrations
                             CreatedAt = new DateTime(2026, 7, 30, 0, 0, 0, 0, DateTimeKind.Utc),
                             Currency = "VND",
                             IsActive = true,
-                            LimitsJson = "{\"generateCooldownHours\":0,\"generateUnlimited\":false,\"planRegeneratePerDraft\":0,\"canExport\":false,\"askAiPerMonth\":0,\"canPublish\":false,\"freeVisiblePercent\":20,\"canPersistHrRecommendation\":false,\"feedbackOnlyOnVisible\":true}",
+                            LimitsJson = "{\"generateCooldownHours\":0,\"generateUnlimited\":false,\"planRegeneratePerDraft\":0,\"canExport\":false,\"askAiPerMonth\":0,\"canPublish\":false,\"freeVisiblePercent\":100,\"canPersistHrRecommendation\":false,\"feedbackOnlyOnVisible\":false,\"canDetailedAiFeedback\":false,\"freeTeaserFeedbackCount\":1}",
                             Name = "Candidate Free",
                             PriceMonthly = 0m
                         },
@@ -1280,7 +1115,7 @@ namespace InfrastructureLayer.Migrations
                             CreatedAt = new DateTime(2026, 7, 30, 0, 0, 0, 0, DateTimeKind.Utc),
                             Currency = "VND",
                             IsActive = true,
-                            LimitsJson = "{\"generateCooldownHours\":0,\"generateUnlimited\":false,\"planRegeneratePerDraft\":0,\"canExport\":false,\"askAiPerMonth\":0,\"canPublish\":false,\"freeVisiblePercent\":100,\"canPersistHrRecommendation\":true,\"feedbackOnlyOnVisible\":false}",
+                            LimitsJson = "{\"generateCooldownHours\":0,\"generateUnlimited\":false,\"planRegeneratePerDraft\":0,\"canExport\":false,\"askAiPerMonth\":0,\"canPublish\":false,\"freeVisiblePercent\":100,\"canPersistHrRecommendation\":true,\"feedbackOnlyOnVisible\":false,\"canDetailedAiFeedback\":true,\"freeTeaserFeedbackCount\":0}",
                             Name = "Candidate Premium",
                             PriceMonthly = 149000m
                         });
@@ -1359,7 +1194,7 @@ namespace InfrastructureLayer.Migrations
 
                     b.HasIndex("SubscriptionId");
 
-                    b.ToTable("subscription_transactions", (string)null);
+                    b.ToTable("tbl_subscription_transactions", (string)null);
                 });
 
             modelBuilder.Entity("DomainLayer.Entities.UsageCounter", b =>
@@ -1406,7 +1241,7 @@ namespace InfrastructureLayer.Migrations
                     b.HasIndex("SubscriptionId", "PeriodStart", "UsageType", "ScopeKey")
                         .IsUnique();
 
-                    b.ToTable("usage_counters", (string)null);
+                    b.ToTable("tbl_usage_counters", (string)null);
                 });
 
             modelBuilder.Entity("DomainLayer.Entities.User", b =>
@@ -1511,7 +1346,7 @@ namespace InfrastructureLayer.Migrations
 
                     b.HasIndex("RoleId");
 
-                    b.ToTable("Users");
+                    b.ToTable("tbl_users", (string)null);
                 });
 
             modelBuilder.Entity("DomainLayer.Studio.AiChatMessage", b =>
@@ -1563,7 +1398,11 @@ namespace InfrastructureLayer.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("studio_ai_chat_messages", (string)null);
+                    b.HasIndex("RelatedPlanId");
+
+                    b.HasIndex("SessionId");
+
+                    b.ToTable("tbl_studio_ai_chat_messages", (string)null);
                 });
 
             modelBuilder.Entity("DomainLayer.Studio.AiChatSession", b =>
@@ -1597,7 +1436,11 @@ namespace InfrastructureLayer.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("studio_ai_chat_sessions", (string)null);
+                    b.HasIndex("ProjectId");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("tbl_studio_ai_chat_sessions", (string)null);
                 });
 
             modelBuilder.Entity("DomainLayer.Studio.InterviewPlan", b =>
@@ -1684,10 +1527,14 @@ namespace InfrastructureLayer.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("ApprovedBy");
+
+                    b.HasIndex("SessionId");
+
                     b.HasIndex("ProjectId", "Revision")
                         .IsUnique();
 
-                    b.ToTable("studio_interview_plans", (string)null);
+                    b.ToTable("tbl_studio_interview_plans", (string)null);
                 });
 
             modelBuilder.Entity("DomainLayer.Studio.InterviewProject", b =>
@@ -1726,7 +1573,9 @@ namespace InfrastructureLayer.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("studio_interview_projects", (string)null);
+                    b.HasIndex("OwnerId");
+
+                    b.ToTable("tbl_studio_interview_projects", (string)null);
                 });
 
             modelBuilder.Entity("DomainLayer.Studio.InterviewQuestion", b =>
@@ -1790,7 +1639,17 @@ namespace InfrastructureLayer.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("studio_interview_questions", (string)null);
+                    b.HasIndex("GenerationRunId");
+
+                    b.HasIndex("InterviewPlanId");
+
+                    b.HasIndex("PlanSectionId");
+
+                    b.HasIndex("ProjectId");
+
+                    b.HasIndex("ProjectId", "OrderIndex");
+
+                    b.ToTable("tbl_studio_interview_questions", (string)null);
                 });
 
             modelBuilder.Entity("DomainLayer.Studio.JobDescription", b =>
@@ -1849,7 +1708,7 @@ namespace InfrastructureLayer.Migrations
                     b.HasIndex("ProjectId")
                         .IsUnique();
 
-                    b.ToTable("studio_job_descriptions", (string)null);
+                    b.ToTable("tbl_studio_job_descriptions", (string)null);
                 });
 
             modelBuilder.Entity("DomainLayer.Studio.PlanApprovalHistory", b =>
@@ -1889,7 +1748,13 @@ namespace InfrastructureLayer.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("studio_plan_approval_histories", (string)null);
+                    b.HasIndex("ActorId");
+
+                    b.HasIndex("InterviewPlanId");
+
+                    b.HasIndex("ProjectId");
+
+                    b.ToTable("tbl_studio_plan_approval_histories", (string)null);
                 });
 
             modelBuilder.Entity("DomainLayer.Studio.PlanFocusArea", b =>
@@ -1924,7 +1789,9 @@ namespace InfrastructureLayer.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("studio_plan_focus_areas", (string)null);
+                    b.HasIndex("InterviewPlanId");
+
+                    b.ToTable("tbl_studio_plan_focus_areas", (string)null);
                 });
 
             modelBuilder.Entity("DomainLayer.Studio.PlanSection", b =>
@@ -1969,7 +1836,9 @@ namespace InfrastructureLayer.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("studio_plan_sections", (string)null);
+                    b.HasIndex("InterviewPlanId");
+
+                    b.ToTable("tbl_studio_plan_sections", (string)null);
                 });
 
             modelBuilder.Entity("DomainLayer.Studio.ProjectShare", b =>
@@ -2008,10 +1877,14 @@ namespace InfrastructureLayer.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("CreatedBy");
+
+                    b.HasIndex("ProjectId");
+
                     b.HasIndex("Token")
                         .IsUnique();
 
-                    b.ToTable("studio_project_shares", (string)null);
+                    b.ToTable("tbl_studio_project_shares", (string)null);
                 });
 
             modelBuilder.Entity("DomainLayer.Studio.QuestionGenerationRun", b =>
@@ -2055,9 +1928,6 @@ namespace InfrastructureLayer.Migrations
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
 
-                    b.Property<Guid?>("MirroredJobId")
-                        .HasColumnType("uuid");
-
                     b.Property<Guid>("ProjectId")
                         .HasColumnType("uuid");
 
@@ -2083,9 +1953,13 @@ namespace InfrastructureLayer.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("MirroredJobId");
+                    b.HasIndex("InterviewPlanId");
 
-                    b.ToTable("studio_question_generation_runs", (string)null);
+                    b.HasIndex("ProjectId");
+
+                    b.HasIndex("RequestedBy");
+
+                    b.ToTable("tbl_studio_question_generation_runs", (string)null);
                 });
 
             modelBuilder.Entity("DomainLayer.Studio.StudioFocusArea", b =>
@@ -2120,7 +1994,9 @@ namespace InfrastructureLayer.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("studio_focus_areas", (string)null);
+                    b.HasIndex("StudioSettingsId");
+
+                    b.ToTable("tbl_studio_focus_areas", (string)null);
                 });
 
             modelBuilder.Entity("DomainLayer.Studio.StudioKnowledgeDocument", b =>
@@ -2182,7 +2058,7 @@ namespace InfrastructureLayer.Migrations
 
                     b.HasIndex("ProjectId");
 
-                    b.ToTable("studio_knowledge_documents", (string)null);
+                    b.ToTable("tbl_studio_knowledge_documents", (string)null);
                 });
 
             modelBuilder.Entity("DomainLayer.Studio.StudioSettings", b =>
@@ -2191,8 +2067,19 @@ namespace InfrastructureLayer.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
-                    b.Property<Guid>("AppliedPlanId")
+                    b.Property<Guid?>("AppliedPlanId")
                         .HasColumnType("uuid");
+
+                    b.Property<string>("CodeTemplatesJson")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<string>("ContentMode")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasDefaultValue("Mixed");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
@@ -2245,10 +2132,12 @@ namespace InfrastructureLayer.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("AppliedPlanId");
+
                     b.HasIndex("ProjectId")
                         .IsUnique();
 
-                    b.ToTable("studio_settings", (string)null);
+                    b.ToTable("tbl_studio_settings", (string)null);
                 });
 
             modelBuilder.Entity("DomainLayer.Entities.AiFeedback", b =>
@@ -2333,17 +2222,6 @@ namespace InfrastructureLayer.Migrations
                     b.Navigation("QuestionSet");
                 });
 
-            modelBuilder.Entity("DomainLayer.Entities.GeneratedQuestion", b =>
-                {
-                    b.HasOne("DomainLayer.Entities.QuestionGenerationJob", "Job")
-                        .WithMany("Questions")
-                        .HasForeignKey("JobId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Job");
-                });
-
             modelBuilder.Entity("DomainLayer.Entities.HRProfile", b =>
                 {
                     b.HasOne("DomainLayer.Entities.Company", "Company")
@@ -2396,45 +2274,28 @@ namespace InfrastructureLayer.Migrations
                     b.Navigation("QuestionSet");
                 });
 
-            modelBuilder.Entity("DomainLayer.Entities.QuestionAiChatMessage", b =>
-                {
-                    b.HasOne("DomainLayer.Entities.QuestionGenerationJob", "Job")
-                        .WithMany()
-                        .HasForeignKey("JobId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("DomainLayer.Entities.GeneratedQuestion", "Question")
-                        .WithMany()
-                        .HasForeignKey("QuestionId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Job");
-
-                    b.Navigation("Question");
-                });
-
-            modelBuilder.Entity("DomainLayer.Entities.QuestionGenerationPlan", b =>
-                {
-                    b.HasOne("DomainLayer.Entities.QuestionGenerationJob", "Job")
-                        .WithOne("Plan")
-                        .HasForeignKey("DomainLayer.Entities.QuestionGenerationPlan", "JobId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Job");
-                });
-
             modelBuilder.Entity("DomainLayer.Entities.QuestionSet", b =>
                 {
-                    b.HasOne("DomainLayer.Entities.QuestionGenerationJob", "SourceJob")
+                    b.HasOne("DomainLayer.Studio.InterviewPlan", "SourcePlan")
                         .WithMany()
-                        .HasForeignKey("SourceJobId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
+                        .HasForeignKey("SourcePlanId")
+                        .OnDelete(DeleteBehavior.SetNull);
 
-                    b.Navigation("SourceJob");
+                    b.HasOne("DomainLayer.Studio.InterviewProject", "SourceProject")
+                        .WithMany()
+                        .HasForeignKey("SourceProjectId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("DomainLayer.Studio.QuestionGenerationRun", "SourceRun")
+                        .WithMany()
+                        .HasForeignKey("SourceRunId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("SourcePlan");
+
+                    b.Navigation("SourceProject");
+
+                    b.Navigation("SourceRun");
                 });
 
             modelBuilder.Entity("DomainLayer.Entities.QuestionSetBookmark", b =>
@@ -2511,6 +2372,268 @@ namespace InfrastructureLayer.Migrations
                     b.Navigation("Role");
                 });
 
+            modelBuilder.Entity("DomainLayer.Studio.AiChatMessage", b =>
+                {
+                    b.HasOne("DomainLayer.Studio.InterviewPlan", "RelatedPlan")
+                        .WithMany()
+                        .HasForeignKey("RelatedPlanId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("DomainLayer.Studio.AiChatSession", "Session")
+                        .WithMany("Messages")
+                        .HasForeignKey("SessionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("RelatedPlan");
+
+                    b.Navigation("Session");
+                });
+
+            modelBuilder.Entity("DomainLayer.Studio.AiChatSession", b =>
+                {
+                    b.HasOne("DomainLayer.Studio.InterviewProject", "Project")
+                        .WithMany("ChatSessions")
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("DomainLayer.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Project");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("DomainLayer.Studio.InterviewPlan", b =>
+                {
+                    b.HasOne("DomainLayer.Entities.User", "ApprovedByUser")
+                        .WithMany()
+                        .HasForeignKey("ApprovedBy")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("DomainLayer.Studio.InterviewProject", "Project")
+                        .WithMany("Plans")
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("DomainLayer.Studio.AiChatSession", "Session")
+                        .WithMany("Plans")
+                        .HasForeignKey("SessionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("ApprovedByUser");
+
+                    b.Navigation("Project");
+
+                    b.Navigation("Session");
+                });
+
+            modelBuilder.Entity("DomainLayer.Studio.InterviewProject", b =>
+                {
+                    b.HasOne("DomainLayer.Entities.User", "Owner")
+                        .WithMany()
+                        .HasForeignKey("OwnerId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Owner");
+                });
+
+            modelBuilder.Entity("DomainLayer.Studio.InterviewQuestion", b =>
+                {
+                    b.HasOne("DomainLayer.Studio.QuestionGenerationRun", "GenerationRun")
+                        .WithMany("Questions")
+                        .HasForeignKey("GenerationRunId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("DomainLayer.Studio.InterviewPlan", "InterviewPlan")
+                        .WithMany("Questions")
+                        .HasForeignKey("InterviewPlanId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("DomainLayer.Studio.PlanSection", "PlanSection")
+                        .WithMany("Questions")
+                        .HasForeignKey("PlanSectionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("DomainLayer.Studio.InterviewProject", "Project")
+                        .WithMany("Questions")
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("GenerationRun");
+
+                    b.Navigation("InterviewPlan");
+
+                    b.Navigation("PlanSection");
+
+                    b.Navigation("Project");
+                });
+
+            modelBuilder.Entity("DomainLayer.Studio.JobDescription", b =>
+                {
+                    b.HasOne("DomainLayer.Studio.InterviewProject", "Project")
+                        .WithOne("JobDescription")
+                        .HasForeignKey("DomainLayer.Studio.JobDescription", "ProjectId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Project");
+                });
+
+            modelBuilder.Entity("DomainLayer.Studio.PlanApprovalHistory", b =>
+                {
+                    b.HasOne("DomainLayer.Entities.User", "Actor")
+                        .WithMany()
+                        .HasForeignKey("ActorId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("DomainLayer.Studio.InterviewPlan", "InterviewPlan")
+                        .WithMany("ApprovalHistories")
+                        .HasForeignKey("InterviewPlanId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("DomainLayer.Studio.InterviewProject", "Project")
+                        .WithMany("ApprovalHistories")
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Actor");
+
+                    b.Navigation("InterviewPlan");
+
+                    b.Navigation("Project");
+                });
+
+            modelBuilder.Entity("DomainLayer.Studio.PlanFocusArea", b =>
+                {
+                    b.HasOne("DomainLayer.Studio.InterviewPlan", "InterviewPlan")
+                        .WithMany("FocusAreas")
+                        .HasForeignKey("InterviewPlanId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("InterviewPlan");
+                });
+
+            modelBuilder.Entity("DomainLayer.Studio.PlanSection", b =>
+                {
+                    b.HasOne("DomainLayer.Studio.InterviewPlan", "InterviewPlan")
+                        .WithMany("Sections")
+                        .HasForeignKey("InterviewPlanId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("InterviewPlan");
+                });
+
+            modelBuilder.Entity("DomainLayer.Studio.ProjectShare", b =>
+                {
+                    b.HasOne("DomainLayer.Entities.User", "CreatedByUser")
+                        .WithMany()
+                        .HasForeignKey("CreatedBy")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("DomainLayer.Studio.InterviewProject", "Project")
+                        .WithMany("Shares")
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("CreatedByUser");
+
+                    b.Navigation("Project");
+                });
+
+            modelBuilder.Entity("DomainLayer.Studio.QuestionGenerationRun", b =>
+                {
+                    b.HasOne("DomainLayer.Studio.InterviewPlan", "InterviewPlan")
+                        .WithMany("GenerationRuns")
+                        .HasForeignKey("InterviewPlanId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("DomainLayer.Studio.InterviewProject", "Project")
+                        .WithMany("GenerationRuns")
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("DomainLayer.Entities.User", "RequestedByUser")
+                        .WithMany()
+                        .HasForeignKey("RequestedBy")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("InterviewPlan");
+
+                    b.Navigation("Project");
+
+                    b.Navigation("RequestedByUser");
+                });
+
+            modelBuilder.Entity("DomainLayer.Studio.StudioFocusArea", b =>
+                {
+                    b.HasOne("DomainLayer.Studio.StudioSettings", "StudioSettings")
+                        .WithMany("FocusAreas")
+                        .HasForeignKey("StudioSettingsId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("StudioSettings");
+                });
+
+            modelBuilder.Entity("DomainLayer.Studio.StudioKnowledgeDocument", b =>
+                {
+                    b.HasOne("DomainLayer.Entities.KnowledgeDocument", "KnowledgeDocument")
+                        .WithMany()
+                        .HasForeignKey("KnowledgeDocumentId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("DomainLayer.Studio.InterviewProject", "Project")
+                        .WithMany("KnowledgeDocuments")
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("KnowledgeDocument");
+
+                    b.Navigation("Project");
+                });
+
+            modelBuilder.Entity("DomainLayer.Studio.StudioSettings", b =>
+                {
+                    b.HasOne("DomainLayer.Studio.InterviewPlan", "AppliedPlan")
+                        .WithMany("AppliedInSettings")
+                        .HasForeignKey("AppliedPlanId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("DomainLayer.Studio.InterviewProject", "Project")
+                        .WithOne("Settings")
+                        .HasForeignKey("DomainLayer.Studio.StudioSettings", "ProjectId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("AppliedPlan");
+
+                    b.Navigation("Project");
+                });
+
             modelBuilder.Entity("DomainLayer.Entities.Company", b =>
                 {
                     b.Navigation("HRProfiles");
@@ -2519,13 +2642,6 @@ namespace InfrastructureLayer.Migrations
             modelBuilder.Entity("DomainLayer.Entities.KnowledgeDocument", b =>
                 {
                     b.Navigation("Chunks");
-                });
-
-            modelBuilder.Entity("DomainLayer.Entities.QuestionGenerationJob", b =>
-                {
-                    b.Navigation("Plan");
-
-                    b.Navigation("Questions");
                 });
 
             modelBuilder.Entity("DomainLayer.Entities.QuestionSet", b =>
@@ -2548,6 +2664,64 @@ namespace InfrastructureLayer.Migrations
             modelBuilder.Entity("DomainLayer.Entities.SubscriptionPlan", b =>
                 {
                     b.Navigation("Subscriptions");
+                });
+
+            modelBuilder.Entity("DomainLayer.Studio.AiChatSession", b =>
+                {
+                    b.Navigation("Messages");
+
+                    b.Navigation("Plans");
+                });
+
+            modelBuilder.Entity("DomainLayer.Studio.InterviewPlan", b =>
+                {
+                    b.Navigation("AppliedInSettings");
+
+                    b.Navigation("ApprovalHistories");
+
+                    b.Navigation("FocusAreas");
+
+                    b.Navigation("GenerationRuns");
+
+                    b.Navigation("Questions");
+
+                    b.Navigation("Sections");
+                });
+
+            modelBuilder.Entity("DomainLayer.Studio.InterviewProject", b =>
+                {
+                    b.Navigation("ApprovalHistories");
+
+                    b.Navigation("ChatSessions");
+
+                    b.Navigation("GenerationRuns");
+
+                    b.Navigation("JobDescription");
+
+                    b.Navigation("KnowledgeDocuments");
+
+                    b.Navigation("Plans");
+
+                    b.Navigation("Questions");
+
+                    b.Navigation("Settings");
+
+                    b.Navigation("Shares");
+                });
+
+            modelBuilder.Entity("DomainLayer.Studio.PlanSection", b =>
+                {
+                    b.Navigation("Questions");
+                });
+
+            modelBuilder.Entity("DomainLayer.Studio.QuestionGenerationRun", b =>
+                {
+                    b.Navigation("Questions");
+                });
+
+            modelBuilder.Entity("DomainLayer.Studio.StudioSettings", b =>
+                {
+                    b.Navigation("FocusAreas");
                 });
 #pragma warning restore 612, 618
         }

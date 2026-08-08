@@ -59,12 +59,15 @@ public class HrBookmarkService : IHrBookmarkService
         {
             QuestionSetId = qs.Id,
             JobId = qs.SourceJobId,
+            SourceProjectId = qs.SourceProjectId,
             Title = qs.Title,
             Status = qs.Status,
             CompanyName = companyName,
             CompanyLogo = companyLogo,
             SavedAt = qs.CreatedAt,
-            PublishedAt = qs.PublishedAt
+            PublishedAt = qs.PublishedAt,
+            QuestionCount = 0,
+            IsBookmarked = true
         }).ToList();
     }
 }

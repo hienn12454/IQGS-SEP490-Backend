@@ -30,3 +30,9 @@ public interface IExpiredPracticeSessionWatchdogJob
 {
     Task ExecuteAsync();
 }
+
+/// <summary>Đánh Expired cho đơn upgrade Pending đã quá ExpiresAt (TTL 10 phút).</summary>
+public interface IExpirePendingUpgradeOrdersJob
+{
+    Task ExecuteAsync();
+}

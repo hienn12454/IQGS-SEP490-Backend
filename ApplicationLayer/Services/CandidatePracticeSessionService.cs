@@ -28,6 +28,7 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
     private readonly IRecommendationService _recommendationService;
     private readonly ISubscriptionGateService _subscriptionGate;
     private readonly IUsageMeteringService _usageMetering;
+    private readonly IBlobStorageService _blobStorage;
     private readonly ILogger<CandidatePracticeSessionService> _logger;
 
     public CandidatePracticeSessionService(
@@ -39,6 +40,7 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
         IRecommendationService recommendationService,
         ISubscriptionGateService subscriptionGate,
         IUsageMeteringService usageMetering,
+        IBlobStorageService blobStorage,
         ILogger<CandidatePracticeSessionService> logger)
     {
         _sessionRepository = sessionRepository;
@@ -49,6 +51,7 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
         _recommendationService = recommendationService;
         _subscriptionGate = subscriptionGate;
         _usageMetering = usageMetering;
+        _blobStorage = blobStorage;
         _logger = logger;
     }
 
@@ -100,88 +103,45 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
         if (!await _marketplaceRepository.QuestionBelongsToSetAsync(dto.QuestionId, session.QuestionSetId))
             throw new BadRequestException("questionId không thuộc bộ câu hỏi của phiên luyện tập này.");
 
-        // SCRUM-382: Free chỉ feedback ~20% câu đầu theo Order
-        var questions = (await _marketplaceRepository.GetQuestionsSnapshotAsync(session.QuestionSetId))
-            .OrderBy(q => q.Order)
-            .ToList();
-        var index = questions.FindIndex(q => q.Id == dto.QuestionId);
-        if (index < 0)
+        // SCRUM-332: Free làm full bài — chỉ validate câu thuộc set, không gate feedback giữa phiên
+        var questions = await _marketplaceRepository.GetQuestionsSnapshotAsync(session.QuestionSetId);
+        if (questions.All(q => q.Id != dto.QuestionId))
             throw new BadRequestException("questionId không thuộc bộ câu hỏi của phiên luyện tập này.");
-        await _subscriptionGate.CheckFeedbackAsync(candidateUserId, index, questions.Count);
 
         var answerText = dto.AnswerText.Trim();
         var submittedAt = DateTime.UtcNow;
 
-        // 1) Luôn lưu answer trước — AC-03: RAG fail vẫn giữ câu trả lời
+        // Chỉ lưu answer — AI evaluate dời sang complete (SCRUM-332)
         var existing = await _answerRepository.GetAsync(sessionId, dto.QuestionId);
-        CandidateAnswer answer;
         if (existing is null)
         {
-            answer = new CandidateAnswer
+            await _answerRepository.AddAsync(new CandidateAnswer
             {
                 PracticeSessionId = sessionId,
                 QuestionSetQuestionId = dto.QuestionId,
                 AnswerText = answerText,
                 SubmittedAt = submittedAt
-            };
-            await _answerRepository.AddAsync(answer);
+            });
         }
         else
         {
             existing.AnswerText = answerText;
             existing.SubmittedAt = submittedAt;
             await _answerRepository.UpdateAsync(existing);
-            answer = existing;
         }
-
-        // 2) Gate: câu trống / "không biết" / spam → score 0 Succeeded, không gọi RAG (tiết kiệm token)
-        if (AnswerEvaluationGate.TrySkip(answerText, out var skipReason))
-        {
-            _logger.LogInformation(
-                "Bỏ qua RAG evaluate cho answer {AnswerId}: {Reason}",
-                answer.Id, skipReason);
-
-            await UpsertFeedbackAsync(
-                answer.Id,
-                AiFeedbackEvaluationStatus.Succeeded,
-                score: 0,
-                strengths: [],
-                improvements: [skipReason],
-                suggestion: skipReason,
-                dimensionScores: null,
-                errorMessage: null);
-
-            return new SubmitAnswerResponseDto
-            {
-                QuestionId = dto.QuestionId,
-                AnswerText = answerText,
-                SubmittedAt = submittedAt,
-                EvaluationStatus = AiFeedbackEvaluationStatus.Succeeded,
-                Score = 0,
-                Strengths = [],
-                Improvements = [skipReason],
-                Suggestion = skipReason,
-                DimensionScores = null,
-                EvaluationError = null
-            };
-        }
-
-        // 3) Gọi RAG evaluate sync (SCRUM-282) — lỗi → lưu Failed, không throw ra FE
-        var evaluation = await EvaluateAndPersistAsync(answer, dto.QuestionId);
-        await _usageMetering.IncrementAsync(candidateUserId, UsageType.CandidateFeedback);
 
         return new SubmitAnswerResponseDto
         {
             QuestionId = dto.QuestionId,
             AnswerText = answerText,
             SubmittedAt = submittedAt,
-            EvaluationStatus = evaluation.EvaluationStatus,
-            Score = evaluation.Score,
-            Strengths = evaluation.Strengths,
-            Improvements = evaluation.Improvements,
-            Suggestion = evaluation.Suggestion,
-            DimensionScores = evaluation.DimensionScores,
-            EvaluationError = evaluation.ErrorMessage
+            EvaluationStatus = AiFeedbackEvaluationStatus.Pending,
+            Score = null,
+            Strengths = [],
+            Improvements = [],
+            Suggestion = null,
+            DimensionScores = null,
+            EvaluationError = null
         };
     }
 
@@ -253,16 +213,64 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
         var answers = await _answerRepository.GetEntitiesBySessionIdAsync(sessionId);
         var feedbacks = await _feedbackRepository.GetBySessionIdAsync(sessionId);
 
+        var canDetailed = await _subscriptionGate.CanDetailedAiFeedbackAsync(candidateUserId);
+        var accessLevel = canDetailed
+            ? PracticeFeedbackAccessLevel.Full
+            : PracticeFeedbackAccessLevel.FreeTeaser;
+
         var feedbackByAnswerId = feedbacks.ToDictionary(f => f.CandidateAnswerId);
         var answerByQuestionId = answers.ToDictionary(a => a.QuestionSetQuestionId);
 
+        // Free: câu teaser = câu đã có feedback Succeeded (đã chọn lúc finalize)
+        var teaserQuestionIds = new HashSet<Guid>();
+        if (!canDetailed)
+        {
+            foreach (var answer in answers)
+            {
+                if (feedbackByAnswerId.TryGetValue(answer.Id, out var fb)
+                    && fb.EvaluationStatus == AiFeedbackEvaluationStatus.Succeeded
+                    && fb.Score.HasValue)
+                {
+                    teaserQuestionIds.Add(answer.QuestionSetQuestionId);
+                }
+            }
+        }
+
+        // Luôn trả đủ mọi câu trong set (kể cả chưa trả lời) — FE hiển thị full list + empty state.
         var items = new List<PracticeSessionFeedbackItemDto>();
         foreach (var q in questions.OrderBy(x => x.Order))
         {
-            if (!answerByQuestionId.TryGetValue(q.Id, out var answer))
-                continue;
+            var hasAnswer = answerByQuestionId.TryGetValue(q.Id, out var answer);
+            var answerText = hasAnswer ? (answer!.AnswerText ?? string.Empty) : string.Empty;
+            AiFeedback? feedback = null;
+            if (hasAnswer)
+                feedbackByAnswerId.TryGetValue(answer!.Id, out feedback);
 
-            feedbackByAnswerId.TryGetValue(answer.Id, out var feedback);
+            var isTeaser = !canDetailed && teaserQuestionIds.Contains(q.Id);
+            var isLocked = !canDetailed && !isTeaser;
+
+            if (isLocked)
+            {
+                // Không lộ score/feedback chi tiết cho Free — FE blur + upsell
+                // Câu chưa trả lời vẫn nằm trong list (locked) theo freemium teaser.
+                items.Add(new PracticeSessionFeedbackItemDto
+                {
+                    QuestionId = q.Id,
+                    QuestionText = q.Question,
+                    QuestionType = q.QuestionType,
+                    Difficulty = q.Difficulty,
+                    AnswerText = answerText,
+                    Score = null,
+                    Strengths = [],
+                    Improvements = [],
+                    Suggestion = null,
+                    DimensionScores = null,
+                    EvaluationStatus = AiFeedbackEvaluationStatus.Pending,
+                    IsLocked = true,
+                    IsTeaser = false
+                });
+                continue;
+            }
 
             items.Add(new PracticeSessionFeedbackItemDto
             {
@@ -270,20 +278,22 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
                 QuestionText = q.Question,
                 QuestionType = q.QuestionType,
                 Difficulty = q.Difficulty,
-                AnswerText = answer.AnswerText,
+                AnswerText = answerText,
                 Score = feedback?.Score,
                 Strengths = DeserializeStringList(feedback?.StrengthsJson),
                 Improvements = DeserializeStringList(feedback?.ImprovementsJson),
                 Suggestion = feedback?.Suggestion,
                 DimensionScores = DeserializeDimensionScores(feedback?.DimensionScoresJson),
-                EvaluationStatus = feedback?.EvaluationStatus ?? AiFeedbackEvaluationStatus.Failed
+                // Chưa có CandidateAnswer → Pending (điểm 0 đóng góp overall như trước)
+                EvaluationStatus = feedback?.EvaluationStatus ?? AiFeedbackEvaluationStatus.Pending,
+                IsLocked = false,
+                IsTeaser = isTeaser
             });
         }
 
         double? overall = session.OverallScore;
-        if (overall is null)
+        if (overall is null && canDetailed)
         {
-            // Fallback (phiên chưa complete): cùng công thức SCRUM-304
             var succeededScores = items
                 .Where(i =>
                     i.EvaluationStatus == AiFeedbackEvaluationStatus.Succeeded
@@ -297,7 +307,8 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
             SessionId = session.Id,
             OverallScore = overall,
             Status = session.Status,
-            AiInsight = MapAiInsight(session),
+            AccessLevel = accessLevel,
+            AiInsight = canDetailed ? MapAiInsight(session) : null,
             Items = items
         };
     }
@@ -502,14 +513,98 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
     }
 
     /// <summary>
-    /// SCRUM-304 + SCRUM-305: tính overallScore, sinh AI Insight (lỗi RAG không fail complete), recommendation.
+    /// SCRUM-332 + Teaser Freemium: evaluate answers theo entitlement, rồi overall / insight / recommendation.
     /// </summary>
     private async Task FinalizeCompletedSessionAsync(PracticeSession session)
     {
-        session.OverallScore = await ComputeSessionOverallScoreAsync(session);
-        await TryGenerateAiInsightAsync(session);
+        await EvaluateAnswersForSessionAsync(session);
+
+        var canDetailed = await _subscriptionGate.CanDetailedAiFeedbackAsync(session.CandidateUserId);
+        if (canDetailed)
+        {
+            session.OverallScore = await ComputeSessionOverallScoreAsync(session);
+            await TryGenerateAiInsightAsync(session);
+            await _sessionRepository.UpdateAsync(session);
+            await TryGenerateRecommendationAsync(session);
+            return;
+        }
+
+        // Free: overall = điểm câu teaser (không chia cho N câu — tránh điểm bị kéo thấp giả tạo)
+        session.OverallScore = await ComputeTeaserOverallScoreAsync(session);
         await _sessionRepository.UpdateAsync(session);
-        await TryGenerateRecommendationAsync(session);
+        // Free không sinh insight đầy đủ / không persist recommendation HR
+    }
+
+    /// <summary>
+    /// Premium: chấm mọi answer. Free: chỉ chấm FreeTeaserFeedbackCount câu (ưu tiên answer dài nhất).
+    /// Idempotent nếu đã có Succeeded feedback.
+    /// </summary>
+    private async Task EvaluateAnswersForSessionAsync(PracticeSession session)
+    {
+        var questions = (await _marketplaceRepository.GetQuestionsSnapshotAsync(session.QuestionSetId))
+            .OrderBy(q => q.Order)
+            .ToList();
+        var answers = await _answerRepository.GetEntitiesBySessionIdAsync(session.Id);
+        if (answers.Count == 0)
+            return;
+
+        var feedbacks = await _feedbackRepository.GetBySessionIdAsync(session.Id);
+        var feedbackByAnswerId = feedbacks.ToDictionary(f => f.CandidateAnswerId);
+
+        var canDetailed = await _subscriptionGate.CanDetailedAiFeedbackAsync(session.CandidateUserId);
+        IEnumerable<CandidateAnswer> toEvaluate = answers;
+
+        if (!canDetailed)
+        {
+            var teaserCount = await _subscriptionGate.GetFreeTeaserFeedbackCountAsync(session.CandidateUserId);
+            // Ưu tiên câu có nội dung dài nhất (meaningful) — fallback Order nếu bằng nhau
+            toEvaluate = answers
+                .OrderByDescending(a => a.AnswerText?.Trim().Length ?? 0)
+                .ThenBy(a => questions.FindIndex(q => q.Id == a.QuestionSetQuestionId))
+                .Take(teaserCount)
+                .ToList();
+        }
+
+        foreach (var answer in toEvaluate)
+        {
+            if (feedbackByAnswerId.TryGetValue(answer.Id, out var existing)
+                && existing.EvaluationStatus == AiFeedbackEvaluationStatus.Succeeded)
+            {
+                continue;
+            }
+
+            var answerText = answer.AnswerText?.Trim() ?? string.Empty;
+            if (AnswerEvaluationGate.TrySkip(answerText, out var skipReason))
+            {
+                _logger.LogInformation(
+                    "Bỏ qua RAG evaluate cho answer {AnswerId}: {Reason}",
+                    answer.Id, skipReason);
+
+                await UpsertFeedbackAsync(
+                    answer.Id,
+                    AiFeedbackEvaluationStatus.Succeeded,
+                    score: 0,
+                    strengths: [],
+                    improvements: [skipReason],
+                    suggestion: skipReason,
+                    dimensionScores: null,
+                    errorMessage: null);
+                continue;
+            }
+
+            await EvaluateAndPersistAsync(answer, answer.QuestionSetQuestionId);
+            await _usageMetering.IncrementAsync(session.CandidateUserId, UsageType.CandidateFeedback);
+        }
+    }
+
+    /// <summary>Free overall = điểm Succeeded của (các) câu teaser — lấy trung bình nếu >1 teaser.</summary>
+    private async Task<double?> ComputeTeaserOverallScoreAsync(PracticeSession session)
+    {
+        var scores = await _feedbackRepository.GetSucceededScoresAsync(session.Id);
+        var list = scores.ToList();
+        if (list.Count == 0)
+            return null;
+        return Math.Round(list.Average(), 0);
     }
 
     /// <summary>SCRUM-305 — gọi RAG sinh insight song ngữ; lỗi → log, để null (FE fallback).</summary>
@@ -626,7 +721,7 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
         var questions = await _marketplaceRepository.GetQuestionsSnapshotAsync(session.QuestionSetId);
         var answers = await _answerRepository.GetAnswersBySessionIdAsync(session.Id);
         var timeLimitMinutes = await _sessionRepository.GetTimeLimitMinutesAsync(session.QuestionSetId);
-        return MapToResponseDto(session, questions, answers, timeLimitMinutes);
+        return await MapToResponseDtoAsync(session, questions, answers, timeLimitMinutes);
     }
 
     private static int? ComputeDurationSeconds(DateTime? startedAt, DateTime? completedAt)
@@ -636,10 +731,32 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
         return (int)(completedAt.Value - startedAt.Value).TotalSeconds;
     }
 
-    private static PracticeSessionResponseDto MapToResponseDto(
+    private async Task<PracticeSessionResponseDto> MapToResponseDtoAsync(
         PracticeSession session, IReadOnlyList<PublishedQuestionRow> questions,
         Dictionary<Guid, string> answersByQuestionId, int? timeLimitMinutes)
     {
+        var questionDtos = new List<PracticeSessionQuestionDto>(questions.Count);
+        foreach (var q in questions)
+        {
+            var meta = QuestionRationaleMetaParser.Parse(q.Rationale);
+            questionDtos.Add(new PracticeSessionQuestionDto
+            {
+                Id = q.Id,
+                Order = q.Order,
+                Question = q.Question,
+                QuestionType = q.QuestionType,
+                Difficulty = q.Difficulty,
+                Skill = q.Skill,
+                FocusArea = q.FocusArea,
+                CodeTemplateType = meta.CodeTemplateType,
+                CodeSnippet = meta.CodeSnippet,
+                AttachedImageUrl = await TryResolveImageUrlAsync(q.AttachedImageBlobPath),
+                AnswerMethod = AnswerMethodNormalizer.Resolve(
+                    q.AnswerMethod, meta.CodeTemplateType, meta.CodeSnippet),
+                AnswerText = answersByQuestionId.TryGetValue(q.Id, out var text) ? text : null
+            });
+        }
+
         return new PracticeSessionResponseDto
         {
             Id = session.Id,
@@ -653,18 +770,24 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
             ExpiresAt = session.Status == PracticeSessionStatus.InProgress
                 ? ComputeExpiresAt(session.StartedAt, timeLimitMinutes)
                 : null,
-            Questions = questions.Select(q => new PracticeSessionQuestionDto
-            {
-                Id = q.Id,
-                Order = q.Order,
-                Question = q.Question,
-                QuestionType = q.QuestionType,
-                Difficulty = q.Difficulty,
-                Skill = q.Skill,
-                FocusArea = q.FocusArea,
-                AnswerText = answersByQuestionId.TryGetValue(q.Id, out var text) ? text : null
-            }).ToList()
+            Questions = questionDtos
         };
+    }
+
+    private async Task<string?> TryResolveImageUrlAsync(string? blobPath)
+    {
+        if (string.IsNullOrWhiteSpace(blobPath))
+            return null;
+
+        try
+        {
+            return await _blobStorage.GenerateReadSasUrlAsync(blobPath, TimeSpan.FromHours(2));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Không tạo được SAS URL cho ảnh practice session (blob={BlobPath}).", blobPath);
+            return null;
+        }
     }
 
     private static PracticeAiInsightDto? MapAiInsight(PracticeSession session)

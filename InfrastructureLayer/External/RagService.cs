@@ -166,7 +166,9 @@ public class RagService : IRagService
             request.Difficulty,
             request.QuestionTypes,
             request.Skills,
-            request.HrNote
+            request.HrNote,
+            request.Language,
+            DocumentIds = request.DocumentIds
         };
         return PostAsyncAcceptedAsync("/internal/rag/generate-plan/async", body, ct);
     }
@@ -206,7 +208,8 @@ public class RagService : IRagService
             request.OwnerId,
             request.JobDescription,
             request.ApprovedPlan,
-            request.HrNote
+            request.HrNote,
+            request.Language
         };
         return PostAsyncAcceptedAsync("/internal/rag/generate-questions-from-plan/async", body, ct);
     }
