@@ -317,6 +317,7 @@ public class Program
         builder.Services.AddScoped<IUsageCounterRepository, UsageCounterRepository>();
         builder.Services.AddScoped<ISubscriptionTransactionRepository, SubscriptionTransactionRepository>();
         builder.Services.AddScoped<ICompanyRepository, CompanyRepository>();
+        builder.Services.AddScoped<IFeedbackRepository, FeedbackRepository>();
         builder.Services.AddScoped<IKnowledgeDocumentRepository, KnowledgeDocumentRepository>();
         builder.Services.AddScoped<IQuestionGenerationJobRepository, QuestionGenerationJobRepository>();
         builder.Services.AddScoped<IQuestionSetRepository, QuestionSetRepository>();
@@ -330,6 +331,7 @@ public class Program
         builder.Services.AddScoped<IAuthService, AuthService>();
         builder.Services.AddScoped<IUserService, UserService>();
         builder.Services.AddScoped<ICompanyService, CompanyService>();
+        builder.Services.AddScoped<IFeedbackService, FeedbackService>();
         builder.Services.AddScoped<IBlobStorageService, AzureBlobStorageService>();
         // SCRUM-385: HttpClient cho SePay User API v2 (timeout ngắn, rate-limit thân thiện)
         builder.Services.AddHttpClient<ISePayGateway, SePayGateway>(client =>
