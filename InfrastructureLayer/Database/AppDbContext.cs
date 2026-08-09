@@ -13,6 +13,7 @@ public class AppDbContext : DbContext
     public DbSet<Role> Roles { get; set; }
     public DbSet<User> Users { get; set; }
     public DbSet<Company> Companies { get; set; }
+    public DbSet<Feedback> Feedbacks { get; set; }
     public DbSet<HRProfile> HRProfiles { get; set; }
     public DbSet<CandidateProfile> CandidateProfiles { get; set; }
     public DbSet<KnowledgeDocument> KnowledgeDocuments { get; set; }
@@ -129,6 +130,22 @@ public class AppDbContext : DbContext
             entity.Property(c => c.LogoUrl).HasMaxLength(500);
             entity.Property(c => c.WebsiteUrl).HasMaxLength(500);
             entity.HasIndex(c => c.Name);
+        });
+
+        // ── Feedback ────────────────────────────────────────────────
+        modelBuilder.Entity<Feedback>(entity =>
+        {
+            entity.ToTable("tbl_feedbacks");
+            entity.HasKey(f => f.Id);
+            entity.Property(f => f.Content).IsRequired().HasMaxLength(1000);
+            entity.Property(f => f.Status).IsRequired().HasMaxLength(20);
+
+            entity.HasOne(f => f.User)
+                .WithMany()
+                .HasForeignKey(f => f.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(f => f.Status);
         });
 
         // ── HRProfile ───────────────────────────────────────────────

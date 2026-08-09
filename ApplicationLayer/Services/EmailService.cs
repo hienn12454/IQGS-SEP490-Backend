@@ -5,6 +5,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using MimeKit;
 using System;
+using System.Globalization;
 using System.Linq;
 using System.Net;
 
@@ -184,6 +185,90 @@ public class EmailService : IEmailService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Gửi email báo candidate chấp nhận offer thất bại.\nTo: {Email}", hrEmail);
+        }
+    }
+
+    public async Task SendPremiumActivatedEmailAsync(
+        string toEmail, string toName, string planName,
+        DateTime periodStart, DateTime periodEnd, string appLink)
+    {
+        var fromName = _config["EmailSettings:FromName"] ?? "HireGen AI";
+        var fromAddress = _config["EmailSettings:FromAddress"] ?? "noreply@iqgs.com";
+        var smtpHost = _config["EmailSettings:SmtpHost"];
+        var smtpPort = int.Parse(_config["EmailSettings:SmtpPort"] ?? "587");
+        var username = _config["EmailSettings:Username"];
+        var password = _config["EmailSettings:Password"];
+
+        if (string.IsNullOrWhiteSpace(smtpHost) || string.IsNullOrWhiteSpace(username))
+        {
+            _logger.LogWarning(
+                "[DEV] Premium activated email (chưa cấu hình SMTP).\nTo: {Email}\nPlan: {Plan}\nPeriod: {Start:d} - {End:d}",
+                toEmail, planName, periodStart, periodEnd);
+            return;
+        }
+
+        var message = new MimeMessage();
+        message.From.Add(new MailboxAddress(fromName, fromAddress));
+        message.To.Add(new MailboxAddress(toName, toEmail));
+        message.Subject = $"[HireGen AI] Nâng cấp gói {planName} thành công";
+        message.Body = new TextPart("html") { Text = BuildPremiumActivatedHtml(toName, planName, periodStart, periodEnd, appLink) };
+
+        try
+        {
+            using var client = new SmtpClient();
+            await client.ConnectAsync(smtpHost, smtpPort, SecureSocketOptions.StartTls);
+            await client.AuthenticateAsync(username, password);
+            await client.SendAsync(message);
+            await client.DisconnectAsync(quit: true);
+            _logger.LogInformation("Đã gửi email chúc mừng nâng cấp Premium đến {Email}.", toEmail);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Gửi email chúc mừng nâng cấp Premium thất bại.\nTo: {Email}", toEmail);
+        }
+    }
+
+    public async Task SendSubscriptionInvoiceEmailAsync(
+        string toEmail, string toName, string orderCode, string planName,
+        decimal amount, string currency, DateTime paidAt,
+        DateTime periodStart, DateTime periodEnd, string appLink)
+    {
+        var fromName = _config["EmailSettings:FromName"] ?? "HireGen AI";
+        var fromAddress = _config["EmailSettings:FromAddress"] ?? "noreply@iqgs.com";
+        var smtpHost = _config["EmailSettings:SmtpHost"];
+        var smtpPort = int.Parse(_config["EmailSettings:SmtpPort"] ?? "587");
+        var username = _config["EmailSettings:Username"];
+        var password = _config["EmailSettings:Password"];
+
+        if (string.IsNullOrWhiteSpace(smtpHost) || string.IsNullOrWhiteSpace(username))
+        {
+            _logger.LogWarning(
+                "[DEV] Subscription invoice email (chưa cấu hình SMTP).\nTo: {Email}\nOrder: {OrderCode}\nAmount: {Amount} {Currency}",
+                toEmail, orderCode, amount, currency);
+            return;
+        }
+
+        var message = new MimeMessage();
+        message.From.Add(new MailboxAddress(fromName, fromAddress));
+        message.To.Add(new MailboxAddress(toName, toEmail));
+        message.Subject = $"[HireGen AI] Hóa đơn thanh toán #{orderCode}";
+        message.Body = new TextPart("html")
+        {
+            Text = BuildSubscriptionInvoiceHtml(toName, orderCode, planName, amount, currency, paidAt, periodStart, periodEnd, appLink)
+        };
+
+        try
+        {
+            using var client = new SmtpClient();
+            await client.ConnectAsync(smtpHost, smtpPort, SecureSocketOptions.StartTls);
+            await client.AuthenticateAsync(username, password);
+            await client.SendAsync(message);
+            await client.DisconnectAsync(quit: true);
+            _logger.LogInformation("Đã gửi email hóa đơn đến {Email}.", toEmail);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Gửi email hóa đơn thất bại.\nTo: {Email}", toEmail);
         }
     }
 
@@ -494,4 +579,187 @@ public class EmailService : IEmailService
         if (techStack.Count > 0) yield return ("Tech stack", string.Join(", ", techStack));
         if (!string.IsNullOrWhiteSpace(phoneNumber)) yield return ("SĐT", phoneNumber);
     }
+
+    // ────────────────────────────────────────────────────────────────
+    private static string BuildPremiumActivatedHtml(string name, string planName, DateTime periodStart, DateTime periodEnd, string appLink)
+    {
+        var rowsHtml = string.Join("", BuildRows(
+                ("Gói đăng ký", planName),
+                ("Có hiệu lực từ", FormatVietnameseDate(periodStart)),
+                ("Có hiệu lực đến", FormatVietnameseDate(periodEnd)))
+            .Select(row => $"""
+                <tr>
+                  <td style="padding:6px 0;color:#94a3b8;font-size:13px;width:140px;vertical-align:top">{row.Label}</td>
+                  <td style="padding:6px 0;color:#0f172a;font-size:13px;font-weight:600">{WebUtility.HtmlEncode(row.Value)}</td>
+                </tr>
+                """));
+
+        return $$"""
+        <!DOCTYPE html>
+        <html lang="vi">
+        <head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/></head>
+        <body style="margin:0;padding:0;background:#f1f5f9;font-family:Segoe UI,Helvetica,Arial,sans-serif">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f1f5f9;padding:32px 16px">
+            <tr><td align="center">
+              <table role="presentation" width="480" cellpadding="0" cellspacing="0"
+                     style="background:#ffffff;border-radius:16px;overflow:hidden;max-width:480px;width:100%;box-shadow:0 1px 3px rgba(0,0,0,0.08)">
+                <tr>
+                  <td style="height:6px;background-color:#6d28d9;background-image:linear-gradient(90deg,#8b5cf6,#4f46e5);font-size:0;line-height:0">&nbsp;</td>
+                </tr>
+                <tr>
+                  <td style="padding:24px 32px;border-bottom:1px solid #f1f5f9">
+                    {{LogoHtml}}
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:32px 32px 8px">
+                    <h1 style="margin:0 0 4px;font-size:20px;color:#0f172a">Nâng cấp Premium thành công!</h1>
+                    <p style="margin:0;color:#64748b;font-size:14px">Xin chào <strong style="color:#0f172a">{{WebUtility.HtmlEncode(name)}}</strong>,</p>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:12px 32px 0">
+                    <p style="margin:0;color:#475569;font-size:14px;line-height:22px">
+                      Cảm ơn bạn đã tin tưởng nâng cấp lên gói <strong style="color:#0f172a">{{WebUtility.HtmlEncode(planName)}}</strong>. Tài khoản của bạn đã được kích hoạt đầy đủ các tính năng Premium.
+                    </p>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:16px 32px 0">
+                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
+                           style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:16px">
+                      {{rowsHtml}}
+                    </table>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:28px 32px 8px" align="center">
+                    <a href="{{appLink}}"
+                       style="background-color:#6d28d9;background-image:linear-gradient(135deg,#8b5cf6,#4f46e5);color:#ffffff;
+                              padding:13px 36px;border-radius:8px;text-decoration:none;font-size:15px;font-weight:600;display:inline-block">
+                      Xem gói của tôi
+                    </a>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:8px 32px 0" align="center">
+                    <span style="display:inline-block;background:#fef9c3;color:#854d0e;font-size:12px;font-weight:600;
+                                 padding:4px 12px;border-radius:999px">Gói Premium đang hoạt động</span>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:28px 32px 0">
+                    <p style="margin:0;color:#94a3b8;font-size:12.5px;line-height:20px">
+                      Nếu bạn không thực hiện giao dịch này, vui lòng liên hệ với chúng tôi ngay để được hỗ trợ.
+                    </p>
+                  </td>
+                </tr>
+                <tr><td style="padding:28px 32px 0"><hr style="border:none;border-top:1px solid #e2e8f0;margin:0"/></td></tr>
+                <tr>
+                  <td style="padding:16px 32px 28px" align="center">
+                    <p style="margin:0;color:#cbd5e1;font-size:11.5px">© {{DateTime.UtcNow.Year}} HireGen AI — AI-Powered Interview Question Generator</p>
+                  </td>
+                </tr>
+              </table>
+            </td></tr>
+          </table>
+        </body>
+        </html>
+        """;
+    }
+
+    // ────────────────────────────────────────────────────────────────
+    private static string BuildSubscriptionInvoiceHtml(
+        string name, string orderCode, string planName, decimal amount, string currency, DateTime paidAt,
+        DateTime periodStart, DateTime periodEnd, string appLink)
+    {
+        var rowsHtml = string.Join("", BuildRows(
+                ("Mã đơn hàng", orderCode),
+                ("Gói đăng ký", planName),
+                ("Số tiền", FormatVietnameseAmount(amount, currency)),
+                ("Ngày thanh toán", FormatVietnameseDateTime(paidAt)),
+                ("Kỳ sử dụng", $"{FormatVietnameseDate(periodStart)} — {FormatVietnameseDate(periodEnd)}"))
+            .Select(row => $"""
+                <tr>
+                  <td style="padding:6px 0;color:#94a3b8;font-size:13px;width:140px;vertical-align:top">{row.Label}</td>
+                  <td style="padding:6px 0;color:#0f172a;font-size:13px;font-weight:600">{WebUtility.HtmlEncode(row.Value)}</td>
+                </tr>
+                """));
+
+        return $$"""
+        <!DOCTYPE html>
+        <html lang="vi">
+        <head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/></head>
+        <body style="margin:0;padding:0;background:#f1f5f9;font-family:Segoe UI,Helvetica,Arial,sans-serif">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f1f5f9;padding:32px 16px">
+            <tr><td align="center">
+              <table role="presentation" width="480" cellpadding="0" cellspacing="0"
+                     style="background:#ffffff;border-radius:16px;overflow:hidden;max-width:480px;width:100%;box-shadow:0 1px 3px rgba(0,0,0,0.08)">
+                <tr>
+                  <td style="height:6px;background-color:#6d28d9;background-image:linear-gradient(90deg,#8b5cf6,#4f46e5);font-size:0;line-height:0">&nbsp;</td>
+                </tr>
+                <tr>
+                  <td style="padding:24px 32px;border-bottom:1px solid #f1f5f9">
+                    {{LogoHtml}}
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:32px 32px 8px">
+                    <h1 style="margin:0 0 4px;font-size:20px;color:#0f172a">Hóa đơn thanh toán</h1>
+                    <p style="margin:0;color:#64748b;font-size:14px">Xin chào <strong style="color:#0f172a">{{WebUtility.HtmlEncode(name)}}</strong>,</p>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:12px 32px 0">
+                    <p style="margin:0;color:#475569;font-size:14px;line-height:22px">
+                      Dưới đây là hóa đơn cho giao dịch nâng cấp gói Premium của bạn trên HireGen AI.
+                    </p>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:16px 32px 0">
+                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
+                           style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:16px">
+                      {{rowsHtml}}
+                    </table>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:28px 32px 8px" align="center">
+                    <a href="{{appLink}}"
+                       style="background-color:#6d28d9;background-image:linear-gradient(135deg,#8b5cf6,#4f46e5);color:#ffffff;
+                              padding:13px 36px;border-radius:8px;text-decoration:none;font-size:15px;font-weight:600;display:inline-block">
+                      Xem lịch sử giao dịch
+                    </a>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:28px 32px 0">
+                    <p style="margin:0;color:#94a3b8;font-size:12.5px;line-height:20px">
+                      Đây là email tự động xác nhận thanh toán, vui lòng lưu lại để đối chiếu khi cần. Không cần phản hồi email này.
+                    </p>
+                  </td>
+                </tr>
+                <tr><td style="padding:28px 32px 0"><hr style="border:none;border-top:1px solid #e2e8f0;margin:0"/></td></tr>
+                <tr>
+                  <td style="padding:16px 32px 28px" align="center">
+                    <p style="margin:0;color:#cbd5e1;font-size:11.5px">© {{DateTime.UtcNow.Year}} HireGen AI — AI-Powered Interview Question Generator</p>
+                  </td>
+                </tr>
+              </table>
+            </td></tr>
+          </table>
+        </body>
+        </html>
+        """;
+    }
+
+    private static IEnumerable<(string Label, string Value)> BuildRows(params (string Label, string Value)[] rows) => rows;
+
+    private static string FormatVietnameseDate(DateTime dt) => dt.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture);
+
+    private static string FormatVietnameseDateTime(DateTime dt) => dt.ToString("HH:mm dd/MM/yyyy", CultureInfo.InvariantCulture);
+
+    private static string FormatVietnameseAmount(decimal amount, string currency)
+        => $"{amount.ToString("N0", CultureInfo.InvariantCulture)} {currency}";
 }
