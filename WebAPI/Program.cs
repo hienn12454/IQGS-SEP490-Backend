@@ -2,6 +2,8 @@ using ApplicationLayer.Interfaces.Jobs;
 using ApplicationLayer.Interfaces.Repositories;
 using ApplicationLayer.Interfaces.Services;
 using ApplicationLayer.Services;
+using ApplicationLayer.Services.Gamification;
+using ApplicationLayer.Services.Gamification.AchievementRules;
 using ApplicationLayer.Studio.Interfaces;
 using ApplicationLayer.Studio.Validators;
 using FluentValidation;
@@ -13,6 +15,7 @@ using InfrastructureLayer.Database;
 using InfrastructureLayer.External;
 using InfrastructureLayer.Jobs;
 using InfrastructureLayer.Repository;
+using InfrastructureLayer.Services.Gamification;
 using InfrastructureLayer.Services.Studio;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Mvc;
@@ -144,6 +147,8 @@ public class Program
             builder.Configuration.GetSection(CvSettings.SectionName));
         builder.Services.Configure<WatchdogSettings>(
             builder.Configuration.GetSection(WatchdogSettings.SectionName));
+        builder.Services.Configure<GamificationOptions>(
+            builder.Configuration.GetSection(GamificationOptions.SectionName));
 
         var kbSettings = builder.Configuration
             .GetSection(KnowledgeBaseSettings.SectionName)
@@ -343,6 +348,21 @@ public class Program
         builder.Services.AddScoped<ICandidateQuestionSetService, CandidateQuestionSetService>();
         builder.Services.AddScoped<ICandidateBookmarkService, CandidateBookmarkService>();
         builder.Services.AddScoped<ICandidatePracticeSessionService, CandidatePracticeSessionService>();
+
+        // ── Gamification ─────────────────────────────────────────────
+        builder.Services.AddScoped<ILevelCalculator, LevelCalculator>();
+        builder.Services.AddScoped<IXpRewardPolicy, XpRewardPolicy>();
+        builder.Services.AddScoped<IStreakCalculator, StreakCalculator>();
+        builder.Services.AddScoped<IUserLocalDateProvider, UserLocalDateProvider>();
+        builder.Services.AddScoped<IAchievementRule, FirstStepAchievementRule>();
+        builder.Services.AddScoped<IAchievementRule, OnFireAchievementRule>();
+        builder.Services.AddScoped<IAchievementRule, ExcellentAnswerAchievementRule>();
+        builder.Services.AddScoped<IAchievementRule, DedicatedAchievementRule>();
+        builder.Services.AddScoped<IAchievementRule, TechnicalMindAchievementRule>();
+        builder.Services.AddScoped<IAchievementRule, SystemThinkerAchievementRule>();
+        builder.Services.AddScoped<IAchievementRule, ConsistencyAchievementRule>();
+        builder.Services.AddScoped<IAchievementRule, InterviewVeteranAchievementRule>();
+        builder.Services.AddScoped<IGamificationService, GamificationService>();
         builder.Services.AddScoped<ICandidatePrivacySettingsService, CandidatePrivacySettingsService>();
         builder.Services.AddScoped<IRecommendationService, RecommendationService>();
         builder.Services.AddScoped<IHrCandidateOverviewService, HrCandidateOverviewService>();
