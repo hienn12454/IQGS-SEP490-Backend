@@ -198,6 +198,32 @@ public sealed class GamificationServiceDbTests : IClassFixture<GamificationDbFix
         Assert.Contains(enough!.Rewards, r => r.Type == XpTransactionType.ImprovementBonus && r.Xp == 5);
     }
 
+    [Fact]
+    public async Task GetProgress_ReturnsAllowedDailyGoalXpValuesFromOptions()
+    {
+        if (!_fixture.IsAvailable) return;
+
+        await using var scope = _fixture.CreateScope();
+        var gamification = scope.ServiceProvider.GetRequiredService<IGamificationService>();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var userId = await CreateTestUserAsync(db);
+
+        // Không có UserProgress row nào cho user này — kiểm tra cả nhánh default lẫn nhánh đã có progress.
+        var beforeAnyXp = await gamification.GetProgressAsync(userId);
+        Assert.Equal(new[] { 20, 50, 80, 120 }, beforeAnyXp.AllowedDailyGoalXpValues);
+
+        await gamification.AwardQuestionSetCompletionAsync(new QuestionSetCompletionXpContext
+        {
+            UserId = userId,
+            PracticeSessionId = Guid.NewGuid(),
+            QuestionSetId = Guid.NewGuid(),
+            OccurredAtUtc = DateTime.UtcNow
+        });
+
+        var afterXp = await gamification.GetProgressAsync(userId);
+        Assert.Equal(new[] { 20, 50, 80, 120 }, afterXp.AllowedDailyGoalXpValues);
+    }
+
     private static async Task<Guid> CreateTestUserAsync(AppDbContext db)
     {
         var user = new User
