@@ -23,6 +23,9 @@ public class UserProgressDto
     public bool DailyGoalCompleted { get; set; }
 
     public int TotalPracticeSessions { get; set; }
+
+    /// <summary>Các giá trị hợp lệ để đặt DailyGoalXp qua PATCH /daily-goal (GamificationOptions.AllowedDailyGoalXpValues).</summary>
+    public List<int> AllowedDailyGoalXpValues { get; set; } = new();
 }
 
 /// <summary>Kết quả 1 lần award XP — trả kèm response submit/complete practice session.</summary>

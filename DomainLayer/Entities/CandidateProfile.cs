@@ -18,6 +18,13 @@ public class CandidateProfile : BaseEntity
     public string? Bio { get; set; }
     public string? Address { get; set; }
 
+    /// <summary>
+    /// IANA timezone id (vd "Asia/Ho_Chi_Minh") candidate tự chọn — dùng để quy đổi LocalDate cho
+    /// streak/DailyProgress (xem ApplicationLayer.Services.Gamification.UserLocalDateProvider).
+    /// Null = chưa chọn, hệ thống fallback UTC.
+    /// </summary>
+    public string? TimeZoneId { get; set; }
+
     public string? CvFileName { get; set; }
     public string? CvBlobPath { get; set; }
     public string? CvContentType { get; set; }

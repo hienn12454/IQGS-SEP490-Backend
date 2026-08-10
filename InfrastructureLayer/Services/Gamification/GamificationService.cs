@@ -483,7 +483,8 @@ public sealed class GamificationService(
         DailyGoalXp = progress.DailyGoalXp,
         TodayXp = todayXp,
         DailyGoalCompleted = dailyGoalCompleted,
-        TotalPracticeSessions = progress.TotalSessionsCompleted
+        TotalPracticeSessions = progress.TotalSessionsCompleted,
+        AllowedDailyGoalXpValues = _options.AllowedDailyGoalXpValues
     };
 
     private UserProgressDto BuildDefaultProgressDto(int todayXp, bool dailyGoalCompleted) => new()
@@ -498,7 +499,8 @@ public sealed class GamificationService(
         DailyGoalXp = _options.DefaultDailyGoalXp,
         TodayXp = todayXp,
         DailyGoalCompleted = dailyGoalCompleted,
-        TotalPracticeSessions = 0
+        TotalPracticeSessions = 0,
+        AllowedDailyGoalXpValues = _options.AllowedDailyGoalXpValues
     };
 
     private readonly record struct PendingXpItem(string Type, int Amount, string IdempotencyKey);

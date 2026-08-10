@@ -1,4 +1,5 @@
 using ApplicationLayer.DTOs.Gamification;
+using ApplicationLayer.Interfaces.Repositories;
 using ApplicationLayer.Interfaces.Services;
 using ApplicationLayer.Services.Gamification;
 using ApplicationLayer.Services.Gamification.AchievementRules;
@@ -6,6 +7,7 @@ using ApplicationLayer.Settings;
 using DomainLayer.Constants;
 using DomainLayer.Entities;
 using InfrastructureLayer.Database;
+using InfrastructureLayer.Repository;
 using InfrastructureLayer.Services.Gamification;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -198,6 +200,67 @@ public sealed class GamificationServiceDbTests : IClassFixture<GamificationDbFix
         Assert.Contains(enough!.Rewards, r => r.Type == XpTransactionType.ImprovementBonus && r.Xp == 5);
     }
 
+    [Fact]
+    public async Task GetProgress_ReturnsAllowedDailyGoalXpValuesFromOptions()
+    {
+        if (!_fixture.IsAvailable) return;
+
+        await using var scope = _fixture.CreateScope();
+        var gamification = scope.ServiceProvider.GetRequiredService<IGamificationService>();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var userId = await CreateTestUserAsync(db);
+
+        // Không có UserProgress row nào cho user này — kiểm tra cả nhánh default lẫn nhánh đã có progress.
+        var beforeAnyXp = await gamification.GetProgressAsync(userId);
+        Assert.Equal(new[] { 20, 50, 80, 120 }, beforeAnyXp.AllowedDailyGoalXpValues);
+
+        await gamification.AwardQuestionSetCompletionAsync(new QuestionSetCompletionXpContext
+        {
+            UserId = userId,
+            PracticeSessionId = Guid.NewGuid(),
+            QuestionSetId = Guid.NewGuid(),
+            OccurredAtUtc = DateTime.UtcNow
+        });
+
+        var afterXp = await gamification.GetProgressAsync(userId);
+        Assert.Equal(new[] { 20, 50, 80, 120 }, afterXp.AllowedDailyGoalXpValues);
+    }
+
+    [Fact]
+    public async Task AwardQuestionCompletion_UsesCandidateTimeZone_ForStreakLocalDate()
+    {
+        if (!_fixture.IsAvailable) return;
+
+        await using var scope = _fixture.CreateScope();
+        var gamification = scope.ServiceProvider.GetRequiredService<IGamificationService>();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var userId = await CreateTestUserAsync(db);
+        db.CandidateProfiles.Add(new CandidateProfile { UserId = userId, TimeZoneId = "Asia/Ho_Chi_Minh" });
+        await db.SaveChangesAsync();
+
+        // 2026-08-09 20:00 UTC = 2026-08-10 03:00 giờ VN (UTC+7) — cùng 1 UTC-instant nhưng khác local date.
+        var occurredAtUtc = new DateTime(2026, 8, 9, 20, 0, 0, DateTimeKind.Utc);
+
+        var reward = await gamification.AwardQuestionCompletionAsync(new QuestionCompletionXpContext
+        {
+            UserId = userId,
+            QuestionSetQuestionId = Guid.NewGuid(),
+            CandidateAnswerId = Guid.NewGuid(),
+            QuestionSetId = Guid.NewGuid(),
+            PracticeSessionId = Guid.NewGuid(),
+            Score = 100,
+            QuestionType = "Technical",
+            OccurredAtUtc = occurredAtUtc
+        });
+
+        Assert.NotNull(reward);
+        Assert.Equal(1, reward!.Progress.CurrentStreak);
+
+        var localDate = new DateOnly(2026, 8, 10); // ngày theo giờ VN, KHÔNG phải 2026-08-09 (ngày UTC)
+        var daily = await db.DailyProgresses.SingleAsync(d => d.UserId == userId && d.LocalDate == localDate);
+        Assert.Equal(1, daily.QuestionsCompleted);
+    }
+
     private static async Task<Guid> CreateTestUserAsync(AppDbContext db)
     {
         var user = new User
@@ -238,6 +301,7 @@ public sealed class GamificationDbFixture : IAsyncLifetime
             services.AddScoped<ILevelCalculator, LevelCalculator>();
             services.AddScoped<IXpRewardPolicy, XpRewardPolicy>();
             services.AddScoped<IStreakCalculator, StreakCalculator>();
+            services.AddScoped<ICandidateProfileRepository, CandidateProfileRepository>();
             services.AddScoped<IUserLocalDateProvider, UserLocalDateProvider>();
             services.AddScoped<IAchievementRule, FirstStepAchievementRule>();
             services.AddScoped<IAchievementRule, OnFireAchievementRule>();

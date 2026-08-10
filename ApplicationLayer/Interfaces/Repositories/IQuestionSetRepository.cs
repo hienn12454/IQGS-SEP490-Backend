@@ -13,6 +13,9 @@ public interface IQuestionSetRepository
     Task ReplaceQuestionsAsync(QuestionSet questionSet, IEnumerable<QuestionSetQuestion> newQuestions);
     Task<QuestionSet?> GetByIdWithQuestionsAsync(Guid id);
     Task UpdateAsync(QuestionSet questionSet);
+
+    /// <summary>OwnerId của 1 question set (IsActive) — null nếu không tồn tại. Dùng cho check quyền sở hữu nhẹ, không load Questions.</summary>
+    Task<Guid?> GetOwnerIdAsync(Guid questionSetId);
     Task<HashSet<Guid>> GetSourceJobIdsWithDraftAsync(IEnumerable<Guid> sourceJobIds);
     Task<IReadOnlyList<QuestionSet>> ListByOwnerAsync(Guid ownerId, Guid? sourceJobId = null);
     /// <summary>SCRUM-391: đếm câu hỏi theo từng set (chỉ IsActive).</summary>
