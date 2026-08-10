@@ -73,7 +73,7 @@ public sealed class StudioJobDescriptionUploadService(
             row.UpdatedAt = DateTime.UtcNow;
         }
 
-        row.WordCount = text.Split([' ', '\n', '\r', '\t'], StringSplitOptions.RemoveEmptyEntries).Length;
+        row.WordCount = text.Split(new char[] { ' ', '\n', '\r', '\t' }, StringSplitOptions.RemoveEmptyEntries).Length;
         row.CharacterCount = text.Length;
 
         var summary = await analyzer.AnalyzeAsync(text, ct);

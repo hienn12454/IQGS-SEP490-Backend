@@ -34,6 +34,10 @@ public class AppDbContext : DbContext
     public DbSet<Subscription> Subscriptions { get; set; }
     public DbSet<UsageCounter> UsageCounters { get; set; }
     public DbSet<SubscriptionTransaction> SubscriptionTransactions { get; set; }
+    public DbSet<UserProgress> UserProgresses { get; set; }
+    public DbSet<XpTransaction> XpTransactions { get; set; }
+    public DbSet<DailyProgress> DailyProgresses { get; set; }
+    public DbSet<UserAchievement> UserAchievements { get; set; }
     public DbSet<InterviewProject> InterviewProjects { get; set; }
     public DbSet<JobDescription> StudioJobDescriptions { get; set; }
     public DbSet<StudioKnowledgeDocument> StudioKnowledgeDocuments { get; set; }
@@ -619,6 +623,77 @@ public class AppDbContext : DbContext
                   .WithMany(s => s.Transactions)
                   .HasForeignKey(t => t.SubscriptionId)
                   .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // ── UserProgress (Gamification — snapshot 1-1 với User) ─────
+        modelBuilder.Entity<UserProgress>(entity =>
+        {
+            entity.ToTable("tbl_user_progress");
+            entity.HasKey(p => p.Id);
+            entity.Property(p => p.TotalXp).IsRequired().HasDefaultValue(0L);
+            entity.Property(p => p.Level).IsRequired().HasDefaultValue(1);
+            entity.Property(p => p.CurrentStreak).IsRequired().HasDefaultValue(0);
+            entity.Property(p => p.LongestStreak).IsRequired().HasDefaultValue(0);
+            entity.Property(p => p.DailyGoalXp).IsRequired().HasDefaultValue(50);
+            entity.Property(p => p.TotalQuestionsCompleted).IsRequired().HasDefaultValue(0);
+            entity.Property(p => p.TotalSessionsCompleted).IsRequired().HasDefaultValue(0);
+            entity.Property(p => p.TotalTechnicalQuestionsCompleted).IsRequired().HasDefaultValue(0);
+            entity.Property(p => p.TotalSystemDesignQuestionsCompleted).IsRequired().HasDefaultValue(0);
+            entity.Property(p => p.DailyGoalCompletedDaysCount).IsRequired().HasDefaultValue(0);
+
+            entity.HasOne(p => p.User)
+                  .WithOne()
+                  .HasForeignKey<UserProgress>(p => p.UserId)
+                  .OnDelete(DeleteBehavior.Cascade);
+            entity.HasIndex(p => p.UserId).IsUnique();
+        });
+
+        // ── XpTransaction (Gamification — audit/idempotency) ────────
+        modelBuilder.Entity<XpTransaction>(entity =>
+        {
+            entity.ToTable("tbl_xp_transactions");
+            entity.HasKey(t => t.Id);
+            entity.Property(t => t.Type).IsRequired().HasMaxLength(30);
+            entity.Property(t => t.Description).IsRequired().HasMaxLength(500);
+            entity.Property(t => t.IdempotencyKey).IsRequired().HasMaxLength(200);
+
+            entity.HasOne(t => t.User)
+                  .WithMany()
+                  .HasForeignKey(t => t.UserId)
+                  .OnDelete(DeleteBehavior.Cascade);
+
+            // Idempotency — cùng 1 sự kiện (vd cùng answerId) không bao giờ được cộng XP 2 lần.
+            entity.HasIndex(t => t.IdempotencyKey).IsUnique();
+            entity.HasIndex(t => new { t.UserId, t.CreatedAtUtc });
+        });
+
+        // ── DailyProgress (Gamification — activity heatmap + daily goal) ─
+        modelBuilder.Entity<DailyProgress>(entity =>
+        {
+            entity.ToTable("tbl_daily_progress");
+            entity.HasKey(d => d.Id);
+
+            entity.HasOne(d => d.User)
+                  .WithMany()
+                  .HasForeignKey(d => d.UserId)
+                  .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(d => new { d.UserId, d.LocalDate }).IsUnique();
+        });
+
+        // ── UserAchievement (Gamification) ──────────────────────────
+        modelBuilder.Entity<UserAchievement>(entity =>
+        {
+            entity.ToTable("tbl_user_achievements");
+            entity.HasKey(a => a.Id);
+            entity.Property(a => a.AchievementCode).IsRequired().HasMaxLength(50);
+
+            entity.HasOne(a => a.User)
+                  .WithMany()
+                  .HasForeignKey(a => a.UserId)
+                  .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(a => new { a.UserId, a.AchievementCode }).IsUnique();
         });
     }
 }

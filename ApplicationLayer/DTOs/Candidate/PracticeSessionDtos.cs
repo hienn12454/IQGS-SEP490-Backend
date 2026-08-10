@@ -1,3 +1,5 @@
+using ApplicationLayer.DTOs.Gamification;
+
 namespace ApplicationLayer.DTOs.Candidate;
 
 public class StartPracticeSessionDto
@@ -62,6 +64,9 @@ public class PracticeSessionCompleteResponseDto
 
     /// <summary>AI Insight song ngữ + skillsToImprove (SCRUM-305).</summary>
     public PracticeAiInsightDto? AiInsight { get; set; }
+
+    /// <summary>Tổng XP vừa kiếm được khi hoàn thành phiên (Gamification) — null nếu không có XP mới (vd toàn bộ đã award trước đó do retry).</summary>
+    public XpRewardDto? XpReward { get; set; }
 }
 
 /// <summary>Nhận xét AI tổng quan phiên practice (SCRUM-305).</summary>
