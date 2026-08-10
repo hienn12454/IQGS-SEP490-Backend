@@ -23,6 +23,7 @@ public class AppDbContext : DbContext
     public DbSet<QuestionSetQuestion> QuestionSetQuestions { get; set; }
     public DbSet<QuestionSetBookmark> QuestionSetBookmarks { get; set; }
     public DbSet<HrQuestionSetBookmark> HrQuestionSetBookmarks { get; set; }
+    public DbSet<QuestionSetFeedback> QuestionSetFeedbacks { get; set; }
     public DbSet<PracticeSession> PracticeSessions { get; set; }
     public DbSet<CandidateAnswer> CandidateAnswers { get; set; }
     public DbSet<AiFeedback> AiFeedbacks { get; set; }
@@ -345,6 +346,27 @@ public class AppDbContext : DbContext
                   .OnDelete(DeleteBehavior.Cascade);
 
             entity.HasIndex(b => new { b.HrUserId, b.QuestionSetId }).IsUnique();
+        });
+
+        // ── QuestionSetFeedback (Candidate đánh giá bộ câu hỏi HR) ───
+        modelBuilder.Entity<QuestionSetFeedback>(entity =>
+        {
+            entity.ToTable("tbl_question_set_feedbacks");
+            entity.HasKey(f => f.Id);
+            entity.Property(f => f.Comment).HasMaxLength(2000);
+
+            entity.HasOne(f => f.QuestionSet)
+                  .WithMany()
+                  .HasForeignKey(f => f.QuestionSetId)
+                  .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(f => f.CandidateUser)
+                  .WithMany()
+                  .HasForeignKey(f => f.CandidateUserId)
+                  .OnDelete(DeleteBehavior.Cascade);
+
+            // 1 candidate chỉ có 1 feedback / question set — submit lại sẽ update đè.
+            entity.HasIndex(f => new { f.QuestionSetId, f.CandidateUserId }).IsUnique();
         });
 
         // ── PracticeSession (Candidate — SCRUM-277) ─────────────────
