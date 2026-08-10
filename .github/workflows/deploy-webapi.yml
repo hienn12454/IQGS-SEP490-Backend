@@ -63,13 +63,24 @@ jobs:
       - name: Scan and apply pending migrations
         env:
           ConnectionStrings__DefaultConnection: ${{ secrets.DB_CONNECTION_STRING }}
+          SePay__ApiKey: ${{ secrets.SEPAY_API_KEY }}
+          SePay__WebhookSecret: ${{ secrets.SEPAY_WEBHOOK_SECRET }}
+          SePay__BankAccountNumber: ${{ secrets.SEPAY_BANK_ACCOUNT_NUMBER }}
         run: |
+          set +e
           MIGS=$(dotnet ef migrations list \
             --project WebAPI/WebAPI.csproj \
             --startup-project WebAPI/WebAPI.csproj \
             --configuration Release \
             --no-build 2>&1)
+          MIGS_EXIT=$?
+          set -e
           echo "$MIGS"
+
+          if [ $MIGS_EXIT -ne 0 ]; then
+            echo "::error::dotnet ef migrations list failed (see output above)"
+            exit 1
+          fi
 
           PENDING=$(echo "$MIGS" | grep -c "(Pending)" || true)
           if [ "$PENDING" -gt 0 ]; then
