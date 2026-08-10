@@ -32,6 +32,13 @@ public class PracticeSessionRepository : IPracticeSessionRepository
             s.QuestionSetId == questionSetId &&
             s.Status == PracticeSessionStatus.InProgress);
 
+    public Task<bool> HasCompletedSessionAsync(Guid candidateUserId, Guid questionSetId)
+        => _context.PracticeSessions.AnyAsync(s =>
+            s.CandidateUserId == candidateUserId &&
+            s.QuestionSetId == questionSetId &&
+            s.IsActive &&
+            s.Status == PracticeSessionStatus.Completed);
+
     public Task UpdateAsync(PracticeSession session)
     {
         _context.PracticeSessions.Update(session);

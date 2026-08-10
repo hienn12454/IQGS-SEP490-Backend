@@ -65,6 +65,13 @@ public class QuestionSetRepository : IQuestionSetRepository
             .Include(qs => qs.Questions.OrderBy(q => q.Order))
             .FirstOrDefaultAsync(qs => qs.Id == id);
 
+    public Task<Guid?> GetOwnerIdAsync(Guid questionSetId)
+        => _context.QuestionSets
+            .AsNoTracking()
+            .Where(qs => qs.Id == questionSetId && qs.IsActive)
+            .Select(qs => (Guid?)qs.OwnerId)
+            .FirstOrDefaultAsync();
+
     public Task UpdateAsync(QuestionSet questionSet)
     {
         _context.QuestionSets.Update(questionSet);
