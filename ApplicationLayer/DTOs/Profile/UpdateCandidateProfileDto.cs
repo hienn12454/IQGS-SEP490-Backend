@@ -39,4 +39,12 @@ public class UpdateCandidateProfileDto
 
     [MaxLength(500, ErrorMessage = "Địa chỉ không được vượt quá 500 ký tự.")]
     public string? Address { get; set; }
+
+    /// <summary>
+    /// IANA timezone id (vd "Asia/Ho_Chi_Minh") — dùng để tính LocalDate cho streak/daily goal luyện tập.
+    /// Null/rỗng = bỏ chọn, hệ thống quay lại fallback UTC. Validate là IANA id hợp lệ ở
+    /// UpdateCandidateProfileDtoValidator (FluentValidation) — không kiểm tra format ở đây.
+    /// </summary>
+    [MaxLength(100, ErrorMessage = "TimeZoneId không được vượt quá 100 ký tự.")]
+    public string? TimeZoneId { get; set; }
 }
