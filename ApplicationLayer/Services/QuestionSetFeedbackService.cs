@@ -34,8 +34,8 @@ public class QuestionSetFeedbackService : IQuestionSetFeedbackService
     public async Task<QuestionSetFeedbackDto> SubmitAsync(
         Guid candidateUserId, Guid questionSetId, SubmitQuestionSetFeedbackDto dto)
     {
-        if (dto.Rating is < 1 or > 5)
-            throw new BadRequestException("Rating phải từ 1 đến 5 sao.");
+        if (dto.Rating is < 0 or > 5)
+            throw new BadRequestException("Rating phải từ 0 đến 5 sao.");
 
         if (await _questionSetRepo.GetOwnerIdAsync(questionSetId) is null)
             throw new NotFoundException("Bộ câu hỏi không tồn tại.");

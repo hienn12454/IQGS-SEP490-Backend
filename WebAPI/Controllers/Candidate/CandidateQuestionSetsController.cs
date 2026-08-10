@@ -81,9 +81,9 @@ public class CandidateQuestionSetsController : ControllerBase
         return SuccessResp.Ok(result);
     }
 
-    /// <summary>Gửi/sửa feedback (rating 1-5 + nhận xét) cho bộ câu hỏi — yêu cầu đã có phiên luyện tập hoàn thành trên bộ này. Gọi lại sẽ update đè feedback cũ.</summary>
+    /// <summary>Gửi/sửa feedback (rating 0-5 + nhận xét) cho bộ câu hỏi — yêu cầu đã có phiên luyện tập hoàn thành trên bộ này. Gọi lại sẽ update đè feedback cũ.</summary>
     /// <param name="id">Id bộ câu hỏi.</param>
-    /// <param name="dto">rating (1-5, bắt buộc), comment (tùy chọn, tối đa 2000 ký tự).</param>
+    /// <param name="dto">rating (0-5, bắt buộc), comment (tùy chọn, tối đa 2000 ký tự).</param>
     [HttpPost("{id:guid}/feedback")]
     [Authorize(Roles = "Candidate")]
     public async Task<IActionResult> SubmitFeedback(Guid id, [FromBody] SubmitQuestionSetFeedbackDto dto)
