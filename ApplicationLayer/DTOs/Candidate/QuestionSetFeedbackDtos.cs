@@ -3,7 +3,7 @@ namespace ApplicationLayer.DTOs.Candidate;
 /// <summary>Candidate gửi/sửa feedback (rating + nhận xét) cho 1 Question Set — chỉ khi đã có phiên luyện tập COMPLETED trên bộ này.</summary>
 public class SubmitQuestionSetFeedbackDto
 {
-    /// <summary>1-5 sao, bắt buộc.</summary>
+    /// <summary>0-5 sao, bắt buộc.</summary>
     public int Rating { get; set; }
 
     /// <summary>Nhận xét — tùy chọn, tối đa 2000 ký tự.</summary>
@@ -39,7 +39,7 @@ public class QuestionSetFeedbackSummaryDto
 {
     public Guid QuestionSetId { get; set; }
 
-    /// <summary>Rating trung bình (1-5) — null nếu chưa có feedback nào.</summary>
+    /// <summary>Rating trung bình (0-5) — null nếu chưa có feedback nào.</summary>
     public double? AverageRating { get; set; }
 
     public int TotalCount { get; set; }
