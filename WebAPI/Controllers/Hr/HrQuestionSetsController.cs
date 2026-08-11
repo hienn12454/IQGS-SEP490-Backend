@@ -1,3 +1,4 @@
+using ApplicationLayer.DTOs.Candidate;
 using ApplicationLayer.DTOs.QuestionSet;
 using ApplicationLayer.DTOs.QuestionGeneration;
 using ApplicationLayer.Interfaces.Services;
@@ -18,11 +19,14 @@ public class HrQuestionSetsController : ControllerBase
 {
     private readonly IQuestionSetService _service;
     private readonly IHrBookmarkService _bookmarkService;
+    private readonly IQuestionSetFeedbackService _feedbackService;
 
-    public HrQuestionSetsController(IQuestionSetService service, IHrBookmarkService bookmarkService)
+    public HrQuestionSetsController(
+        IQuestionSetService service, IHrBookmarkService bookmarkService, IQuestionSetFeedbackService feedbackService)
     {
         _service = service;
         _bookmarkService = bookmarkService;
+        _feedbackService = feedbackService;
     }
 
     /// <summary>Danh sách tất cả bộ câu hỏi (draft/published) mà HR hiện tại sở hữu.</summary>
@@ -121,6 +125,16 @@ public class HrQuestionSetsController : ControllerBase
     public async Task<IActionResult> GetPractitioners(Guid id)
     {
         var result = await _service.GetPractitionersAsync(id, GetCurrentUserId());
+        return SuccessResp.Ok(result);
+    }
+
+    /// <summary>Danh sách feedback (rating + nhận xét) candidate đã gửi cho bộ câu hỏi này, kèm rating trung bình. Chỉ HR chủ sở hữu xem được.</summary>
+    /// <param name="id">Id bộ câu hỏi.</param>
+    /// <param name="query">page, pageSize.</param>
+    [HttpGet("{id:guid}/feedback")]
+    public async Task<IActionResult> GetFeedback(Guid id, [FromQuery] QuestionSetFeedbackQueryDto query)
+    {
+        var result = await _feedbackService.GetForOwnerAsync(id, GetCurrentUserId(), query);
         return SuccessResp.Ok(result);
     }
 

@@ -328,6 +328,7 @@ public class Program
         builder.Services.AddScoped<IQuestionSetRepository, QuestionSetRepository>();
         builder.Services.AddScoped<IHrDashboardStudioStatsRepository, HrDashboardStudioStatsRepository>();
         builder.Services.AddScoped<IHrQuestionSetBookmarkRepository, HrQuestionSetBookmarkRepository>();
+        builder.Services.AddScoped<IQuestionSetFeedbackRepository, QuestionSetFeedbackRepository>();
 
         // Services
         builder.Services.AddScoped<IJwtService, JwtService>();
@@ -348,6 +349,7 @@ public class Program
         builder.Services.AddScoped<ICandidateQuestionSetService, CandidateQuestionSetService>();
         builder.Services.AddScoped<ICandidateBookmarkService, CandidateBookmarkService>();
         builder.Services.AddScoped<ICandidatePracticeSessionService, CandidatePracticeSessionService>();
+        builder.Services.AddScoped<IQuestionSetFeedbackService, QuestionSetFeedbackService>();
 
         // ── Gamification ─────────────────────────────────────────────
         builder.Services.AddScoped<ILevelCalculator, LevelCalculator>();
