@@ -297,6 +297,10 @@ namespace InfrastructureLayer.Migrations
                         .IsRequired()
                         .HasColumnType("text[]");
 
+                    b.Property<string>("TimeZoneId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
 
