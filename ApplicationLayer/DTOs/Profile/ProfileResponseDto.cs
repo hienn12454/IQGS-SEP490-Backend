@@ -44,6 +44,10 @@ public class CandidateProfileDto
     public string? GithubUrl { get; set; }
     public string? Bio { get; set; }
     public string? Address { get; set; }
+
+    /// <summary>IANA timezone id (vd "Asia/Ho_Chi_Minh") — null nếu candidate chưa chọn (hệ thống tính streak/daily goal theo UTC).</summary>
+    public string? TimeZoneId { get; set; }
+
     public string? CvFileName { get; set; }
     public DateTime? CvUploadedAt { get; set; }
 

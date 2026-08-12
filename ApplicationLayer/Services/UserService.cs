@@ -235,6 +235,7 @@ public class UserService : IUserService
                 GithubUrl = dto.GithubUrl,
                 Bio = dto.Bio,
                 Address = dto.Address,
+                TimeZoneId = NormalizeTimeZoneId(dto.TimeZoneId),
                 CvSyncLockedFields = lockedFields
             });
         }
@@ -248,6 +249,7 @@ public class UserService : IUserService
             profile.GithubUrl = dto.GithubUrl;
             profile.Bio = dto.Bio;
             profile.Address = dto.Address;
+            profile.TimeZoneId = NormalizeTimeZoneId(dto.TimeZoneId);
             profile.CvSyncLockedFields = lockedFields;
             await _candidateProfileRepo.UpdateAsync(profile);
         }
@@ -277,6 +279,10 @@ public class UserService : IUserService
     }
 
     // ── Private helpers ───────────────────────────────────────────────
+
+    /// <summary>Rỗng/whitespace → null (bỏ chọn timezone). Format IANA hợp lệ đã được UpdateCandidateProfileDtoValidator chặn từ trước.</summary>
+    private static string? NormalizeTimeZoneId(string? timeZoneId)
+        => string.IsNullOrWhiteSpace(timeZoneId) ? null : timeZoneId.Trim();
 
     private async Task<ProfileResponseDto> BuildProfileResponseAsync(User user)
     {
@@ -338,6 +344,7 @@ public class UserService : IUserService
                     GithubUrl = c.GithubUrl,
                     Bio = c.Bio,
                     Address = c.Address,
+                    TimeZoneId = c.TimeZoneId,
                     CvFileName = c.CvFileName,
                     CvUploadedAt = c.CvUploadedAt,
                     AutoSyncProfileFromCv = c.AutoSyncProfileFromCv
