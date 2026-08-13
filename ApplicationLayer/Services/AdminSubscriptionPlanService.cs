@@ -81,9 +81,11 @@ public class AdminSubscriptionPlanService : IAdminSubscriptionPlanService
             throw new ConflictException($"Plan code {dto.Code} đã tồn tại.");
 
         var audience = NormalizeAudience(dto.Audience);
+        var code = dto.Code.Trim().ToUpperInvariant();
+        ValidatePlanPrice(code, dto.PriceMonthly);
         var plan = new SubscriptionPlan
         {
-            Code = dto.Code.Trim().ToUpperInvariant(),
+            Code = code,
             Audience = audience,
             Name = dto.Name.Trim(),
             PriceMonthly = dto.PriceMonthly,
@@ -101,7 +103,11 @@ public class AdminSubscriptionPlanService : IAdminSubscriptionPlanService
             ?? throw new NotFoundException("Không tìm thấy gói.");
 
         if (dto.Name != null) plan.Name = dto.Name.Trim();
-        if (dto.PriceMonthly.HasValue) plan.PriceMonthly = dto.PriceMonthly.Value;
+        if (dto.PriceMonthly.HasValue)
+        {
+            ValidatePlanPrice(plan.Code, dto.PriceMonthly.Value);
+            plan.PriceMonthly = dto.PriceMonthly.Value;
+        }
         if (dto.Currency != null) plan.Currency = dto.Currency.Trim().ToUpperInvariant();
         if (dto.IsActive.HasValue) plan.IsActive = dto.IsActive.Value;
         // Chỉ cập nhật template — subscriber giữ LimitsSnapshot đến PeriodEnd
@@ -430,6 +436,21 @@ public class AdminSubscriptionPlanService : IAdminSubscriptionPlanService
         if (string.Equals(audience, SubscriptionAudience.Candidate, StringComparison.OrdinalIgnoreCase))
             return SubscriptionAudience.Candidate;
         throw new BadRequestException("audience phải là HR hoặc Candidate.");
+    }
+
+    /// <summary>SCRUM-412: Free = 0đ; Premium ≥ 10.000đ.</summary>
+    private static void ValidatePlanPrice(string code, decimal price)
+    {
+        var upper = (code ?? "").ToUpperInvariant();
+        if (upper.Contains("FREE"))
+        {
+            if (price != 0)
+                throw new BadRequestException("Gói Free phải có giá 0 VNĐ.");
+            return;
+        }
+
+        if (upper.Contains("PREMIUM") && price < 10000)
+            throw new BadRequestException("Gói Premium phải có giá tối thiểu 10.000 VNĐ.");
     }
 
     // ── SCRUM-386: Admin gán Premium user ─────────────────────────────────
