@@ -126,7 +126,17 @@ public class CandidateRecommendationRepository : ICandidateRecommendationReposit
                     .Where(i => i.RecommendationId == x.r.Id && i.IsActive)
                     .Select(i => i.SharedPhoneNumber)
                     .FirstOrDefault(),
-                RecommendedAt = x.r.CreatedAt
+                RecommendedAt = x.r.CreatedAt,
+                LatestOfferStatus = _context.CandidateOffers
+                    .Where(o => o.RecommendationId == x.r.Id && o.IsActive)
+                    .OrderByDescending(o => o.CreatedAt)
+                    .Select(o => o.Status)
+                    .FirstOrDefault(),
+                OfferSentAt = _context.CandidateOffers
+                    .Where(o => o.RecommendationId == x.r.Id && o.IsActive)
+                    .OrderByDescending(o => o.CreatedAt)
+                    .Select(o => (DateTime?)o.CreatedAt)
+                    .FirstOrDefault()
             })
             .FirstOrDefaultAsync();
     }
@@ -187,7 +197,17 @@ public class CandidateRecommendationRepository : ICandidateRecommendationReposit
                     .Where(i => i.RecommendationId == x.r.Id && i.IsActive)
                     .Select(i => i.SharedPhoneNumber)
                     .FirstOrDefault(),
-                RecommendedAt = x.r.CreatedAt
+                RecommendedAt = x.r.CreatedAt,
+                LatestOfferStatus = _context.CandidateOffers
+                    .Where(o => o.RecommendationId == x.r.Id && o.IsActive)
+                    .OrderByDescending(o => o.CreatedAt)
+                    .Select(o => o.Status)
+                    .FirstOrDefault(),
+                OfferSentAt = _context.CandidateOffers
+                    .Where(o => o.RecommendationId == x.r.Id && o.IsActive)
+                    .OrderByDescending(o => o.CreatedAt)
+                    .Select(o => (DateTime?)o.CreatedAt)
+                    .FirstOrDefault()
             });
     }
 
