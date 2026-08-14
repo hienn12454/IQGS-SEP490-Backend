@@ -36,6 +36,8 @@ public class MySubscriptionDto
     public string Currency { get; set; } = "VND";
     public DateTime PeriodStart { get; set; }
     public DateTime PeriodEnd { get; set; }
+    /// <summary>true nếu đã hủy gia hạn — Premium còn hiệu lực đến PeriodEnd.</summary>
+    public bool CancelAtPeriodEnd { get; set; }
     public DateTime? LastSuccessfulGenerateAt { get; set; }
     public SubscriptionPlanLimits Limits { get; set; } = new();
     public int AskAiUsed { get; set; }

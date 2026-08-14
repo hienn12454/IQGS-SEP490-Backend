@@ -545,6 +545,7 @@ public class AdminSubscriptionPlanService : IAdminSubscriptionPlanService
         sub.Plan = free;
         sub.Status = SubscriptionStatus.Active;
         sub.CancelledAt = now;
+        sub.CancelAtPeriodEnd = false;
         sub.LimitsSnapshotJson = free.LimitsJson;
         // Hạ Free: bắt đầu kỳ Free mới 1 tháng
         sub.CurrentPeriodStart = now;
@@ -615,6 +616,7 @@ public class AdminSubscriptionPlanService : IAdminSubscriptionPlanService
         sub.Plan = premium;
         sub.Status = SubscriptionStatus.Active;
         sub.CancelledAt = null;
+        sub.CancelAtPeriodEnd = false;
         sub.LimitsSnapshotJson = premium.LimitsJson;
         sub.CurrentPeriodStart = now;
         sub.CurrentPeriodEnd = now.AddMonths(months);
@@ -679,6 +681,7 @@ public class AdminSubscriptionPlanService : IAdminSubscriptionPlanService
             Currency = plan.Currency,
             PeriodStart = sub.CurrentPeriodStart,
             PeriodEnd = sub.CurrentPeriodEnd,
+            CancelAtPeriodEnd = sub.CancelAtPeriodEnd,
             LastSuccessfulGenerateAt = sub.LastSuccessfulGenerateAt,
             Limits = limits,
             AskAiUsed = askAi.UsedCount,

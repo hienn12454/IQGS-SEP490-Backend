@@ -120,6 +120,7 @@ public class UsageMeteringService : IUsageMeteringService
                 subscription.LimitsSnapshotJson = free.LimitsJson;
                 subscription.Status = SubscriptionStatus.Active;
                 subscription.CancelledAt = now;
+                subscription.CancelAtPeriodEnd = false;
                 subscription.CurrentPeriodStart = subscription.CurrentPeriodEnd;
                 subscription.CurrentPeriodEnd = subscription.CurrentPeriodStart.AddMonths(1);
             }

@@ -3,6 +3,7 @@ using System;
 using InfrastructureLayer.Database;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Pgvector;
@@ -12,9 +13,11 @@ using Pgvector;
 namespace InfrastructureLayer.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260814153501_AddCancelAtPeriodEndToSubscription")]
+    partial class AddCancelAtPeriodEndToSubscription
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -297,10 +300,6 @@ namespace InfrastructureLayer.Migrations
                         .IsRequired()
                         .HasColumnType("text[]");
 
-                    b.Property<string>("TimeZoneId")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -400,87 +399,6 @@ namespace InfrastructureLayer.Migrations
                     b.HasIndex("Name");
 
                     b.ToTable("tbl_companies", (string)null);
-                });
-
-            modelBuilder.Entity("DomainLayer.Entities.DailyProgress", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<bool>("DailyGoalCompleted")
-                        .HasColumnType("boolean");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("boolean");
-
-                    b.Property<DateOnly>("LocalDate")
-                        .HasColumnType("date");
-
-                    b.Property<int>("QuestionsCompleted")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("SessionsCompleted")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("XpEarned")
-                        .HasColumnType("integer");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("UserId", "LocalDate")
-                        .IsUnique();
-
-                    b.ToTable("tbl_daily_progress", (string)null);
-                });
-
-            modelBuilder.Entity("DomainLayer.Entities.Feedback", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Content")
-                        .IsRequired()
-                        .HasMaxLength(1000)
-                        .HasColumnType("character varying(1000)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("boolean");
-
-                    b.Property<int?>("Rating")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Status");
-
-                    b.HasIndex("UserId");
-
-                    b.ToTable("tbl_feedbacks", (string)null);
                 });
 
             modelBuilder.Entity("DomainLayer.Entities.HRProfile", b =>
@@ -938,44 +856,6 @@ namespace InfrastructureLayer.Migrations
                         .IsUnique();
 
                     b.ToTable("tbl_question_set_bookmarks", (string)null);
-                });
-
-            modelBuilder.Entity("DomainLayer.Entities.QuestionSetFeedback", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("CandidateUserId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Comment")
-                        .HasMaxLength(2000)
-                        .HasColumnType("character varying(2000)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("boolean");
-
-                    b.Property<Guid>("QuestionSetId")
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("Rating")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CandidateUserId");
-
-                    b.HasIndex("QuestionSetId", "CandidateUserId")
-                        .IsUnique();
-
-                    b.ToTable("tbl_question_set_feedbacks", (string)null);
                 });
 
             modelBuilder.Entity("DomainLayer.Entities.QuestionSetQuestion", b =>
@@ -1475,180 +1355,6 @@ namespace InfrastructureLayer.Migrations
                     b.HasIndex("RoleId");
 
                     b.ToTable("tbl_users", (string)null);
-                });
-
-            modelBuilder.Entity("DomainLayer.Entities.UserAchievement", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("AchievementCode")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("boolean");
-
-                    b.Property<DateTime>("UnlockedAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("UserId", "AchievementCode")
-                        .IsUnique();
-
-                    b.ToTable("tbl_user_achievements", (string)null);
-                });
-
-            modelBuilder.Entity("DomainLayer.Entities.UserProgress", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("CurrentStreak")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasDefaultValue(0);
-
-                    b.Property<int>("DailyGoalCompletedDaysCount")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasDefaultValue(0);
-
-                    b.Property<int>("DailyGoalXp")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasDefaultValue(50);
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("boolean");
-
-                    b.Property<DateOnly?>("LastActiveLocalDate")
-                        .HasColumnType("date");
-
-                    b.Property<int>("Level")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasDefaultValue(1);
-
-                    b.Property<int>("LongestStreak")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasDefaultValue(0);
-
-                    b.Property<int>("TotalQuestionsCompleted")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasDefaultValue(0);
-
-                    b.Property<int>("TotalSessionsCompleted")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasDefaultValue(0);
-
-                    b.Property<int>("TotalSystemDesignQuestionsCompleted")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasDefaultValue(0);
-
-                    b.Property<int>("TotalTechnicalQuestionsCompleted")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasDefaultValue(0);
-
-                    b.Property<long>("TotalXp")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint")
-                        .HasDefaultValue(0L);
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("UserId")
-                        .IsUnique();
-
-                    b.ToTable("tbl_user_progress", (string)null);
-                });
-
-            modelBuilder.Entity("DomainLayer.Entities.XpTransaction", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("Amount")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Description")
-                        .IsRequired()
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.Property<string>("IdempotencyKey")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("boolean");
-
-                    b.Property<Guid?>("PracticeSessionId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid?>("QuestionAttemptId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid?>("QuestionId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid?>("QuestionSetId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Type")
-                        .IsRequired()
-                        .HasMaxLength(30)
-                        .HasColumnType("character varying(30)");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("IdempotencyKey")
-                        .IsUnique();
-
-                    b.HasIndex("UserId", "CreatedAtUtc");
-
-                    b.ToTable("tbl_xp_transactions", (string)null);
                 });
 
             modelBuilder.Entity("DomainLayer.Studio.AiChatMessage", b =>
@@ -2524,28 +2230,6 @@ namespace InfrastructureLayer.Migrations
                     b.Navigation("QuestionSet");
                 });
 
-            modelBuilder.Entity("DomainLayer.Entities.DailyProgress", b =>
-                {
-                    b.HasOne("DomainLayer.Entities.User", "User")
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("User");
-                });
-
-            modelBuilder.Entity("DomainLayer.Entities.Feedback", b =>
-                {
-                    b.HasOne("DomainLayer.Entities.User", "User")
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("User");
-                });
-
             modelBuilder.Entity("DomainLayer.Entities.HRProfile", b =>
                 {
                     b.HasOne("DomainLayer.Entities.Company", "Company")
@@ -2633,25 +2317,6 @@ namespace InfrastructureLayer.Migrations
                     b.Navigation("QuestionSet");
                 });
 
-            modelBuilder.Entity("DomainLayer.Entities.QuestionSetFeedback", b =>
-                {
-                    b.HasOne("DomainLayer.Entities.User", "CandidateUser")
-                        .WithMany()
-                        .HasForeignKey("CandidateUserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("DomainLayer.Entities.QuestionSet", "QuestionSet")
-                        .WithMany()
-                        .HasForeignKey("QuestionSetId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("CandidateUser");
-
-                    b.Navigation("QuestionSet");
-                });
-
             modelBuilder.Entity("DomainLayer.Entities.QuestionSetQuestion", b =>
                 {
                     b.HasOne("DomainLayer.Entities.QuestionSet", "QuestionSet")
@@ -2713,39 +2378,6 @@ namespace InfrastructureLayer.Migrations
                         .IsRequired();
 
                     b.Navigation("Role");
-                });
-
-            modelBuilder.Entity("DomainLayer.Entities.UserAchievement", b =>
-                {
-                    b.HasOne("DomainLayer.Entities.User", "User")
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("User");
-                });
-
-            modelBuilder.Entity("DomainLayer.Entities.UserProgress", b =>
-                {
-                    b.HasOne("DomainLayer.Entities.User", "User")
-                        .WithOne()
-                        .HasForeignKey("DomainLayer.Entities.UserProgress", "UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("User");
-                });
-
-            modelBuilder.Entity("DomainLayer.Entities.XpTransaction", b =>
-                {
-                    b.HasOne("DomainLayer.Entities.User", "User")
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("DomainLayer.Studio.AiChatMessage", b =>
