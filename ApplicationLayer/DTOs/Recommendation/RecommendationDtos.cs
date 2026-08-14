@@ -45,6 +45,11 @@ public class HrRecommendationListItemDto
     /// <summary>Trạng thái lời mời nếu đã invite (PENDING/ACCEPTED/REJECTED) — null nếu chưa mời.</summary>
     public string? InvitationStatus { get; set; }
 
+    /// <summary>SCRUM-409: SENT / ACCEPTED của offer gần nhất — null nếu chưa gửi offer.</summary>
+    public string? LatestOfferStatus { get; set; }
+
+    public DateTime? OfferSentAt { get; set; }
+
     /// <summary>Lời nhắn candidate gửi kèm khi accept lời mời — null nếu chưa accept hoặc không nhập.</summary>
     public string? InvitationResponseMessage { get; set; }
 
@@ -108,6 +113,9 @@ public class HrRecommendationRow
     public string? InvitationResponseMessage { get; set; }
     public string? InvitationSharedPhoneNumber { get; set; }
     public DateTime RecommendedAt { get; set; }
+
+    public string? LatestOfferStatus { get; set; }
+    public DateTime? OfferSentAt { get; set; }
 
     // --- Detail-only fields (SCRUM-377) — list projection để null/default ---
     public string? AvatarUrl { get; set; }

@@ -313,7 +313,9 @@ public class RecommendationService : IRecommendationService
             InvitationStatus = r.InvitationStatus,
             InvitationResponseMessage = r.InvitationResponseMessage,
             InvitationSharedPhoneNumber = r.InvitationSharedPhoneNumber,
-            RecommendedAt = r.RecommendedAt
+            RecommendedAt = r.RecommendedAt,
+            LatestOfferStatus = r.LatestOfferStatus,
+            OfferSentAt = r.OfferSentAt
         };
     }
 
@@ -335,6 +337,8 @@ public class RecommendationService : IRecommendationService
         dest.InvitationResponseMessage = src.InvitationResponseMessage;
         dest.InvitationSharedPhoneNumber = src.InvitationSharedPhoneNumber;
         dest.RecommendedAt = src.RecommendedAt;
+        dest.LatestOfferStatus = src.LatestOfferStatus;
+        dest.OfferSentAt = src.OfferSentAt;
     }
 
     private static (List<string> Skills, string? Summary) ParseCvEvaluation(string? evaluationJson)
