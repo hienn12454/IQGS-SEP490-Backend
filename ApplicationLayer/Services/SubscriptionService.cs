@@ -384,26 +384,16 @@ public class SubscriptionService : ISubscriptionService
     public async Task<MySubscriptionDto> CancelAsync(Guid userId)
     {
         var sub = await _metering.GetOrThrowSubscriptionAsync(userId);
-        var audience = sub.Plan?.Audience
-            ?? (await _planRepo.GetByIdAsync(sub.PlanId))?.Audience
-            ?? SubscriptionAudience.Candidate;
+        var plan = sub.Plan ?? await _planRepo.GetByIdAsync(sub.PlanId)
+            ?? throw new NotFoundException("Không tìm thấy gói.");
 
-        var freeCode = audience == SubscriptionAudience.HR
-            ? SubscriptionPlanCodes.HrFree
-            : SubscriptionPlanCodes.CandidateFree;
+        var isPremium = plan.Code is SubscriptionPlanCodes.HrPremium or SubscriptionPlanCodes.CandidatePremium;
+        if (!isPremium)
+            return await BuildMyDtoAsync(sub);
 
-        var free = await _planRepo.GetByCodeAsync(freeCode)
-            ?? throw new ServerFailureException($"Chưa seed plan {freeCode}.");
-
-        // Hủy: hạ Free ngay + snapshot Free (MVP sandbox)
-        sub.PlanId = free.Id;
-        sub.Plan = free;
-        sub.Status = SubscriptionStatus.Cancelled;
+        // SCRUM-407: giữ Premium đến hết kỳ — không hạ Free giữa kỳ.
+        sub.CancelAtPeriodEnd = true;
         sub.CancelledAt = DateTime.UtcNow;
-        sub.LimitsSnapshotJson = free.LimitsJson;
-        await _subscriptionRepo.UpdateAsync(sub);
-
-        // Cho phép dùng Free tiếp — set Active lại sau cancel log
         sub.Status = SubscriptionStatus.Active;
         await _subscriptionRepo.UpdateAsync(sub);
 
@@ -412,10 +402,10 @@ public class SubscriptionService : ISubscriptionService
             SubscriptionId = sub.Id,
             Type = SubscriptionTransactionTypes.Cancel,
             Amount = 0,
-            Currency = free.Currency,
+            Currency = plan.Currency,
             Status = "Paid",
             Provider = "Sandbox",
-            Note = $"Sandbox cancel → {free.Code}"
+            Note = $"Cancel at period end → {plan.Code} đến {sub.CurrentPeriodEnd:O}"
         });
 
         return await BuildMyDtoAsync(sub);
@@ -478,6 +468,7 @@ public class SubscriptionService : ISubscriptionService
             Currency = plan.Currency,
             PeriodStart = sub.CurrentPeriodStart,
             PeriodEnd = sub.CurrentPeriodEnd,
+            CancelAtPeriodEnd = sub.CancelAtPeriodEnd,
             LastSuccessfulGenerateAt = sub.LastSuccessfulGenerateAt,
             Limits = limits,
             AskAiUsed = askAi.UsedCount,
@@ -538,6 +529,7 @@ public class SubscriptionService : ISubscriptionService
         sub.Plan = premium;
         sub.Status = SubscriptionStatus.Active;
         sub.CancelledAt = null;
+        sub.CancelAtPeriodEnd = false;
         sub.LimitsSnapshotJson = premium.LimitsJson;
         sub.CurrentPeriodStart = now;
         sub.CurrentPeriodEnd = now.AddMonths(1);

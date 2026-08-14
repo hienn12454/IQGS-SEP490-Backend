@@ -51,8 +51,13 @@ public class CandidateOfferService : ICandidateOfferService
             throw new ForbiddenException("Bạn không có quyền thao tác recommendation này.");
 
         var latestOffer = await _offerRepository.GetLatestByRecommendationIdAsync(recommendationId);
-        if (latestOffer is not null && latestOffer.Status == CandidateOfferStatus.Accepted)
-            throw new ConflictException("Candidate đã chấp nhận lời đề nghị trước đó — không thể gửi thêm.");
+        if (latestOffer is not null)
+        {
+            if (latestOffer.Status == CandidateOfferStatus.Accepted)
+                throw new ConflictException("Candidate đã chấp nhận lời đề nghị trước đó — không thể gửi thêm.");
+            if (latestOffer.Status == CandidateOfferStatus.Sent && latestOffer.TokenExpiresAt >= DateTime.UtcNow)
+                throw new ConflictException("Đã gửi offer còn hạn — không thể gửi thêm.");
+        }
 
         var candidate = await _userRepository.GetByIdAsync(recommendation.CandidateUserId)
             ?? throw new NotFoundException("Không tìm thấy thông tin candidate.");

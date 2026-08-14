@@ -270,13 +270,13 @@ public sealed class InterviewProjectService(
         await questionSetService.PublishAsync(questionSetId.Value, userId);
     }
 
-    public async Task UnpublishFromProjectAsync(Guid projectId, Guid userId, CancellationToken ct)
+    public async Task<ApplicationLayer.DTOs.QuestionSet.QuestionSetActionResponseDto> UnpublishFromProjectAsync(Guid projectId, Guid userId, CancellationToken ct)
     {
         var detail = await GetAsync(projectId, userId, ct);
         if (detail.QuestionSetId is null)
             throw new StudioBusinessException("SET_NOT_FOUND", StatusCodes.Status404NotFound, "Project chưa có bộ câu hỏi đã Save.");
 
-        await questionSetService.UnpublishAsync(detail.QuestionSetId.Value, userId);
+        return await questionSetService.UnpublishAsync(detail.QuestionSetId.Value, userId);
     }
 
     private async Task<StudioProjectDetailDto> ToDetailAsync(InterviewProject p, CancellationToken ct)
@@ -742,6 +742,9 @@ public sealed class InterviewPlanService(
 
         var intent = StudioRefineInstructionParser.ParseIntent(instruction);
         var numberOfQuestions = StudioRefineInstructionParser.ResolveNumberOfQuestions(baselineQuestions, intent);
+        if (intent.QuestionDelta > 0 && baselineQuestions >= 50)
+            throw new StudioBusinessException("QUESTION_COUNT_MAX", StatusCodes.Status400BadRequest,
+                "Số câu đã đạt tối đa 50 — không thể thêm nữa.");
         var difficultyEnum = intent.Difficulty ?? settingsSnap?.Difficulty ?? source.Difficulty;
         var difficulty = difficultyEnum.ToString().ToLowerInvariant();
         var skills = ParseSkillsJson(jd.DetectedSkillsJson);
@@ -1165,7 +1168,7 @@ public sealed class InterviewPlanService(
             settings = new StudioSettings { ProjectId = projectId, AppliedPlanId = null };
             dbContext.StudioSettings.Add(settings);
         }
-        settings.NumberOfQuestions = mapped.TotalQuestions;
+        settings.NumberOfQuestions = Math.Clamp(mapped.TotalQuestions, 5, 50);
         settings.Difficulty = mapped.Difficulty;
         settings.InterviewLengthMinutes = mapped.InterviewLengthMinutes;
         settings.SeniorityLevel = mapped.SeniorityLevel;
@@ -1300,7 +1303,7 @@ public sealed class InterviewPlanService(
             var settings = await dbContext.StudioSettings.FirstOrDefaultAsync(x => x.ProjectId == projectId && x.IsActive, ct);
             if (settings is null) { settings = new StudioSettings { ProjectId = projectId }; dbContext.StudioSettings.Add(settings); }
             settings.AppliedPlanId = plan.Id;
-            settings.NumberOfQuestions = plan.TotalQuestions;
+            settings.NumberOfQuestions = Math.Clamp(plan.TotalQuestions, 5, 50);
             settings.InterviewLengthMinutes = plan.InterviewLengthMinutes;
             settings.SeniorityLevel = plan.SeniorityLevel;
             settings.Language = plan.Language;

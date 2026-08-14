@@ -151,7 +151,8 @@ public class UserService : IUserService
 
         user.FullName = dto.FullName;
         user.PhoneNumber = dto.PhoneNumber;
-        user.AvatarUrl = dto.AvatarUrl;
+        if (!string.IsNullOrWhiteSpace(dto.AvatarUrl))
+            user.AvatarUrl = dto.AvatarUrl;
         if (!user.IsProfileComplete) user.IsProfileComplete = true;
 
         var profile = await _hrProfileRepo.GetByUserIdAsync(userId);
@@ -219,7 +220,8 @@ public class UserService : IUserService
 
         user.FullName = dto.FullName;
         user.PhoneNumber = dto.PhoneNumber;
-        user.AvatarUrl = dto.AvatarUrl;
+        if (!string.IsNullOrWhiteSpace(dto.AvatarUrl))
+            user.AvatarUrl = dto.AvatarUrl;
         if (!user.IsProfileComplete) user.IsProfileComplete = true;
 
         if (profile == null)

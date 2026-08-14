@@ -85,6 +85,8 @@ public class QuestionSetActionResponseDto
     public Guid QuestionSetId { get; set; }
     public string Status { get; set; } = string.Empty;
     public DateTime? PublishedAt { get; set; }
+    /// <summary>SCRUM-408: số phiên IN_PROGRESS bị chuyển ABANDONED khi unpublish.</summary>
+    public int AbandonedSessionCount { get; set; }
 }
 
 /// <summary>Request đặt giới hạn thời gian làm bài practice cho 1 bộ câu hỏi.</summary>

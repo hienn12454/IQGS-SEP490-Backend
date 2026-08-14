@@ -26,6 +26,9 @@ public class Subscription : BaseEntity
     public DateTime StartedAt { get; set; }
     public DateTime? CancelledAt { get; set; }
 
+    /// <summary>SCRUM-407: user hủy gia hạn — vẫn Premium đến CurrentPeriodEnd, rồi hạ Free.</summary>
+    public bool CancelAtPeriodEnd { get; set; }
+
     public ICollection<UsageCounter> UsageCounters { get; set; } = new List<UsageCounter>();
     public ICollection<SubscriptionTransaction> Transactions { get; set; } = new List<SubscriptionTransaction>();
 }

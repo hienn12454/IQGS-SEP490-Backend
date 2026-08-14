@@ -82,7 +82,7 @@ public class AuthService : IAuthService
                 $"Tài khoản tạm thời bị khóa do đăng nhập sai quá nhiều lần. Vui lòng thử lại sau {remaining} phút.");
         }
 
-        if (user.Provider != AuthProvider.Local)
+        if (user.Provider != AuthProvider.Local && string.IsNullOrEmpty(user.PasswordHash))
             throw new BadRequestException(
                 "Tài khoản này đăng nhập qua Google. Vui lòng sử dụng nút 'Đăng nhập với Google'.");
 
@@ -147,11 +147,7 @@ public class AuthService : IAuthService
         }
         else if (user.GoogleId != account.Subject)
         {
-            if (user.Provider != AuthProvider.Google)
-                throw new ConflictException(
-                    "Email này đã được đăng ký bằng mật khẩu. " +
-                    "Vui lòng quay lại trang đăng nhập và sử dụng email & mật khẩu của bạn.");
-
+            // SCRUM-405: liên kết Google với tài khoản local cùng email — giữ password.
             user.GoogleId = account.Subject;
             await _userRepo.UpdateAsync(user);
         }
