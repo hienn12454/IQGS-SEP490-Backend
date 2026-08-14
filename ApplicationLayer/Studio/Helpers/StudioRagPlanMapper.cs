@@ -62,6 +62,7 @@ public static class StudioRagPlanMapper
             summary = notes;
         var total = GetInt(root, "totalQuestions", "total_questions") ?? fallbackQuestionCount;
         if (total <= 0) total = fallbackQuestionCount;
+        total = Math.Clamp(total, 5, 50);
         var experience = GetString(root, "experienceLevel", "experience_level") ?? "mid";
         var difficultyRaw = GetString(root, "difficulty") ?? GetString(root, "level") ?? "medium";
         var difficulty = MapDifficulty(difficultyRaw);
