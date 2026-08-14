@@ -428,11 +428,15 @@ public class QuestionSetService : IQuestionSetService
 
         await _questionSetRepository.UpdateAsync(questionSet);
 
+        // SCRUM-408: hủy phiên đang làm — publish lại sẽ tạo phiên mới, không resume.
+        var abandoned = await _practiceSessionRepository.AbandonInProgressByQuestionSetAsync(questionSet.Id);
+
         return new QuestionSetActionResponseDto
         {
             QuestionSetId = questionSet.Id,
             Status = questionSet.Status,
-            PublishedAt = questionSet.PublishedAt
+            PublishedAt = questionSet.PublishedAt,
+            AbandonedSessionCount = abandoned
         };
     }
 

@@ -91,6 +91,7 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
     public async Task<PracticeSessionResponseDto> GetByIdAsync(Guid sessionId, Guid candidateUserId)
     {
         var session = await GetOwnedSessionAsync(sessionId, candidateUserId);
+        EnsureSessionNotAbandoned(session);
         _ = await AutoSubmitIfExpiredAsync(session, await _sessionRepository.GetTimeLimitMinutesAsync(session.QuestionSetId));
         return await BuildSessionResponseAsync(session);
     }
@@ -99,6 +100,7 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
         Guid sessionId, Guid candidateUserId, SubmitAnswerDto dto)
     {
         var session = await GetOwnedSessionAsync(sessionId, candidateUserId);
+        EnsureSessionNotAbandoned(session);
 
         if (await AutoSubmitIfExpiredAsync(session, await _sessionRepository.GetTimeLimitMinutesAsync(session.QuestionSetId)) is not null)
             throw new BadRequestException("Đã hết thời gian làm bài — phiên đã được tự động nộp.");
@@ -154,6 +156,7 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
     public async Task<PracticeSessionCompleteResponseDto> CompleteAsync(Guid sessionId, Guid candidateUserId)
     {
         var session = await GetOwnedSessionAsync(sessionId, candidateUserId);
+        EnsureSessionNotAbandoned(session);
 
         // Hết giờ thì phiên đã được tự nộp tại đúng deadline — candidate bấm nộp sau đó vẫn nhận kết quả bình thường.
         var xpRewards = await AutoSubmitIfExpiredAsync(session, await _sessionRepository.GetTimeLimitMinutesAsync(session.QuestionSetId));
@@ -486,6 +489,13 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
             throw new ForbiddenException("Bạn không có quyền truy cập phiên luyện tập này.");
 
         return session;
+    }
+
+    /// <summary>SCRUM-408: HR unpublish → phiên ABANDONED, không làm tiếp được.</summary>
+    private static void EnsureSessionNotAbandoned(PracticeSession session)
+    {
+        if (session.Status == PracticeSessionStatus.Abandoned)
+            throw new BadRequestException("Bộ câu hỏi đã được gỡ; phiên đã hủy.");
     }
 
     /// <summary>Làm tròn điểm AI trả về hàng đơn vị (vd 51.0739292829 → 51) — không giữ chữ số thập phân.</summary>
