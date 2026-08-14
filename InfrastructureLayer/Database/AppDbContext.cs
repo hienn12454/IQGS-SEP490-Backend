@@ -594,6 +594,7 @@ public class AppDbContext : DbContext
             entity.HasKey(s => s.Id);
             entity.Property(s => s.Status).IsRequired().HasMaxLength(20);
             entity.Property(s => s.LimitsSnapshotJson).IsRequired().HasColumnType("jsonb");
+            entity.Property(s => s.CancelAtPeriodEnd).IsRequired().HasDefaultValue(false);
             entity.HasIndex(s => s.UserId).IsUnique();
 
             entity.HasOne(s => s.User)
