@@ -62,8 +62,8 @@ public sealed class StudioInterviewProjectsController(IInterviewProjectService p
     [HttpPost("{projectId:guid}/unpublish")]
     public async Task<IActionResult> Unpublish(Guid projectId, CancellationToken ct)
     {
-        await projectService.UnpublishFromProjectAsync(projectId, GetUserId(), ct);
-        return Ok(new { message = "Đã unpublish." });
+        var result = await projectService.UnpublishFromProjectAsync(projectId, GetUserId(), ct);
+        return Ok(result);
     }
 
     private Guid GetUserId()

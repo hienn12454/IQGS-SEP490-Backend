@@ -45,6 +45,16 @@ public class PracticeSessionRepository : IPracticeSessionRepository
         return _context.SaveChangesAsync();
     }
 
+    public async Task<int> AbandonInProgressByQuestionSetAsync(Guid questionSetId)
+    {
+        var now = DateTime.UtcNow;
+        return await _context.PracticeSessions
+            .Where(s => s.QuestionSetId == questionSetId && s.Status == PracticeSessionStatus.InProgress)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(x => x.Status, PracticeSessionStatus.Abandoned)
+                .SetProperty(x => x.UpdatedAt, now));
+    }
+
     public Task<int?> GetTimeLimitMinutesAsync(Guid questionSetId)
         => _context.QuestionSets
             .AsNoTracking()

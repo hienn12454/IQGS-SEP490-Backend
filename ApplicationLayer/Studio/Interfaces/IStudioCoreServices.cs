@@ -15,7 +15,7 @@ public interface IInterviewProjectService
     /// <summary>Snapshot InterviewQuestions → question_sets (private DRAFT). UX: Save.</summary>
     Task<StudioSaveQuestionSetResponseDto> SaveQuestionSetAsync(Guid projectId, Guid userId, CancellationToken ct);
     Task PublishFromProjectAsync(Guid projectId, Guid userId, CancellationToken ct);
-    Task UnpublishFromProjectAsync(Guid projectId, Guid userId, CancellationToken ct);
+    Task<ApplicationLayer.DTOs.QuestionSet.QuestionSetActionResponseDto> UnpublishFromProjectAsync(Guid projectId, Guid userId, CancellationToken ct);
 }
 
 public interface IJobDescriptionService

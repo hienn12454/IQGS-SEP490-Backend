@@ -15,6 +15,9 @@ public interface IPracticeSessionRepository
     /// <summary>Candidate đã có ít nhất 1 phiên COMPLETED trên question set này — điều kiện để được gửi feedback bộ câu hỏi.</summary>
     Task<bool> HasCompletedSessionAsync(Guid candidateUserId, Guid questionSetId);
 
+    /// <summary>SCRUM-408: unpublish — bulk IN_PROGRESS của bộ → ABANDONED. Trả về số phiên đã hủy.</summary>
+    Task<int> AbandonInProgressByQuestionSetAsync(Guid questionSetId);
+
     /// <summary>Giới hạn thời gian làm bài (phút) HR đặt cho bộ câu hỏi — null nếu không giới hạn hoặc bộ không tồn tại.</summary>
     Task<int?> GetTimeLimitMinutesAsync(Guid questionSetId);
 
