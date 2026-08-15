@@ -270,13 +270,13 @@ public sealed class InterviewProjectService(
         await questionSetService.PublishAsync(questionSetId.Value, userId);
     }
 
-    public async Task UnpublishFromProjectAsync(Guid projectId, Guid userId, CancellationToken ct)
+    public async Task<ApplicationLayer.DTOs.QuestionSet.QuestionSetActionResponseDto> UnpublishFromProjectAsync(Guid projectId, Guid userId, CancellationToken ct)
     {
         var detail = await GetAsync(projectId, userId, ct);
         if (detail.QuestionSetId is null)
             throw new StudioBusinessException("SET_NOT_FOUND", StatusCodes.Status404NotFound, "Project chưa có bộ câu hỏi đã Save.");
 
-        await questionSetService.UnpublishAsync(detail.QuestionSetId.Value, userId);
+        return await questionSetService.UnpublishAsync(detail.QuestionSetId.Value, userId);
     }
 
     private async Task<StudioProjectDetailDto> ToDetailAsync(InterviewProject p, CancellationToken ct)
