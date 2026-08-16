@@ -37,6 +37,7 @@ public static class UsageType
     public const string HrAskAi = "HrAskAi";
     public const string HrExport = "HrExport";
     public const string CandidateFeedback = "CandidateFeedback";
+    public const string CandidatePersonalSet = "CandidatePersonalSet";
 }
 
 /// <summary>Mã lỗi feature gate subscription (HTTP 403).</summary>

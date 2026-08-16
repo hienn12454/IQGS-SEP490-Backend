@@ -21,9 +21,13 @@ public class AppDbContext : DbContext
     // V1 generate pipeline dropped (Phase 4) — no DbSet for jobs/plans/generated/ai-chat
     public DbSet<QuestionSet> QuestionSets { get; set; }
     public DbSet<QuestionSetQuestion> QuestionSetQuestions { get; set; }
+    public DbSet<CandidatePersonalSetJob> CandidatePersonalSetJobs { get; set; }
+    public DbSet<CandidateSkillPlan> CandidateSkillPlans { get; set; }
+    public DbSet<CandidateSkillPlanItem> CandidateSkillPlanItems { get; set; }
     public DbSet<QuestionSetBookmark> QuestionSetBookmarks { get; set; }
     public DbSet<HrQuestionSetBookmark> HrQuestionSetBookmarks { get; set; }
     public DbSet<QuestionSetFeedback> QuestionSetFeedbacks { get; set; }
+    public DbSet<QuestionSetJdFitReview> QuestionSetJdFitReviews { get; set; }
     public DbSet<PracticeSession> PracticeSessions { get; set; }
     public DbSet<CandidateAnswer> CandidateAnswers { get; set; }
     public DbSet<AiFeedback> AiFeedbacks { get; set; }
@@ -159,6 +163,7 @@ public class AppDbContext : DbContext
             entity.ToTable("tbl_hr_profiles");
             entity.HasKey(p => p.Id);
             entity.Property(p => p.JobTitle).HasMaxLength(150);
+            entity.Property(p => p.InviteMessageTemplate).HasMaxLength(4000);
             entity.Property(p => p.PhoneNumber).HasMaxLength(20);
             entity.Property(p => p.LinkedInUrl).HasMaxLength(500);
             entity.Property(p => p.GithubUrl).HasMaxLength(500);
@@ -259,6 +264,7 @@ public class AppDbContext : DbContext
             entity.ToTable("tbl_question_sets");
             entity.HasKey(qs => qs.Id);
             entity.Property(qs => qs.Status).IsRequired().HasMaxLength(20);
+            entity.Property(qs => qs.Kind).IsRequired().HasMaxLength(20).HasDefaultValue(QuestionSetKind.Marketplace);
             entity.Property(qs => qs.Title).HasMaxLength(500);
             entity.Property(qs => qs.JobDescription).IsRequired();
             entity.Property(qs => qs.HrNote).HasMaxLength(2000);
@@ -296,6 +302,60 @@ public class AppDbContext : DbContext
             entity.HasIndex(qs => new { qs.IsPinned, qs.PinnedAt });
             entity.HasIndex(qs => qs.SourcePlanId);
             entity.HasIndex(qs => qs.SourceRunId);
+            entity.HasIndex(qs => new { qs.Kind, qs.Status, qs.IsActive });
+        });
+
+        modelBuilder.Entity<CandidatePersonalSetJob>(entity =>
+        {
+            entity.ToTable("tbl_candidate_personal_set_jobs");
+            entity.HasKey(j => j.Id);
+            entity.Property(j => j.Status).IsRequired().HasMaxLength(20);
+            entity.Property(j => j.Purpose).IsRequired().HasMaxLength(20).HasDefaultValue(CandidatePersonalSetPurpose.JdGap);
+            entity.Property(j => j.JobDescription).IsRequired();
+            entity.Property(j => j.CvSkillsJson).IsRequired().HasColumnType("jsonb");
+            entity.Property(j => j.GapSkillsJson).IsRequired().HasColumnType("jsonb");
+            entity.Property(j => j.FocusSkillsJson).IsRequired().HasColumnType("jsonb").HasDefaultValue("[]");
+            entity.Property(j => j.PlanJson).HasColumnType("jsonb");
+            entity.Property(j => j.ErrorMessage).HasMaxLength(4000);
+
+            entity.HasOne(j => j.QuestionSet)
+                  .WithMany()
+                  .HasForeignKey(j => j.QuestionSetId)
+                  .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasIndex(j => j.CandidateUserId);
+            entity.HasIndex(j => j.Status);
+            entity.HasIndex(j => j.QuestionSetId);
+            entity.HasIndex(j => j.Purpose);
+        });
+
+        modelBuilder.Entity<CandidateSkillPlan>(entity =>
+        {
+            entity.ToTable("tbl_candidate_skill_plans");
+            entity.HasKey(p => p.Id);
+            entity.Property(p => p.Status).IsRequired().HasMaxLength(20);
+            entity.HasIndex(p => p.CandidateUserId).IsUnique();
+            entity.HasOne(p => p.SourceDiagnosticSet)
+                  .WithMany()
+                  .HasForeignKey(p => p.SourceDiagnosticSetId)
+                  .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<CandidateSkillPlanItem>(entity =>
+        {
+            entity.ToTable("tbl_candidate_skill_plan_items");
+            entity.HasKey(i => i.Id);
+            entity.Property(i => i.Skill).IsRequired().HasMaxLength(200);
+            entity.Property(i => i.Status).IsRequired().HasMaxLength(20);
+            entity.HasOne(i => i.Plan)
+                  .WithMany(p => p.Items)
+                  .HasForeignKey(i => i.PlanId)
+                  .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(i => i.LastSession)
+                  .WithMany()
+                  .HasForeignKey(i => i.LastSessionId)
+                  .OnDelete(DeleteBehavior.SetNull);
+            entity.HasIndex(i => new { i.PlanId, i.Skill }).IsUnique();
         });
 
         // ── QuestionSetQuestion ─────────────────────────────────────
@@ -368,6 +428,23 @@ public class AppDbContext : DbContext
 
             // 1 candidate chỉ có 1 feedback / question set — submit lại sẽ update đè.
             entity.HasIndex(f => new { f.QuestionSetId, f.CandidateUserId }).IsUnique();
+        });
+
+        // ── QuestionSetJdFitReview (1–1, bản đánh giá JD mới nhất) ──
+        modelBuilder.Entity<QuestionSetJdFitReview>(entity =>
+        {
+            entity.ToTable("tbl_question_set_jd_fit_reviews");
+            entity.HasKey(r => r.Id);
+            entity.Property(r => r.ReviewJson).IsRequired().HasColumnType("jsonb");
+            entity.Property(r => r.ContentHash).IsRequired().HasMaxLength(64);
+            entity.Property(r => r.ReviewedAt).IsRequired();
+
+            entity.HasOne(r => r.QuestionSet)
+                  .WithOne(qs => qs.JdFitReview)
+                  .HasForeignKey<QuestionSetJdFitReview>(r => r.QuestionSetId)
+                  .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(r => r.QuestionSetId).IsUnique();
         });
 
         // ── PracticeSession (Candidate — SCRUM-277) ─────────────────
@@ -460,6 +537,10 @@ public class AppDbContext : DbContext
             entity.Property(i => i.Message).HasMaxLength(2000);
             entity.Property(i => i.ResponseMessage).HasMaxLength(2000);
             entity.Property(i => i.SharedPhoneNumber).HasMaxLength(20);
+            entity.Property(i => i.TimeZoneId).HasMaxLength(100);
+            entity.Property(i => i.MeetingMode).HasMaxLength(20);
+            entity.Property(i => i.MeetingLink).HasMaxLength(2000);
+            entity.Property(i => i.Location).HasMaxLength(500);
 
             entity.HasOne(i => i.Recommendation)
                   .WithMany()
@@ -532,9 +613,9 @@ public class AppDbContext : DbContext
             const string hrPremiumLimits =
                 "{\"generateCooldownHours\":0,\"generateUnlimited\":true,\"planRegeneratePerDraft\":5,\"canExport\":true,\"askAiPerMonth\":1000,\"canPublish\":true,\"freeVisiblePercent\":100,\"canPersistHrRecommendation\":false,\"feedbackOnlyOnVisible\":false,\"canDetailedAiFeedback\":true,\"freeTeaserFeedbackCount\":0}";
             const string candidateFreeLimits =
-                "{\"generateCooldownHours\":0,\"generateUnlimited\":false,\"planRegeneratePerDraft\":0,\"canExport\":false,\"askAiPerMonth\":0,\"canPublish\":false,\"freeVisiblePercent\":100,\"canPersistHrRecommendation\":false,\"feedbackOnlyOnVisible\":false,\"canDetailedAiFeedback\":false,\"freeTeaserFeedbackCount\":1}";
+                "{\"generateCooldownHours\":0,\"generateUnlimited\":false,\"planRegeneratePerDraft\":0,\"canExport\":false,\"askAiPerMonth\":0,\"canPublish\":false,\"freeVisiblePercent\":100,\"canPersistHrRecommendation\":false,\"feedbackOnlyOnVisible\":false,\"canDetailedAiFeedback\":false,\"freeTeaserFeedbackCount\":1,\"canGeneratePersonalSet\":false,\"personalSetPerMonth\":0}";
             const string candidatePremiumLimits =
-                "{\"generateCooldownHours\":0,\"generateUnlimited\":false,\"planRegeneratePerDraft\":0,\"canExport\":false,\"askAiPerMonth\":0,\"canPublish\":false,\"freeVisiblePercent\":100,\"canPersistHrRecommendation\":true,\"feedbackOnlyOnVisible\":false,\"canDetailedAiFeedback\":true,\"freeTeaserFeedbackCount\":0}";
+                "{\"generateCooldownHours\":0,\"generateUnlimited\":false,\"planRegeneratePerDraft\":0,\"canExport\":false,\"askAiPerMonth\":0,\"canPublish\":false,\"freeVisiblePercent\":100,\"canPersistHrRecommendation\":true,\"feedbackOnlyOnVisible\":false,\"canDetailedAiFeedback\":true,\"freeTeaserFeedbackCount\":0,\"canGeneratePersonalSet\":true,\"personalSetPerMonth\":10}";
 
             entity.HasData(
                 new SubscriptionPlan

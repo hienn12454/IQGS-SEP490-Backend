@@ -45,6 +45,12 @@ public class SubscriptionPlanLimits
     /// <summary>Số câu AI feedback mẫu cho Free khi CanDetailedAiFeedback = false.</summary>
     public int FreeTeaserFeedbackCount { get; set; } = 1;
 
+    /// <summary>Candidate Premium: được sinh bộ luyện tập từ CV + JD.</summary>
+    public bool CanGeneratePersonalSet { get; set; }
+
+    /// <summary>Số bộ Personal được sinh mỗi kỳ subscription (0 = không được).</summary>
+    public int PersonalSetPerMonth { get; set; }
+
     public static SubscriptionPlanLimits HrFree() => new()
     {
         GenerateCooldownHours = 24,
@@ -87,7 +93,9 @@ public class SubscriptionPlanLimits
         CanPersistHrRecommendation = false,
         FeedbackOnlyOnVisible = false,
         CanDetailedAiFeedback = false,
-        FreeTeaserFeedbackCount = 1
+        FreeTeaserFeedbackCount = 1,
+        CanGeneratePersonalSet = false,
+        PersonalSetPerMonth = 0
     };
 
     public static SubscriptionPlanLimits CandidatePremium() => new()
@@ -102,6 +110,8 @@ public class SubscriptionPlanLimits
         CanPersistHrRecommendation = true,
         FeedbackOnlyOnVisible = false,
         CanDetailedAiFeedback = true,
-        FreeTeaserFeedbackCount = 0
+        FreeTeaserFeedbackCount = 0,
+        CanGeneratePersonalSet = true,
+        PersonalSetPerMonth = 10
     };
 }

@@ -131,6 +131,18 @@ namespace InfrastructureLayer.Migrations
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
 
+                    b.Property<string>("Location")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("MeetingLink")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<string>("MeetingMode")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
                     b.Property<string>("Message")
                         .HasMaxLength(2000)
                         .HasColumnType("character varying(2000)");
@@ -145,6 +157,9 @@ namespace InfrastructureLayer.Migrations
                         .HasMaxLength(2000)
                         .HasColumnType("character varying(2000)");
 
+                    b.Property<DateTime?>("ScheduledAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<string>("SharedPhoneNumber")
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)");
@@ -153,6 +168,10 @@ namespace InfrastructureLayer.Migrations
                         .IsRequired()
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)");
+
+                    b.Property<string>("TimeZoneId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
 
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
@@ -350,6 +369,9 @@ namespace InfrastructureLayer.Migrations
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<DateTime?>("ViewedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.HasKey("Id");
 
                     b.HasIndex("PracticeSessionId");
@@ -509,6 +531,10 @@ namespace InfrastructureLayer.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
                         .HasDefaultValue(false);
+
+                    b.Property<string>("InviteMessageTemplate")
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
 
                     b.Property<string>("JobTitle")
                         .HasMaxLength(150)
@@ -844,6 +870,13 @@ namespace InfrastructureLayer.Migrations
                         .HasColumnType("boolean")
                         .HasDefaultValue(false);
 
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("Marketplace");
+
                     b.Property<string>("JobDescription")
                         .IsRequired()
                         .HasColumnType("text");
@@ -892,6 +925,8 @@ namespace InfrastructureLayer.Migrations
 
                     b.HasIndex("OwnerId");
 
+                    b.HasIndex("Kind", "Status", "IsActive");
+
                     b.HasIndex("SourceJobId")
                         .IsUnique()
                         .HasFilter("\"SourceJobId\" IS NOT NULL");
@@ -907,6 +942,62 @@ namespace InfrastructureLayer.Migrations
                     b.HasIndex("IsPinned", "PinnedAt");
 
                     b.ToTable("tbl_question_sets", (string)null);
+                });
+
+            modelBuilder.Entity("DomainLayer.Entities.CandidatePersonalSetJob", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("CandidateUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("CvSkillsJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<string>("ErrorMessage")
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
+
+                    b.Property<string>("GapSkillsJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("JobDescription")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("PlanJson")
+                        .HasColumnType("jsonb");
+
+                    b.Property<Guid?>("QuestionSetId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CandidateUserId");
+
+                    b.HasIndex("QuestionSetId");
+
+                    b.HasIndex("Status");
+
+                    b.ToTable("tbl_candidate_personal_set_jobs", (string)null);
                 });
 
             modelBuilder.Entity("DomainLayer.Entities.QuestionSetBookmark", b =>
@@ -976,6 +1067,44 @@ namespace InfrastructureLayer.Migrations
                         .IsUnique();
 
                     b.ToTable("tbl_question_set_feedbacks", (string)null);
+                });
+
+            modelBuilder.Entity("DomainLayer.Entities.QuestionSetJdFitReview", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ContentHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<Guid>("QuestionSetId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ReviewJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<DateTime>("ReviewedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("QuestionSetId")
+                        .IsUnique();
+
+                    b.ToTable("tbl_question_set_jd_fit_reviews", (string)null);
                 });
 
             modelBuilder.Entity("DomainLayer.Entities.QuestionSetQuestion", b =>
@@ -1231,7 +1360,7 @@ namespace InfrastructureLayer.Migrations
                             CreatedAt = new DateTime(2026, 7, 30, 0, 0, 0, 0, DateTimeKind.Utc),
                             Currency = "VND",
                             IsActive = true,
-                            LimitsJson = "{\"generateCooldownHours\":0,\"generateUnlimited\":false,\"planRegeneratePerDraft\":0,\"canExport\":false,\"askAiPerMonth\":0,\"canPublish\":false,\"freeVisiblePercent\":100,\"canPersistHrRecommendation\":false,\"feedbackOnlyOnVisible\":false,\"canDetailedAiFeedback\":false,\"freeTeaserFeedbackCount\":1}",
+                            LimitsJson = "{\"generateCooldownHours\":0,\"generateUnlimited\":false,\"planRegeneratePerDraft\":0,\"canExport\":false,\"askAiPerMonth\":0,\"canPublish\":false,\"freeVisiblePercent\":100,\"canPersistHrRecommendation\":false,\"feedbackOnlyOnVisible\":false,\"canDetailedAiFeedback\":false,\"freeTeaserFeedbackCount\":1,\"canGeneratePersonalSet\":false,\"personalSetPerMonth\":0}",
                             Name = "Candidate Free",
                             PriceMonthly = 0m
                         },
@@ -1243,7 +1372,7 @@ namespace InfrastructureLayer.Migrations
                             CreatedAt = new DateTime(2026, 7, 30, 0, 0, 0, 0, DateTimeKind.Utc),
                             Currency = "VND",
                             IsActive = true,
-                            LimitsJson = "{\"generateCooldownHours\":0,\"generateUnlimited\":false,\"planRegeneratePerDraft\":0,\"canExport\":false,\"askAiPerMonth\":0,\"canPublish\":false,\"freeVisiblePercent\":100,\"canPersistHrRecommendation\":true,\"feedbackOnlyOnVisible\":false,\"canDetailedAiFeedback\":true,\"freeTeaserFeedbackCount\":0}",
+                            LimitsJson = "{\"generateCooldownHours\":0,\"generateUnlimited\":false,\"planRegeneratePerDraft\":0,\"canExport\":false,\"askAiPerMonth\":0,\"canPublish\":false,\"freeVisiblePercent\":100,\"canPersistHrRecommendation\":true,\"feedbackOnlyOnVisible\":false,\"canDetailedAiFeedback\":true,\"freeTeaserFeedbackCount\":0,\"canGeneratePersonalSet\":true,\"personalSetPerMonth\":10}",
                             Name = "Candidate Premium",
                             PriceMonthly = 149000m
                         });
@@ -2652,6 +2781,17 @@ namespace InfrastructureLayer.Migrations
                     b.Navigation("QuestionSet");
                 });
 
+            modelBuilder.Entity("DomainLayer.Entities.QuestionSetJdFitReview", b =>
+                {
+                    b.HasOne("DomainLayer.Entities.QuestionSet", "QuestionSet")
+                        .WithOne("JdFitReview")
+                        .HasForeignKey("DomainLayer.Entities.QuestionSetJdFitReview", "QuestionSetId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("QuestionSet");
+                });
+
             modelBuilder.Entity("DomainLayer.Entities.QuestionSetQuestion", b =>
                 {
                     b.HasOne("DomainLayer.Entities.QuestionSet", "QuestionSet")
@@ -3020,8 +3160,20 @@ namespace InfrastructureLayer.Migrations
                     b.Navigation("Chunks");
                 });
 
+            modelBuilder.Entity("DomainLayer.Entities.CandidatePersonalSetJob", b =>
+                {
+                    b.HasOne("DomainLayer.Entities.QuestionSet", "QuestionSet")
+                        .WithMany()
+                        .HasForeignKey("QuestionSetId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("QuestionSet");
+                });
+
             modelBuilder.Entity("DomainLayer.Entities.QuestionSet", b =>
                 {
+                    b.Navigation("JdFitReview");
+
                     b.Navigation("Questions");
                 });
 

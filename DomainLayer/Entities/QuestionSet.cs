@@ -16,6 +16,9 @@ public class QuestionSet : BaseEntity
     public Guid? SourceRunId { get; set; }
 
     public string Status { get; set; } = Constants.QuestionSetStatus.Draft;
+
+    /// <summary>Marketplace = bộ HR publish; Personal = bộ Candidate sinh từ CV+JD, không lên marketplace.</summary>
+    public string Kind { get; set; } = Constants.QuestionSetKind.Marketplace;
     public string? Title { get; set; }
     public string JobDescription { get; set; } = string.Empty;
     public string? HrNote { get; set; }
@@ -37,4 +40,5 @@ public class QuestionSet : BaseEntity
     public InterviewPlan? SourcePlan { get; set; }
     public QuestionGenerationRun? SourceRun { get; set; }
     public ICollection<QuestionSetQuestion> Questions { get; set; } = new List<QuestionSetQuestion>();
+    public QuestionSetJdFitReview? JdFitReview { get; set; }
 }
