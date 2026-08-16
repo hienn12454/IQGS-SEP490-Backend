@@ -19,4 +19,7 @@ public class HRProfile : BaseEntity
 
     /// <summary>Admin xác minh người dùng thực sự thuộc công ty (AC-07 SCRUM-147).</summary>
     public bool IsCompanyVerified { get; set; } = false;
+
+    /// <summary>Template lời mời — placeholder {{name}} {{title}} {{score}}.</summary>
+    public string? InviteMessageTemplate { get; set; }
 }

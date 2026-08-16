@@ -24,5 +24,11 @@ public class CandidateInvitation : BaseEntity
     /// <summary>SĐT candidate chủ động chia sẻ khi ACCEPTED (candidate tự chọn có nhập hay không) — null nếu chưa phản hồi/từ chối hoặc không nhập.</summary>
     public string? SharedPhoneNumber { get; set; }
 
+    public DateTime? ScheduledAtUtc { get; set; }
+    public string? TimeZoneId { get; set; }
+    public string? MeetingMode { get; set; }
+    public string? MeetingLink { get; set; }
+    public string? Location { get; set; }
+
     public CandidateRecommendation Recommendation { get; set; } = null!;
 }

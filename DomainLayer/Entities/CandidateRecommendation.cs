@@ -21,6 +21,9 @@ public class CandidateRecommendation : BaseEntity
 
     public string Status { get; set; } = Constants.CandidateRecommendationStatus.New;
 
+    /// <summary>Lần HR mở chi tiết lần đầu — null = chưa xem. Không đổi Status.</summary>
+    public DateTime? ViewedAt { get; set; }
+
     public QuestionSet QuestionSet { get; set; } = null!;
     public PracticeSession PracticeSession { get; set; } = null!;
 }
