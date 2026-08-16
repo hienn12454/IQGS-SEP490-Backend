@@ -154,6 +154,32 @@ public class RagService : IRagService
         return result;
     }
 
+    public async Task<GenerateQuestionsFromPlanResult> GenerateQuestionsAsync(
+        GeneratePlanRequest request, CancellationToken ct = default)
+    {
+        HttpResponseMessage response;
+        try
+        {
+            response = await _httpClient.PostAsJsonAsync("/internal/rag/generate-questions", request, JsonOptions, ct);
+        }
+        catch (HttpRequestException ex)
+        {
+            throw CreateRagUnavailableException(ex);
+        }
+        catch (TaskCanceledException ex) when (!ct.IsCancellationRequested)
+        {
+            throw CreateRagUnavailableException(ex);
+        }
+
+        if (!response.IsSuccessStatusCode)
+            throw await BuildRagExceptionAsync(response, ct);
+
+        var result = await response.Content.ReadFromJsonAsync<GenerateQuestionsFromPlanResult>(JsonOptions, ct);
+        if (result is null || !result.Success)
+            throw new ServerFailureException(result?.Error ?? "RAG generate-questions thất bại.");
+        return result;
+    }
+
     public Task<RagAsyncAcceptedResult> EnqueueGeneratePlanAsync(
         Guid jobId, GeneratePlanRequest request, CancellationToken ct = default)
     {
@@ -196,6 +222,60 @@ public class RagService : IRagService
         var result = await response.Content.ReadFromJsonAsync<GenerateQuestionsFromPlanResult>(JsonOptions, ct);
         if (result is null || !result.Success)
             throw new ServerFailureException(result?.Error ?? "RAG generate-questions-from-plan thất bại.");
+        return result;
+    }
+
+    public async Task<GeneratePlanResult> GenerateCandidatePlanAsync(
+        GeneratePlanRequest request, CancellationToken ct = default)
+    {
+        HttpResponseMessage response;
+        try
+        {
+            response = await _httpClient.PostAsJsonAsync(
+                "/internal/rag/candidate/generate-plan", request, JsonOptions, ct);
+        }
+        catch (HttpRequestException ex)
+        {
+            throw CreateRagUnavailableException(ex);
+        }
+        catch (TaskCanceledException ex) when (!ct.IsCancellationRequested)
+        {
+            throw CreateRagUnavailableException(ex);
+        }
+
+        if (!response.IsSuccessStatusCode)
+            throw await BuildRagExceptionAsync(response, ct);
+
+        var result = await response.Content.ReadFromJsonAsync<GeneratePlanResult>(JsonOptions, ct);
+        if (result is null || !result.Success)
+            throw BuildPlanFailureException(result);
+        return result;
+    }
+
+    public async Task<GenerateQuestionsFromPlanResult> GenerateCandidateQuestionsFromPlanAsync(
+        GenerateQuestionsFromPlanRequest request, CancellationToken ct = default)
+    {
+        HttpResponseMessage response;
+        try
+        {
+            response = await _httpClient.PostAsJsonAsync(
+                "/internal/rag/candidate/generate-questions-from-plan", request, JsonOptions, ct);
+        }
+        catch (HttpRequestException ex)
+        {
+            throw CreateRagUnavailableException(ex);
+        }
+        catch (TaskCanceledException ex) when (!ct.IsCancellationRequested)
+        {
+            throw CreateRagUnavailableException(ex);
+        }
+
+        if (!response.IsSuccessStatusCode)
+            throw await BuildRagExceptionAsync(response, ct);
+
+        var result = await response.Content.ReadFromJsonAsync<GenerateQuestionsFromPlanResult>(JsonOptions, ct);
+        if (result is null || !result.Success)
+            throw new ServerFailureException(result?.Error ?? "RAG candidate generate-questions-from-plan thất bại.");
         return result;
     }
 
@@ -268,6 +348,34 @@ public class RagService : IRagService
         {
             Success = false,
             Error = "RAG evaluate-answer trả về response rỗng."
+        };
+    }
+
+    public async Task<EvaluateQuestionSetResult> EvaluateQuestionSetAsync(
+        EvaluateQuestionSetRequest request, CancellationToken ct = default)
+    {
+        HttpResponseMessage response;
+        try
+        {
+            response = await _httpClient.PostAsJsonAsync("/internal/rag/evaluate-question-set", request, JsonOptions, ct);
+        }
+        catch (HttpRequestException ex)
+        {
+            throw CreateRagUnavailableException(ex);
+        }
+        catch (TaskCanceledException ex) when (!ct.IsCancellationRequested)
+        {
+            throw CreateRagUnavailableException(ex);
+        }
+
+        if (!response.IsSuccessStatusCode)
+            throw await BuildRagExceptionAsync(response, ct);
+
+        var result = await response.Content.ReadFromJsonAsync<EvaluateQuestionSetResult>(JsonOptions, ct);
+        return result ?? new EvaluateQuestionSetResult
+        {
+            Success = false,
+            Error = "RAG evaluate-question-set trả về response rỗng."
         };
     }
 

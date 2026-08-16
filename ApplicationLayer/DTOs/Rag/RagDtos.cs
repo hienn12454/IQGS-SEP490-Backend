@@ -104,6 +104,10 @@ public class GeneratePlanRequest
     public string? Language { get; set; }
     /// <summary>SCRUM-388: KnowledgeDocumentIds Selected → filter HR retrieve.</summary>
     public List<Guid>? DocumentIds { get; set; }
+    /// <summary>coach | jd_practice — chỉ dùng endpoint Candidate RAG.</summary>
+    public string? Audience { get; set; }
+    public string? CvContext { get; set; }
+    public string? CandidateNote { get; set; }
 }
 
 public class GeneratePlanResult
@@ -126,6 +130,10 @@ public class GenerateQuestionsFromPlanRequest
     public string? HrNote { get; set; }
     /// <summary>Vietnamese | English — ngôn ngữ câu hỏi sinh ra.</summary>
     public string? Language { get; set; }
+    /// <summary>coach | jd_practice — endpoint Candidate RAG.</summary>
+    public string? Audience { get; set; }
+    public string? CvContext { get; set; }
+    public string? CandidateNote { get; set; }
 }
 
 public class RagGeneratedQuestionDto
@@ -212,4 +220,76 @@ public class PracticeSessionInsightResult
     public double? ProcessingTimeMs { get; set; }
     public string? Error { get; set; }
     public string? Detail { get; set; }
+}
+
+/// <summary>Request RAG đánh giá bộ câu hỏi so với JD — không gửi sampleAnswer.</summary>
+public class EvaluateQuestionSetItemDto
+{
+    public string? QuestionId { get; set; }
+    public int? Order { get; set; }
+    public string Question { get; set; } = string.Empty;
+    public string? QuestionType { get; set; }
+    public string? Difficulty { get; set; }
+    public string? Skill { get; set; }
+    public string? FocusArea { get; set; }
+    public string? Rationale { get; set; }
+}
+
+public class EvaluateQuestionSetRequest
+{
+    public Guid? OwnerId { get; set; }
+    public string JobDescription { get; set; } = string.Empty;
+    public string? HrNote { get; set; }
+    public string? SetTitle { get; set; }
+    public object? Plan { get; set; }
+    public List<EvaluateQuestionSetItemDto> Questions { get; set; } = new();
+}
+
+public class EvaluateQuestionSetFlagDto
+{
+    public string? QuestionId { get; set; }
+    public int? Order { get; set; }
+    public string Flag { get; set; } = string.Empty;
+    public string? NoteVi { get; set; }
+    public string? NoteEn { get; set; }
+    public List<JdFitSourceDto> Sources { get; set; } = new();
+}
+
+public class JdFitSourceDto
+{
+    public int ChunkIndex { get; set; }
+    public string Excerpt { get; set; } = string.Empty;
+}
+
+public class EvaluateQuestionSetActionDto
+{
+    public string Type { get; set; } = string.Empty;
+    public string? QuestionId { get; set; }
+    public string? ReasonVi { get; set; }
+    public string? ReasonEn { get; set; }
+}
+
+public class EvaluateQuestionSetResult
+{
+    public bool Success { get; set; }
+    public string? Verdict { get; set; }
+    public string? SummaryVi { get; set; }
+    public string? SummaryEn { get; set; }
+    public List<EvaluateQuestionSetFlagDto> QuestionFlags { get; set; } = new();
+    public List<string> MissingTopics { get; set; } = new();
+    public List<EvaluateQuestionSetActionDto> SuggestedActions { get; set; } = new();
+    public List<JdFitSourceDto> JdSources { get; set; } = new();
+    public double? ProcessingTimeMs { get; set; }
+    public string? Error { get; set; }
+    public string? Detail { get; set; }
+}
+
+/// <summary>GET cache / POST sau khi upsert — không gọi RAG khi GET.</summary>
+public class JdFitReviewResponse
+{
+    public EvaluateQuestionSetResult? Review { get; set; }
+    public DateTime? ReviewedAt { get; set; }
+    public string? ContentHash { get; set; }
+    public bool IsStale { get; set; }
+    public bool HasJobDescription { get; set; }
 }
