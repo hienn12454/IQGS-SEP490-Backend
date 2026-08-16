@@ -1,6 +1,7 @@
 using System.Text.Json;
 using ApplicationLayer.DTOs.Candidate;
 using ApplicationLayer.DTOs.Recommendation;
+using ApplicationLayer.Helpers;
 using ApplicationLayer.Interfaces.Repositories;
 using ApplicationLayer.Interfaces.Services;
 using ApplicationLayer.Services.Mapping;
@@ -45,6 +46,8 @@ public class RecommendationService : IRecommendationService
     private readonly ICandidateInvitationRepository _invitationRepository;
     private readonly ICandidateProfileRepository _profileRepository;
     private readonly IPracticeSessionRepository _practiceSessionRepository;
+    private readonly IQuestionSetRepository _questionSetRepository;
+    private readonly IAiFeedbackRepository _aiFeedbackRepository;
     private readonly IHrCompanyInfoService _hrCompanyInfoService;
     private readonly IBlobStorageService _blobStorage;
     private readonly BlobStorageSettings _blobSettings;
@@ -55,6 +58,8 @@ public class RecommendationService : IRecommendationService
         ICandidateInvitationRepository invitationRepository,
         ICandidateProfileRepository profileRepository,
         IPracticeSessionRepository practiceSessionRepository,
+        IQuestionSetRepository questionSetRepository,
+        IAiFeedbackRepository aiFeedbackRepository,
         IHrCompanyInfoService hrCompanyInfoService,
         IBlobStorageService blobStorage,
         IOptions<BlobStorageSettings> blobSettings,
@@ -64,6 +69,8 @@ public class RecommendationService : IRecommendationService
         _invitationRepository = invitationRepository;
         _profileRepository = profileRepository;
         _practiceSessionRepository = practiceSessionRepository;
+        _questionSetRepository = questionSetRepository;
+        _aiFeedbackRepository = aiFeedbackRepository;
         _hrCompanyInfoService = hrCompanyInfoService;
         _blobStorage = blobStorage;
         _blobSettings = blobSettings.Value;
@@ -88,6 +95,8 @@ public class RecommendationService : IRecommendationService
 
         var questionSet = await _recommendationRepository.GetPublishedQuestionSetAsync(session.QuestionSetId);
         if (questionSet is null)
+            return;
+        if (questionSet.Kind == QuestionSetKind.Personal)
             return;
 
         var existing = await _recommendationRepository.GetByCandidateAndSetAsync(
@@ -124,15 +133,29 @@ public class RecommendationService : IRecommendationService
         var (status, minScore, sortBy, sortDir) = ValidateListQuery(query);
 
         var (rows, totalCount) = await _recommendationRepository.ListByHrAsync(
-            hrUserId, page, pageSize, status, query.QuestionSetId, minScore, sortBy, sortDir);
+            hrUserId, page, pageSize, status, query.QuestionSetId, minScore, sortBy, sortDir, query.Unviewed);
 
         // Cùng 1 hrUserId -> cùng 1 công ty cho mọi dòng trong list — chỉ cần lookup 1 lần, tránh N+1 query.
         // Dùng làm fallback title khi HR chưa đặt tên riêng cho bộ câu hỏi, tránh trả về chuỗi rỗng.
         var (companyName, _) = await _hrCompanyInfoService.GetByHrUserIdAsync(hrUserId);
 
+        var items = rows.Select(r => MapToListItem(r, companyName)).ToList();
+        var setIds = items.Select(i => i.QuestionSetId).Distinct().ToList();
+        var jdBySet = new Dictionary<Guid, List<string>>();
+        foreach (var setId in setIds)
+            jdBySet[setId] = await LoadJdSkillsAsync(setId);
+
+        for (var i = 0; i < items.Count; i++)
+        {
+            var row = rows[i];
+            var (cvSkills, _) = ParseCvEvaluation(row.CvEvaluationJson);
+            var fit = SkillFitCalculator.Compute(jdBySet[items[i].QuestionSetId], cvSkills.Concat(row.TechStack ?? []));
+            items[i].FitPercent = fit.FitPercent;
+        }
+
         return new PagedResultDto<HrRecommendationListItemDto>
         {
-            Items = rows.Select(r => MapToListItem(r, companyName)).ToList(),
+            Items = items,
             TotalCount = totalCount,
             Page = page,
             PageSize = pageSize
@@ -174,6 +197,7 @@ public class RecommendationService : IRecommendationService
         dto.AverageScore = stats.AverageScore;
         dto.BestScore = stats.BestScore;
         dto.HasFastSession = hasFastSession;
+        await AttachFitAndSkillsAsync(dto, row);
         return dto;
     }
 
@@ -251,6 +275,7 @@ public class RecommendationService : IRecommendationService
             CandidateUserId = recommendation.CandidateUserId,
             Message = string.IsNullOrWhiteSpace(dto.Message) ? null : dto.Message.Trim()
         };
+        ApplyInviteSchedule(invitation, dto);
         await _invitationRepository.AddAsync(invitation);
 
         recommendation.Status = CandidateRecommendationStatus.Invited;
@@ -263,6 +288,132 @@ public class RecommendationService : IRecommendationService
             InvitationId = invitation.Id,
             RecommendationStatus = recommendation.Status,
             InvitationStatus = invitation.Status
+        };
+    }
+
+    public async Task<InviteCandidateResponseDto> InviteFromPractitionerAsync(
+        Guid questionSetId, Guid candidateUserId, Guid hrUserId, InviteCandidateRequestDto dto)
+    {
+        var ownerId = await _questionSetRepository.GetOwnerIdAsync(questionSetId)
+            ?? throw new NotFoundException("Bộ câu hỏi không tồn tại.");
+        if (ownerId != hrUserId)
+            throw new ForbiddenException("Bạn không có quyền mời trên bộ câu hỏi này.");
+
+        var profile = await _profileRepository.GetByUserIdAsync(candidateUserId)
+            ?? throw new NotFoundException("Không tìm thấy hồ sơ ứng viên.");
+        if (!profile.AllowRecruiterRecommendation)
+            throw new ForbiddenException("Ứng viên không cho phép HR xem hồ sơ.");
+
+        if (!await _practiceSessionRepository.HasAnySessionOnSetAsync(candidateUserId, questionSetId))
+            throw new BadRequestException("Ứng viên chưa luyện bộ câu hỏi này.");
+
+        var best = await _practiceSessionRepository.GetBestCompletedSessionOnSetAsync(candidateUserId, questionSetId)
+            ?? throw new BadRequestException("Ứng viên chưa hoàn thành phiên luyện tập trên bộ này.");
+
+        var existing = await _recommendationRepository.GetByCandidateAndSetAsync(candidateUserId, questionSetId);
+        if (existing is null)
+        {
+            existing = new CandidateRecommendation
+            {
+                CandidateUserId = candidateUserId,
+                QuestionSetId = questionSetId,
+                PracticeSessionId = best.Id,
+                HrOwnerId = hrUserId,
+                OverallScore = best.OverallScore ?? 0
+            };
+            await _recommendationRepository.AddAsync(existing);
+        }
+        else
+        {
+            if (best.OverallScore is double score && score > existing.OverallScore)
+            {
+                existing.OverallScore = score;
+                existing.PracticeSessionId = best.Id;
+                existing.UpdatedAt = DateTime.UtcNow;
+            }
+
+            if (existing.Status == CandidateRecommendationStatus.Dismissed)
+            {
+                existing.Status = CandidateRecommendationStatus.Shortlisted;
+                existing.UpdatedAt = DateTime.UtcNow;
+            }
+
+            await _recommendationRepository.UpdateAsync(existing);
+        }
+
+        return await InviteAsync(existing.Id, hrUserId, dto);
+    }
+
+    public async Task<RecommendationActionResponseDto> MarkViewedAsync(Guid id, Guid hrUserId)
+    {
+        var recommendation = await GetOwnedRecommendationAsync(id, hrUserId);
+        var nextViewed = RecommendationP1Rules.NextViewedAt(recommendation.ViewedAt, DateTime.UtcNow);
+        if (recommendation.ViewedAt is null)
+        {
+            recommendation.ViewedAt = nextViewed;
+            recommendation.UpdatedAt = DateTime.UtcNow;
+            await _recommendationRepository.UpdateAsync(recommendation);
+        }
+        return new RecommendationActionResponseDto { Id = recommendation.Id, Status = recommendation.Status };
+    }
+
+    public async Task<RecommendationActionResponseDto> RestoreAsync(Guid id, Guid hrUserId)
+    {
+        var recommendation = await GetOwnedRecommendationAsync(id, hrUserId);
+        RecommendationP1Rules.EnsureCanRestore(recommendation.Status);
+
+        recommendation.Status = CandidateRecommendationStatus.New;
+        recommendation.UpdatedAt = DateTime.UtcNow;
+        await _recommendationRepository.UpdateAsync(recommendation);
+        return new RecommendationActionResponseDto { Id = recommendation.Id, Status = recommendation.Status };
+    }
+
+    public async Task<HrRecommendationCompareResponseDto> CompareAsync(Guid hrUserId, IReadOnlyList<Guid> ids)
+    {
+        var distinct = RecommendationP1Rules.NormalizeCompareIds(ids);
+
+        var rows = await _recommendationRepository.GetDetailRowsByIdsForHrAsync(distinct, hrUserId);
+        if (rows.Count != distinct.Count)
+            throw new ForbiddenException("Một hoặc nhiều recommendation không thuộc HR hiện tại.");
+
+        var setId = RecommendationP1Rules.EnsureSameQuestionSet(rows.Select(r => r.QuestionSetId));
+
+        var (companyName, _) = await _hrCompanyInfoService.GetByHrUserIdAsync(hrUserId);
+        var title = PublishedQuestionSetMapper.ResolveTitle(rows[0].QuestionSetTitle, companyName ?? string.Empty);
+        var jdSkills = await LoadJdSkillsAsync(setId);
+        var items = new List<HrRecommendationCompareItemDto>();
+        foreach (var row in rows.OrderByDescending(r => r.OverallScore))
+        {
+            var (cvSkills, _) = ParseCvEvaluation(row.CvEvaluationJson);
+            var cvUnion = cvSkills.Concat(row.TechStack ?? Array.Empty<string>());
+            var fit = SkillFitCalculator.Compute(jdSkills, cvUnion);
+            var skillScores = await _aiFeedbackRepository.GetSkillAveragesBySessionAsync(row.PracticeSessionId);
+            items.Add(new HrRecommendationCompareItemDto
+            {
+                Id = row.Id,
+                CandidateUserId = row.CandidateUserId,
+                CandidateName = row.CandidateName,
+                CandidateEmail = row.CandidateEmail,
+                TargetRole = row.TargetRole,
+                OverallScore = row.OverallScore,
+                Status = row.Status,
+                FitPercent = fit.FitPercent,
+                CvSkills = cvSkills,
+                JdSkills = jdSkills,
+                MatchedSkills = fit.Matched.ToList(),
+                MissingOnCv = fit.MissingOnCv.ToList(),
+                SkillScores = skillScores.ToList(),
+                InvitationStatus = row.InvitationStatus,
+                LatestOfferStatus = row.LatestOfferStatus,
+                ViewedAt = row.ViewedAt
+            });
+        }
+
+        return new HrRecommendationCompareResponseDto
+        {
+            QuestionSetId = setId,
+            QuestionSetTitle = title,
+            Items = items
         };
     }
 
@@ -315,7 +466,13 @@ public class RecommendationService : IRecommendationService
             InvitationSharedPhoneNumber = r.InvitationSharedPhoneNumber,
             RecommendedAt = r.RecommendedAt,
             LatestOfferStatus = r.LatestOfferStatus,
-            OfferSentAt = r.OfferSentAt
+            OfferSentAt = r.OfferSentAt,
+            ViewedAt = r.ViewedAt,
+            InvitationScheduledAtUtc = r.InvitationScheduledAtUtc,
+            InvitationTimeZoneId = r.InvitationTimeZoneId,
+            InvitationMeetingMode = r.InvitationMeetingMode,
+            InvitationMeetingLink = r.InvitationMeetingLink,
+            InvitationLocation = r.InvitationLocation
         };
     }
 
@@ -339,6 +496,13 @@ public class RecommendationService : IRecommendationService
         dest.RecommendedAt = src.RecommendedAt;
         dest.LatestOfferStatus = src.LatestOfferStatus;
         dest.OfferSentAt = src.OfferSentAt;
+        dest.ViewedAt = src.ViewedAt;
+        dest.FitPercent = src.FitPercent;
+        dest.InvitationScheduledAtUtc = src.InvitationScheduledAtUtc;
+        dest.InvitationTimeZoneId = src.InvitationTimeZoneId;
+        dest.InvitationMeetingMode = src.InvitationMeetingMode;
+        dest.InvitationMeetingLink = src.InvitationMeetingLink;
+        dest.InvitationLocation = src.InvitationLocation;
     }
 
     private static (List<string> Skills, string? Summary) ParseCvEvaluation(string? evaluationJson)
@@ -399,5 +563,42 @@ public class RecommendationService : IRecommendationService
         if (recommendation.HrOwnerId != hrUserId)
             throw new ForbiddenException("Bạn không có quyền thao tác recommendation này.");
         return recommendation;
+    }
+
+    private async Task AttachFitAndSkillsAsync(HrRecommendationDetailDto dto, HrRecommendationRow row)
+    {
+        var jdSkills = await LoadJdSkillsAsync(row.QuestionSetId);
+        var cvUnion = dto.CvSkills.Concat(row.TechStack ?? Array.Empty<string>());
+        var fit = SkillFitCalculator.Compute(jdSkills, cvUnion);
+        dto.JdSkills = jdSkills;
+        dto.FitPercent = fit.FitPercent;
+        dto.MatchedSkills = fit.Matched.ToList();
+        dto.MissingOnCv = fit.MissingOnCv.ToList();
+        dto.ExtraOnCv = fit.ExtraOnCv.ToList();
+        dto.SkillScores = (await _aiFeedbackRepository.GetSkillAveragesBySessionAsync(row.PracticeSessionId)).ToList();
+    }
+
+    private async Task<List<string>> LoadJdSkillsAsync(Guid questionSetId)
+    {
+        var questions = await _questionSetRepository.GetQuestionsByQuestionSetIdAsync(questionSetId);
+        return questions
+            .Select(q => q.Skill)
+            .Where(s => !string.IsNullOrWhiteSpace(s))
+            .Select(s => s!.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(s => s)
+            .ToList();
+    }
+
+    private static void ApplyInviteSchedule(CandidateInvitation invitation, InviteCandidateRequestDto dto)
+    {
+        RecommendationP1Rules.EnsureInviteSchedule(dto.ScheduledAtUtc, dto.TimeZoneId, dto.MeetingMode, dto.MeetingLink, dto.Location);
+        var mode = RecommendationP1Rules.NormalizeMeetingMode(dto.MeetingMode);
+
+        invitation.ScheduledAtUtc = dto.ScheduledAtUtc;
+        invitation.TimeZoneId = string.IsNullOrWhiteSpace(dto.TimeZoneId) ? null : dto.TimeZoneId.Trim();
+        invitation.MeetingMode = mode;
+        invitation.MeetingLink = string.IsNullOrWhiteSpace(dto.MeetingLink) ? null : dto.MeetingLink.Trim();
+        invitation.Location = string.IsNullOrWhiteSpace(dto.Location) ? null : dto.Location.Trim();
     }
 }

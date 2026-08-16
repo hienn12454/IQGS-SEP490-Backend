@@ -39,4 +39,7 @@ public class UpdateHRProfileDto
 
     [MaxLength(1000, ErrorMessage = "Giới thiệu bản thân không được vượt quá 1000 ký tự.")]
     public string? Bio { get; set; }
+
+    [MaxLength(4000, ErrorMessage = "Template lời mời không được vượt quá 4000 ký tự.")]
+    public string? InviteMessageTemplate { get; set; }
 }

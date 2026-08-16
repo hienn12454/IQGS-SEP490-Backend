@@ -16,4 +16,6 @@ public interface ICandidateInvitationRepository
 
     /// <summary>Danh sách lời mời của candidate kèm tên/logo công ty và tên bộ câu hỏi, mới nhất trước.</summary>
     Task<IReadOnlyList<CandidateInvitationRow>> ListByCandidateAsync(Guid candidateUserId);
+
+    Task<(int Pending, int Accepted)> CountStatusByHrAsync(Guid hrUserId);
 }

@@ -32,6 +32,18 @@ public class HrRecommendationsController : ControllerBase
         return SuccessResp.Ok(result);
     }
 
+    [HttpGet("compare")]
+    public async Task<IActionResult> Compare([FromQuery] string? ids)
+    {
+        var parsed = (ids ?? "")
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(s => Guid.TryParse(s, out var g) ? g : Guid.Empty)
+            .Where(g => g != Guid.Empty)
+            .ToList();
+        var result = await _service.CompareAsync(GetCurrentUserId(), parsed);
+        return SuccessResp.Ok(result);
+    }
+
     /// <summary>Chi tiết 1 recommendation thuộc HR hiện tại — kèm profile/CV/social/practice stats (SCRUM-377). 404 nếu không tồn tại; 403 nếu thuộc HR khác.</summary>
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetById(Guid id)
@@ -74,6 +86,20 @@ public class HrRecommendationsController : ControllerBase
     {
         var result = await _service.InviteAsync(id, GetCurrentUserId(), dto);
         return SuccessResp.Created(result);
+    }
+
+    [HttpPost("{id:guid}/view")]
+    public async Task<IActionResult> MarkViewed(Guid id)
+    {
+        var result = await _service.MarkViewedAsync(id, GetCurrentUserId());
+        return SuccessResp.Ok(result);
+    }
+
+    [HttpPost("{id:guid}/restore")]
+    public async Task<IActionResult> Restore(Guid id)
+    {
+        var result = await _service.RestoreAsync(id, GetCurrentUserId());
+        return SuccessResp.Ok(result);
     }
 
     /// <summary>Gửi email đề nghị phỏng vấn (offline) cho candidate từ recommendation — nội dung tự do HR nhập,

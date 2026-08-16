@@ -22,6 +22,9 @@ public class HrRecommendationListQueryDto
 
     /// <summary>Hướng sắp xếp: desc (default) | asc.</summary>
     public string SortDir { get; set; } = "desc";
+
+    /// <summary>true = chỉ NEW chưa mở chi tiết (ViewedAt null).</summary>
+    public bool Unviewed { get; set; }
 }
 
 /// <summary>1 candidate được đề xuất trên dashboard HR.</summary>
@@ -57,6 +60,15 @@ public class HrRecommendationListItemDto
     public string? InvitationSharedPhoneNumber { get; set; }
 
     public DateTime RecommendedAt { get; set; }
+
+    public DateTime? ViewedAt { get; set; }
+    public double? FitPercent { get; set; }
+
+    public DateTime? InvitationScheduledAtUtc { get; set; }
+    public string? InvitationTimeZoneId { get; set; }
+    public string? InvitationMeetingMode { get; set; }
+    public string? InvitationMeetingLink { get; set; }
+    public string? InvitationLocation { get; set; }
 }
 
 /// <summary>
@@ -84,6 +96,12 @@ public class HrRecommendationDetailDto : HrRecommendationListItemDto
 
     /// <summary>Có ít nhất 1 phiên hoàn thành ≤ 35 phút — dùng FE render badge Speed Demon.</summary>
     public bool HasFastSession { get; set; }
+
+    public List<string> JdSkills { get; set; } = new();
+    public List<string> MatchedSkills { get; set; } = new();
+    public List<string> MissingOnCv { get; set; } = new();
+    public List<string> ExtraOnCv { get; set; } = new();
+    public List<SkillScoreDto> SkillScores { get; set; } = new();
 }
 
 /// <summary>Response GET /api/hr/recommendations/{id}/cv — SAS tạm thời để HR tải CV (SCRUM-377).</summary>
@@ -129,6 +147,13 @@ public class HrRecommendationRow
     public string? CvContentType { get; set; }
     public DateTime? CvUploadedAt { get; set; }
     public string? CvEvaluationJson { get; set; }
+    public Guid PracticeSessionId { get; set; }
+    public DateTime? ViewedAt { get; set; }
+    public DateTime? InvitationScheduledAtUtc { get; set; }
+    public string? InvitationTimeZoneId { get; set; }
+    public string? InvitationMeetingMode { get; set; }
+    public string? InvitationMeetingLink { get; set; }
+    public string? InvitationLocation { get; set; }
 }
 
 public class RecommendationActionResponseDto
@@ -142,6 +167,20 @@ public class InviteCandidateRequestDto
     /// <summary>Lời nhắn gửi kèm lời mời (tùy chọn, tối đa 2000 ký tự).</summary>
     [MaxLength(2000, ErrorMessage = "Lời nhắn tối đa 2000 ký tự.")]
     public string? Message { get; set; }
+
+    public DateTime? ScheduledAtUtc { get; set; }
+
+    [MaxLength(100)]
+    public string? TimeZoneId { get; set; }
+
+    [MaxLength(20)]
+    public string? MeetingMode { get; set; }
+
+    [MaxLength(2000)]
+    public string? MeetingLink { get; set; }
+
+    [MaxLength(500)]
+    public string? Location { get; set; }
 }
 
 public class InviteCandidateResponseDto

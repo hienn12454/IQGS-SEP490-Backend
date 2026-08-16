@@ -13,6 +13,11 @@ public class CandidateInvitationListItemDto
     public string Status { get; set; } = string.Empty;
     public DateTime InvitedAt { get; set; }
     public DateTime? RespondedAt { get; set; }
+    public DateTime? ScheduledAtUtc { get; set; }
+    public string? TimeZoneId { get; set; }
+    public string? MeetingMode { get; set; }
+    public string? MeetingLink { get; set; }
+    public string? Location { get; set; }
 }
 
 /// <summary>Read-model 1 dòng invitation join Companies/question_sets — dùng nội bộ bởi repository.</summary>
@@ -27,6 +32,11 @@ public class CandidateInvitationRow
     public string Status { get; set; } = string.Empty;
     public DateTime InvitedAt { get; set; }
     public DateTime? RespondedAt { get; set; }
+    public DateTime? ScheduledAtUtc { get; set; }
+    public string? TimeZoneId { get; set; }
+    public string? MeetingMode { get; set; }
+    public string? MeetingLink { get; set; }
+    public string? Location { get; set; }
 }
 
 public class InvitationActionResponseDto

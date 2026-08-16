@@ -17,15 +17,21 @@ public class HrDashboardService : IHrDashboardService
 
     private readonly IHrDashboardStudioStatsRepository _studioStats;
     private readonly ICandidateRecommendationRepository _recommendationRepository;
+    private readonly ICandidateInvitationRepository _invitationRepository;
+    private readonly IPracticeSessionRepository _practiceSessionRepository;
     private readonly ISubscriptionService _subscriptionService;
 
     public HrDashboardService(
         IHrDashboardStudioStatsRepository studioStats,
         ICandidateRecommendationRepository recommendationRepository,
+        ICandidateInvitationRepository invitationRepository,
+        IPracticeSessionRepository practiceSessionRepository,
         ISubscriptionService subscriptionService)
     {
         _studioStats = studioStats;
         _recommendationRepository = recommendationRepository;
+        _invitationRepository = invitationRepository;
+        _practiceSessionRepository = practiceSessionRepository;
         _subscriptionService = subscriptionService;
     }
 
@@ -136,7 +142,24 @@ public class HrDashboardService : IHrDashboardService
                 WeekOverWeekDelta = weekOverWeekDelta
             },
             TopRecommendations = topRecommendations,
-            Subscription = await ResolveSubscriptionDtoAsync(hrUserId)
+            Subscription = await ResolveSubscriptionDtoAsync(hrUserId),
+            HiringFunnel = await BuildHiringFunnelAsync(hrUserId)
+        };
+    }
+
+    private async Task<HrDashboardHiringFunnelDto> BuildHiringFunnelAsync(Guid hrUserId)
+    {
+        var rec = await _recommendationRepository.CountFunnelForHrAsync(hrUserId);
+        var (pending, accepted) = await _invitationRepository.CountStatusByHrAsync(hrUserId);
+        var practiced = await _practiceSessionRepository.CountCompletedOnHrOwnedSetsSinceAsync(
+            hrUserId, DateTime.UtcNow.AddDays(-7));
+        return new HrDashboardHiringFunnelDto
+        {
+            PracticedLast7Days = practiced,
+            NewUnviewed = rec.NewUnviewed,
+            Shortlisted = rec.Shortlisted,
+            InvitedPending = pending,
+            InvitedAccepted = accepted
         };
     }
 

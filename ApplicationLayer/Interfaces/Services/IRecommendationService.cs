@@ -26,4 +26,14 @@ public interface IRecommendationService
     Task<RecommendationActionResponseDto> DismissAsync(Guid id, Guid hrUserId);
 
     Task<InviteCandidateResponseDto> InviteAsync(Guid id, Guid hrUserId, InviteCandidateRequestDto dto);
+
+    /// <summary>
+    /// HR mời từ practitioners/talent — tạo recommendation nếu chưa có (bỏ ngưỡng 70 và paywall candidate).
+    /// </summary>
+    Task<InviteCandidateResponseDto> InviteFromPractitionerAsync(
+        Guid questionSetId, Guid candidateUserId, Guid hrUserId, InviteCandidateRequestDto dto);
+
+    Task<RecommendationActionResponseDto> MarkViewedAsync(Guid id, Guid hrUserId);
+    Task<RecommendationActionResponseDto> RestoreAsync(Guid id, Guid hrUserId);
+    Task<HrRecommendationCompareResponseDto> CompareAsync(Guid hrUserId, IReadOnlyList<Guid> ids);
 }

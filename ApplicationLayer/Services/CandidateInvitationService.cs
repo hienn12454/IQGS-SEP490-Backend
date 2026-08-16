@@ -31,7 +31,12 @@ public class CandidateInvitationService : ICandidateInvitationService
             Message = r.Message,
             Status = r.Status,
             InvitedAt = r.InvitedAt,
-            RespondedAt = r.RespondedAt
+            RespondedAt = r.RespondedAt,
+            ScheduledAtUtc = r.ScheduledAtUtc,
+            TimeZoneId = r.TimeZoneId,
+            MeetingMode = r.MeetingMode,
+            MeetingLink = r.MeetingLink,
+            Location = r.Location
         }).ToList();
     }
 

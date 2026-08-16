@@ -1,5 +1,6 @@
 using ApplicationLayer.DTOs.Candidate;
 using ApplicationLayer.Interfaces.Repositories;
+using DomainLayer.Constants;
 using DomainLayer.Entities;
 using Microsoft.EntityFrameworkCore;
 
@@ -57,7 +58,21 @@ public class CandidateInvitationRepository : ICandidateInvitationRepository
                 Message = i.Message,
                 Status = i.Status,
                 InvitedAt = i.CreatedAt,
-                RespondedAt = i.RespondedAt
+                RespondedAt = i.RespondedAt,
+                ScheduledAtUtc = i.ScheduledAtUtc,
+                TimeZoneId = i.TimeZoneId,
+                MeetingMode = i.MeetingMode,
+                MeetingLink = i.MeetingLink,
+                Location = i.Location
             })
             .ToListAsync();
+
+    public async Task<(int Pending, int Accepted)> CountStatusByHrAsync(Guid hrUserId)
+    {
+        var pending = await _context.CandidateInvitations.CountAsync(i =>
+            i.HrUserId == hrUserId && i.IsActive && i.Status == InvitationStatus.Pending);
+        var accepted = await _context.CandidateInvitations.CountAsync(i =>
+            i.HrUserId == hrUserId && i.IsActive && i.Status == InvitationStatus.Accepted);
+        return (pending, accepted);
+    }
 }

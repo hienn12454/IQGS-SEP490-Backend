@@ -64,6 +64,7 @@ public class UserService : IUserService
                 IsProfileComplete = u.IsProfileComplete,
                 Provider = u.Provider,
                 CreatedAt = u.CreatedAt,
+                AvatarUrl = string.IsNullOrWhiteSpace(u.AvatarUrl) ? null : u.AvatarUrl.Trim(),
                 PlanCode = planCode,
                 IsPremium = isPremium
             };
@@ -169,7 +170,8 @@ public class UserService : IUserService
                 PhoneNumber = dto.PhoneNumber,
                 LinkedInUrl = dto.LinkedInUrl,
                 GithubUrl = dto.GithubUrl,
-                Bio = dto.Bio
+                Bio = dto.Bio,
+                InviteMessageTemplate = dto.InviteMessageTemplate
             });
         }
         else
@@ -180,6 +182,7 @@ public class UserService : IUserService
             profile.LinkedInUrl = dto.LinkedInUrl;
             profile.GithubUrl = dto.GithubUrl;
             profile.Bio = dto.Bio;
+            profile.InviteMessageTemplate = dto.InviteMessageTemplate;
             await _hrProfileRepo.UpdateAsync(profile);
         }
 
@@ -301,6 +304,7 @@ public class UserService : IUserService
             IsEmailVerified = user.IsEmailVerified,
             IsProfileComplete = user.IsProfileComplete,
             Provider = user.Provider,
+            IsGoogleLinked = IsGoogleAccountLinked(user),
             CreatedAt = user.CreatedAt
         };
 
@@ -328,7 +332,8 @@ public class UserService : IUserService
                     LinkedInUrl = hr.LinkedInUrl,
                     GithubUrl = hr.GithubUrl,
                     Bio = hr.Bio,
-                    IsCompanyVerified = hr.IsCompanyVerified
+                    IsCompanyVerified = hr.IsCompanyVerified,
+                    InviteMessageTemplate = hr.InviteMessageTemplate
                 };
             }
         }
@@ -366,4 +371,12 @@ public class UserService : IUserService
         await _companyRepo.AddAsync(newCompany);
         return newCompany.Id;
     }
+
+    /// <summary>
+    /// Local user đã gắn GoogleId (SCRUM-405) cũng được tính là đã liên kết,
+    /// không chỉ user đăng ký thuần Google (Provider = google).
+    /// </summary>
+    private static bool IsGoogleAccountLinked(User user) =>
+        !string.IsNullOrWhiteSpace(user.GoogleId)
+        || string.Equals(user.Provider, AuthProvider.Google, StringComparison.OrdinalIgnoreCase);
 }

@@ -23,6 +23,7 @@ public class HrDashboardResponseDto
     public HrDashboardInsightsDto Insights { get; set; } = new();
     public List<HrDashboardTopRecommendationDto> TopRecommendations { get; set; } = new();
     public HrDashboardSubscriptionDto Subscription { get; set; } = new();
+    public HrDashboardHiringFunnelDto HiringFunnel { get; set; } = new();
 }
 
 public class HrDashboardKpisDto
@@ -114,4 +115,13 @@ public class HrDashboardSubscriptionDto
 {
     /// <summary>Free hoặc Premium — đọc từ Subscription thật (SCRUM-336).</summary>
     public string PlanId { get; set; } = "Free";
+}
+
+public class HrDashboardHiringFunnelDto
+{
+    public int PracticedLast7Days { get; set; }
+    public int NewUnviewed { get; set; }
+    public int Shortlisted { get; set; }
+    public int InvitedPending { get; set; }
+    public int InvitedAccepted { get; set; }
 }

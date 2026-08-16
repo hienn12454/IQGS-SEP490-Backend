@@ -48,9 +48,10 @@ public class CandidateRecommendationRepository : ICandidateRecommendationReposit
         Guid? questionSetId,
         double? minScore = null,
         string sortBy = "score",
-        string sortDir = "desc")
+        string sortDir = "desc",
+        bool unviewed = false)
     {
-        var baseQuery = BuildHrScopedQuery(hrOwnerId, status, questionSetId, minScore);
+        var baseQuery = BuildHrScopedQuery(hrOwnerId, status, questionSetId, minScore, unviewed);
         var projected = ProjectRows(baseQuery);
         projected = ApplySort(projected, sortBy, sortDir);
 
@@ -110,6 +111,8 @@ public class CandidateRecommendationRepository : ICandidateRecommendationReposit
                 CvContentType = x.p.CvContentType,
                 CvUploadedAt = x.p.CvUploadedAt,
                 CvEvaluationJson = x.p.CvEvaluationJson,
+                PracticeSessionId = x.r.PracticeSessionId,
+                ViewedAt = x.r.ViewedAt,
                 QuestionSetId = x.r.QuestionSetId,
                 QuestionSetTitle = x.r.QuestionSet.Title,
                 OverallScore = x.r.OverallScore,
@@ -125,6 +128,26 @@ public class CandidateRecommendationRepository : ICandidateRecommendationReposit
                 InvitationSharedPhoneNumber = _context.CandidateInvitations
                     .Where(i => i.RecommendationId == x.r.Id && i.IsActive)
                     .Select(i => i.SharedPhoneNumber)
+                    .FirstOrDefault(),
+                InvitationScheduledAtUtc = _context.CandidateInvitations
+                    .Where(i => i.RecommendationId == x.r.Id && i.IsActive)
+                    .Select(i => i.ScheduledAtUtc)
+                    .FirstOrDefault(),
+                InvitationTimeZoneId = _context.CandidateInvitations
+                    .Where(i => i.RecommendationId == x.r.Id && i.IsActive)
+                    .Select(i => i.TimeZoneId)
+                    .FirstOrDefault(),
+                InvitationMeetingMode = _context.CandidateInvitations
+                    .Where(i => i.RecommendationId == x.r.Id && i.IsActive)
+                    .Select(i => i.MeetingMode)
+                    .FirstOrDefault(),
+                InvitationMeetingLink = _context.CandidateInvitations
+                    .Where(i => i.RecommendationId == x.r.Id && i.IsActive)
+                    .Select(i => i.MeetingLink)
+                    .FirstOrDefault(),
+                InvitationLocation = _context.CandidateInvitations
+                    .Where(i => i.RecommendationId == x.r.Id && i.IsActive)
+                    .Select(i => i.Location)
                     .FirstOrDefault(),
                 RecommendedAt = x.r.CreatedAt,
                 LatestOfferStatus = _context.CandidateOffers
@@ -142,7 +165,7 @@ public class CandidateRecommendationRepository : ICandidateRecommendationReposit
     }
 
     private IQueryable<CandidateRecommendation> BuildHrScopedQuery(
-        Guid hrOwnerId, string? status, Guid? questionSetId, double? minScore)
+        Guid hrOwnerId, string? status, Guid? questionSetId, double? minScore, bool unviewed = false)
     {
         var query = _context.CandidateRecommendations
             .AsNoTracking()
@@ -156,6 +179,9 @@ public class CandidateRecommendationRepository : ICandidateRecommendationReposit
 
         if (minScore.HasValue)
             query = query.Where(r => r.OverallScore >= minScore.Value);
+
+        if (unviewed)
+            query = query.Where(r => r.ViewedAt == null && r.Status == CandidateRecommendationStatus.New);
 
         return query;
     }
@@ -181,10 +207,13 @@ public class CandidateRecommendationRepository : ICandidateRecommendationReposit
                 TargetRole = x.p.TargetRole,
                 SeniorityLevel = x.p.SeniorityLevel,
                 TechStack = x.p.TechStack,
+                CvEvaluationJson = x.p.CvEvaluationJson,
                 QuestionSetId = x.r.QuestionSetId,
                 QuestionSetTitle = x.r.QuestionSet.Title,
                 OverallScore = x.r.OverallScore,
                 Status = x.r.Status,
+                PracticeSessionId = x.r.PracticeSessionId,
+                ViewedAt = x.r.ViewedAt,
                 InvitationStatus = _context.CandidateInvitations
                     .Where(i => i.RecommendationId == x.r.Id && i.IsActive)
                     .Select(i => i.Status)
@@ -196,6 +225,26 @@ public class CandidateRecommendationRepository : ICandidateRecommendationReposit
                 InvitationSharedPhoneNumber = _context.CandidateInvitations
                     .Where(i => i.RecommendationId == x.r.Id && i.IsActive)
                     .Select(i => i.SharedPhoneNumber)
+                    .FirstOrDefault(),
+                InvitationScheduledAtUtc = _context.CandidateInvitations
+                    .Where(i => i.RecommendationId == x.r.Id && i.IsActive)
+                    .Select(i => i.ScheduledAtUtc)
+                    .FirstOrDefault(),
+                InvitationTimeZoneId = _context.CandidateInvitations
+                    .Where(i => i.RecommendationId == x.r.Id && i.IsActive)
+                    .Select(i => i.TimeZoneId)
+                    .FirstOrDefault(),
+                InvitationMeetingMode = _context.CandidateInvitations
+                    .Where(i => i.RecommendationId == x.r.Id && i.IsActive)
+                    .Select(i => i.MeetingMode)
+                    .FirstOrDefault(),
+                InvitationMeetingLink = _context.CandidateInvitations
+                    .Where(i => i.RecommendationId == x.r.Id && i.IsActive)
+                    .Select(i => i.MeetingLink)
+                    .FirstOrDefault(),
+                InvitationLocation = _context.CandidateInvitations
+                    .Where(i => i.RecommendationId == x.r.Id && i.IsActive)
+                    .Select(i => i.Location)
                     .FirstOrDefault(),
                 RecommendedAt = x.r.CreatedAt,
                 LatestOfferStatus = _context.CandidateOffers
@@ -228,5 +277,38 @@ public class CandidateRecommendationRepository : ICandidateRecommendationReposit
         return ascending
             ? query.OrderBy(x => x.OverallScore).ThenBy(x => x.RecommendedAt)
             : query.OrderByDescending(x => x.OverallScore).ThenByDescending(x => x.RecommendedAt);
+    }
+
+    public async Task<IReadOnlyList<HrRecommendationRow>> GetDetailRowsByIdsForHrAsync(
+        IReadOnlyList<Guid> ids, Guid hrOwnerId)
+    {
+        if (ids.Count == 0)
+            return Array.Empty<HrRecommendationRow>();
+
+        var baseQuery = _context.CandidateRecommendations
+            .AsNoTracking()
+            .Where(r => ids.Contains(r.Id) && r.HrOwnerId == hrOwnerId && r.IsActive);
+
+        return await ProjectRows(baseQuery).ToListAsync();
+    }
+
+    public async Task<HrRecommendationFunnelCounts> CountFunnelForHrAsync(Guid hrOwnerId)
+    {
+        var query = _context.CandidateRecommendations.AsNoTracking()
+            .Where(r => r.HrOwnerId == hrOwnerId && r.IsActive)
+            .Join(_context.CandidateProfiles.AsNoTracking(),
+                r => r.CandidateUserId, p => p.UserId,
+                (r, p) => new { r, p })
+            .Where(x => x.p.AllowRecruiterRecommendation);
+
+        return new HrRecommendationFunnelCounts
+        {
+            NewUnviewed = await query.CountAsync(x =>
+                x.r.Status == CandidateRecommendationStatus.New && x.r.ViewedAt == null),
+            Shortlisted = await query.CountAsync(x =>
+                x.r.Status == CandidateRecommendationStatus.Shortlisted),
+            Invited = await query.CountAsync(x =>
+                x.r.Status == CandidateRecommendationStatus.Invited)
+        };
     }
 }

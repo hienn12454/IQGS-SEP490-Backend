@@ -26,14 +26,21 @@ public interface ICandidateRecommendationRepository
         Guid? questionSetId,
         double? minScore = null,
         string sortBy = "score",
-        string sortDir = "desc");
+        string sortDir = "desc",
+        bool unviewed = false);
 
-    /// <summary>1 dòng recommendation cho HR sở hữu — null nếu không tồn tại / không thuộc HR / inactive.</summary>
     Task<HrRecommendationRow?> GetRowByIdForHrAsync(Guid id, Guid hrOwnerId);
 
-    /// <summary>
-    /// Chi tiết recommendation cho HR (SCRUM-377) — cùng ownership check như GetRowByIdForHrAsync
-    /// nhưng kèm avatar/bio/social/CV meta từ CandidateProfile + User.
-    /// </summary>
     Task<HrRecommendationRow?> GetDetailRowByIdForHrAsync(Guid id, Guid hrOwnerId);
+
+    Task<IReadOnlyList<HrRecommendationRow>> GetDetailRowsByIdsForHrAsync(IReadOnlyList<Guid> ids, Guid hrOwnerId);
+
+    Task<HrRecommendationFunnelCounts> CountFunnelForHrAsync(Guid hrOwnerId);
+}
+
+public class HrRecommendationFunnelCounts
+{
+    public int NewUnviewed { get; set; }
+    public int Shortlisted { get; set; }
+    public int Invited { get; set; }
 }

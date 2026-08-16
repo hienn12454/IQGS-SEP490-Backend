@@ -11,6 +11,13 @@ public class ProfileResponseDto
     public bool IsEmailVerified { get; set; }
     public bool IsProfileComplete { get; set; }
     public string Provider { get; set; } = string.Empty;
+
+    /// <summary>
+    /// True khi user đăng ký bằng Google hoặc đã liên kết Google với tài khoản local (GoogleId khác null).
+    /// Không trả GoogleId ra client — chỉ cần cờ hiển thị trên trang cài đặt hồ sơ.
+    /// </summary>
+    public bool IsGoogleLinked { get; set; }
+
     public DateTime CreatedAt { get; set; }
 
     // Role-specific (null nếu không phải role đó)
@@ -32,6 +39,7 @@ public class HRProfileDto
     public string? GithubUrl { get; set; }
     public string? Bio { get; set; }
     public bool IsCompanyVerified { get; set; }
+    public string? InviteMessageTemplate { get; set; }
 }
 
 public class CandidateProfileDto
