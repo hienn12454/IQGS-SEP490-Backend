@@ -36,3 +36,8 @@ public interface IExpirePendingUpgradeOrdersJob
 {
     Task ExecuteAsync();
 }
+
+public interface IGenerateCandidatePersonalSetJob
+{
+    Task ExecuteAsync(Guid jobId);
+}

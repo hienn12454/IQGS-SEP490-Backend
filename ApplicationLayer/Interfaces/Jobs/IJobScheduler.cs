@@ -5,4 +5,5 @@ public interface IJobScheduler
     void EnqueueKnowledgeIngest(Guid documentId);
     void EnqueueGeneratePlan(Guid jobId);
     void EnqueueGenerateQuestionsFromPlan(Guid jobId);
+    void EnqueueCandidatePersonalSet(Guid jobId);
 }

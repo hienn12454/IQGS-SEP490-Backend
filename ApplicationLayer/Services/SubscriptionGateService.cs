@@ -19,6 +19,9 @@ public interface ISubscriptionGateService
     /// <summary>Premium: full AI feedback; Free: chỉ teaser.</summary>
     Task<bool> CanDetailedAiFeedbackAsync(Guid userId);
     Task<int> GetFreeTeaserFeedbackCountAsync(Guid userId);
+    Task CheckGeneratePersonalSetAsync(Guid userId);
+    /// <summary>AI Coach (diagnostic/drill): chỉ cần Premium, không trừ hạn mức bộ JD.</summary>
+    Task CheckCoachGenerationAsync(Guid userId);
 }
 
 public class SubscriptionGateService : ISubscriptionGateService
@@ -151,6 +154,44 @@ public class SubscriptionGateService : ISubscriptionGateService
         if (limits.CanDetailedAiFeedback)
             return 0;
         return Math.Max(1, limits.FreeTeaserFeedbackCount);
+    }
+
+    public async Task CheckGeneratePersonalSetAsync(Guid userId)
+    {
+        var limits = await GetLimitsAsync(userId);
+        if (!limits.CanGeneratePersonalSet)
+        {
+            throw new SubscriptionGateException(
+                SubscriptionErrorCodes.FeatureRequiresPremium,
+                "Sinh bộ luyện tập từ CV + JD chỉ dành cho gói Premium.");
+        }
+
+        var max = Math.Max(0, limits.PersonalSetPerMonth);
+        if (max <= 0)
+        {
+            throw new SubscriptionGateException(
+                SubscriptionErrorCodes.FeatureRequiresPremium,
+                "Sinh bộ luyện tập từ CV + JD chỉ dành cho gói Premium.");
+        }
+
+        var usage = await _metering.GetUsageAsync(userId, UsageType.CandidatePersonalSet);
+        if (usage.UsedCount >= max)
+        {
+            throw new SubscriptionGateException(
+                SubscriptionErrorCodes.QuotaExceeded,
+                $"Đã hết {max} bộ luyện tập từ JD trong kỳ này. Thử lại kỳ tới hoặc liên hệ hỗ trợ.");
+        }
+    }
+
+    public async Task CheckCoachGenerationAsync(Guid userId)
+    {
+        var limits = await GetLimitsAsync(userId);
+        if (!limits.CanGeneratePersonalSet && !limits.CanDetailedAiFeedback)
+        {
+            throw new SubscriptionGateException(
+                SubscriptionErrorCodes.FeatureRequiresPremium,
+                "AI Coach (kiểm tra CV / luyện skill) dành cho gói Premium.");
+        }
     }
 
     private static string FormatRemain(TimeSpan remain)

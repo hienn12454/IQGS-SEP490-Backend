@@ -173,6 +173,7 @@ public class UsageMeteringService : IUsageMeteringService
         {
             UsageType.HrAskAi => limits.AskAiPerMonth,
             UsageType.HrPlanRegenerate => limits.PlanRegeneratePerDraft,
+            UsageType.CandidatePersonalSet => limits.PersonalSetPerMonth,
             _ => 0
         };
 

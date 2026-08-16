@@ -19,4 +19,9 @@ public class JobScheduler : IJobScheduler
     {
         BackgroundJob.Enqueue<IGenerateQuestionsFromPlanJob>(job => job.ExecuteAsync(jobId));
     }
+
+    public void EnqueueCandidatePersonalSet(Guid jobId)
+    {
+        BackgroundJob.Enqueue<IGenerateCandidatePersonalSetJob>(job => job.ExecuteAsync(jobId));
+    }
 }
