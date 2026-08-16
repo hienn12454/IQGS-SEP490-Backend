@@ -26,4 +26,10 @@
     <ProjectReference Include="..\DomainLayer\DomainLayer.csproj" />
   </ItemGroup>
 
+  <!-- File backup *.cs bị SDK compile → trùng class (CS0101/CS0111). -->
+  <ItemGroup>
+    <Compile Remove="**\*.backup.*.cs" />
+    <None Include="**\*.backup.*.cs" />
+  </ItemGroup>
+
 </Project>

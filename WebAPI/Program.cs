@@ -312,6 +312,8 @@ public class Program
         builder.Services.AddScoped<ICandidateAnswerRepository, CandidateAnswerRepository>();
         builder.Services.AddScoped<IAiFeedbackRepository, AiFeedbackRepository>();
         builder.Services.AddScoped<ICandidateMarketplaceRepository, CandidateMarketplaceRepository>();
+        builder.Services.AddScoped<ICandidatePersonalSetJobRepository, CandidatePersonalSetJobRepository>();
+        builder.Services.AddScoped<ICandidateSkillPlanRepository, CandidateSkillPlanRepository>();
         builder.Services.AddScoped<IAdminMarketplaceRepository, AdminMarketplaceRepository>();
         builder.Services.AddScoped<ICandidateRecommendationRepository, CandidateRecommendationRepository>();
         builder.Services.AddScoped<ICandidateInvitationRepository, CandidateInvitationRepository>();
@@ -329,6 +331,7 @@ public class Program
         builder.Services.AddScoped<IHrDashboardStudioStatsRepository, HrDashboardStudioStatsRepository>();
         builder.Services.AddScoped<IHrQuestionSetBookmarkRepository, HrQuestionSetBookmarkRepository>();
         builder.Services.AddScoped<IQuestionSetFeedbackRepository, QuestionSetFeedbackRepository>();
+        builder.Services.AddScoped<IQuestionSetJdFitReviewRepository, QuestionSetJdFitReviewRepository>();
 
         // Services
         builder.Services.AddScoped<IJwtService, JwtService>();
@@ -347,6 +350,8 @@ public class Program
         builder.Services.AddScoped<IKnowledgeDocumentService, KnowledgeDocumentService>();
         builder.Services.AddScoped<ICandidateCvService, CandidateCvService>();
         builder.Services.AddScoped<ICandidateQuestionSetService, CandidateQuestionSetService>();
+        builder.Services.AddScoped<ICandidatePersonalSetService, CandidatePersonalSetService>();
+        builder.Services.AddScoped<ICandidateSkillPlanService, CandidateSkillPlanService>();
         builder.Services.AddScoped<ICandidateBookmarkService, CandidateBookmarkService>();
         builder.Services.AddScoped<ICandidatePracticeSessionService, CandidatePracticeSessionService>();
         builder.Services.AddScoped<IQuestionSetFeedbackService, QuestionSetFeedbackService>();
@@ -380,6 +385,7 @@ public class Program
         builder.Services.AddScoped<IQuestionGenerationJobService, QuestionGenerationJobService>();
         builder.Services.AddScoped<IQuestionGenerationJobInternalService, QuestionGenerationJobInternalService>();
         builder.Services.AddScoped<IQuestionSetService, QuestionSetService>();
+        builder.Services.AddScoped<IQuestionSetJdFitService, QuestionSetJdFitService>();
         builder.Services.AddScoped<IHrCompanyInfoService, HrCompanyInfoService>();
         builder.Services.AddScoped<IHrDashboardService, HrDashboardService>();
         builder.Services.AddScoped<IHrBookmarkService, HrBookmarkService>();
@@ -405,6 +411,7 @@ public class Program
         builder.Services.AddScoped<IKnowledgeIngestJob, KnowledgeIngestJob>();
         builder.Services.AddScoped<IGeneratePlanJob, GeneratePlanJob>();
         builder.Services.AddScoped<IGenerateQuestionsFromPlanJob, GenerateQuestionsFromPlanJob>();
+        builder.Services.AddScoped<IGenerateCandidatePersonalSetJob, GenerateCandidatePersonalSetJob>();
         builder.Services.AddScoped<IStuckKnowledgeDocumentWatchdogJob, StuckKnowledgeDocumentWatchdogJob>();
         builder.Services.AddScoped<IStuckQuestionGenerationWatchdogJob, StuckQuestionGenerationWatchdogJob>();
         builder.Services.AddScoped<IExpiredPracticeSessionWatchdogJob, ExpiredPracticeSessionWatchdogJob>();
