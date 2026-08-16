@@ -131,9 +131,23 @@ public class RenameQuestionSetTitleResponseDto
     public string Title { get; set; } = string.Empty;
 }
 
+public class UpdateQuestionSetJobDescriptionRequestDto
+{
+    [System.ComponentModel.DataAnnotations.Required(ErrorMessage = "Job description không được để trống.")]
+    public string JobDescription { get; set; } = string.Empty;
+}
+
+public class UpdateQuestionSetJobDescriptionResponseDto
+{
+    public Guid QuestionSetId { get; set; }
+    public bool HasJobDescription { get; set; }
+    public int CharacterCount { get; set; }
+}
+
 /// <summary>Read-model 1 candidate đã practice 1 bộ câu hỏi — dùng nội bộ bởi repository (SCRUM-326).</summary>
 public class QuestionSetPractitionerRow
 {
+    public Guid SessionId { get; set; }
     public Guid CandidateUserId { get; set; }
     public string CandidateName { get; set; } = string.Empty;
     public string CandidateEmail { get; set; } = string.Empty;
@@ -148,6 +162,7 @@ public class QuestionSetPractitionerRow
 /// <summary>SCRUM-326: 1 candidate đã practice bộ câu hỏi của HR — khác Recommendation (không lọc theo ngưỡng điểm).</summary>
 public class QuestionSetPractitionerDto
 {
+    public Guid SessionId { get; set; }
     public Guid CandidateUserId { get; set; }
     public string CandidateName { get; set; } = string.Empty;
     public string CandidateEmail { get; set; } = string.Empty;

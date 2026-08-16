@@ -1,6 +1,7 @@
 using ApplicationLayer.DTOs.Candidate;
 using ApplicationLayer.DTOs.QuestionSet;
 using ApplicationLayer.DTOs.QuestionGeneration;
+using ApplicationLayer.DTOs.Recommendation;
 using ApplicationLayer.Interfaces.Services;
 using ApplicationLayer.ResponseCode;
 using DomainLayer.Exceptions;
@@ -20,13 +21,21 @@ public class HrQuestionSetsController : ControllerBase
     private readonly IQuestionSetService _service;
     private readonly IHrBookmarkService _bookmarkService;
     private readonly IQuestionSetFeedbackService _feedbackService;
+    private readonly IRecommendationService _recommendationService;
+    private readonly IQuestionSetJdFitService _jdFitService;
 
     public HrQuestionSetsController(
-        IQuestionSetService service, IHrBookmarkService bookmarkService, IQuestionSetFeedbackService feedbackService)
+        IQuestionSetService service,
+        IHrBookmarkService bookmarkService,
+        IQuestionSetFeedbackService feedbackService,
+        IRecommendationService recommendationService,
+        IQuestionSetJdFitService jdFitService)
     {
         _service = service;
         _bookmarkService = bookmarkService;
         _feedbackService = feedbackService;
+        _recommendationService = recommendationService;
+        _jdFitService = jdFitService;
     }
 
     /// <summary>Danh sách tất cả bộ câu hỏi (draft/published) mà HR hiện tại sở hữu.</summary>
@@ -128,6 +137,15 @@ public class HrQuestionSetsController : ControllerBase
         return SuccessResp.Ok(result);
     }
 
+    /// <summary>Mời ứng viên từ practitioners — tạo recommendation nếu chưa có, không yêu cầu điểm ≥ 70.</summary>
+    [HttpPost("{id:guid}/practitioners/{candidateUserId:guid}/invite")]
+    public async Task<IActionResult> InvitePractitioner(Guid id, Guid candidateUserId, [FromBody] InviteCandidateRequestDto? dto)
+    {
+        var result = await _recommendationService.InviteFromPractitionerAsync(
+            id, candidateUserId, GetCurrentUserId(), dto ?? new InviteCandidateRequestDto());
+        return SuccessResp.Created(result);
+    }
+
     /// <summary>Danh sách feedback (rating + nhận xét) candidate đã gửi cho bộ câu hỏi này, kèm rating trung bình. Chỉ HR chủ sở hữu xem được.</summary>
     /// <param name="id">Id bộ câu hỏi.</param>
     /// <param name="query">page, pageSize.</param>
@@ -211,6 +229,45 @@ public class HrQuestionSetsController : ControllerBase
         return SuccessResp.Ok(new { questionSetId = id, deleted = true });
     }
 
+    /// <summary>Gắn/cập nhật JD bằng text — dùng cho JD Fit khi bộ chưa có JD.</summary>
+    [HttpPut("{id:guid}/job-description")]
+    public async Task<IActionResult> SetJobDescription(Guid id, [FromBody] UpdateQuestionSetJobDescriptionRequestDto dto)
+    {
+        var result = await _service.SetJobDescriptionFromTextAsync(id, GetCurrentUserId(), dto.JobDescription);
+        return SuccessResp.Ok(result);
+    }
+
+    /// <summary>Gắn/cập nhật JD từ file PDF/DOCX/TXT (parse RAG).</summary>
+    [HttpPost("{id:guid}/job-description")]
+    [Consumes("multipart/form-data")]
+    [RequestSizeLimit(10 * 1024 * 1024)]
+    public async Task<IActionResult> UploadJobDescription(Guid id, [FromForm] QuestionSetJdUploadForm form, CancellationToken ct)
+    {
+        if (form.File is null || form.File.Length == 0)
+            throw new BadRequestException("Vui lòng chọn file Job Description.");
+
+        await using var stream = form.File.OpenReadStream();
+        var result = await _service.SetJobDescriptionFromFileAsync(
+            id, GetCurrentUserId(), stream, form.File.FileName, ct);
+        return SuccessResp.Ok(result);
+    }
+
+    /// <summary>Đọc bản đánh giá JD đã lưu — không gọi RAG, không trừ quota.</summary>
+    [HttpGet("{id:guid}/jd-fit-review")]
+    public async Task<IActionResult> GetJdFitReview(Guid id, CancellationToken ct)
+    {
+        var result = await _jdFitService.GetAsync(id, GetCurrentUserId(), ct);
+        return SuccessResp.Ok(result);
+    }
+
+    /// <summary>Đánh giá bộ câu hỏi so với JD — nhận xét lời, upsert bảng 1–1, tính quota Ask AI.</summary>
+    [HttpPost("{id:guid}/jd-fit-review")]
+    public async Task<IActionResult> JdFitReview(Guid id, CancellationToken ct)
+    {
+        var result = await _jdFitService.ReviewAsync(id, GetCurrentUserId(), ct);
+        return SuccessResp.Ok(result);
+    }
+
     private Guid GetCurrentUserId()
     {
         var userIdStr = User.FindFirst("sub")?.Value
@@ -225,6 +282,11 @@ public class HrQuestionSetsController : ControllerBase
 
 /// <summary>SCRUM-396: form upload ảnh câu hỏi Question Set.</summary>
 public sealed class QuestionSetQuestionImageUploadForm
+{
+    public IFormFile? File { get; set; }
+}
+
+public sealed class QuestionSetJdUploadForm
 {
     public IFormFile? File { get; set; }
 }

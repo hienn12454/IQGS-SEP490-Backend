@@ -22,6 +22,10 @@ public interface IQuestionSetService
     Task<SetTimeLimitResponseDto> SetTimeLimitAsync(Guid questionSetId, Guid ownerId, SetTimeLimitRequestDto dto);
     Task<RenameQuestionSetTitleResponseDto> RenameTitleAsync(
         Guid questionSetId, Guid ownerId, RenameQuestionSetTitleRequestDto dto);
+    Task<UpdateQuestionSetJobDescriptionResponseDto> SetJobDescriptionFromTextAsync(
+        Guid questionSetId, Guid ownerId, string jobDescription);
+    Task<UpdateQuestionSetJobDescriptionResponseDto> SetJobDescriptionFromFileAsync(
+        Guid questionSetId, Guid ownerId, Stream file, string fileName, CancellationToken ct = default);
     Task<IReadOnlyList<QuestionSetPractitionerDto>> GetPractitionersAsync(Guid questionSetId, Guid ownerId);
     /// <summary>SCRUM-391: xuất Excel bộ câu hỏi (gate export).</summary>
     Task<QuestionExportFileDto> ExportExcelAsync(Guid questionSetId, Guid ownerId);

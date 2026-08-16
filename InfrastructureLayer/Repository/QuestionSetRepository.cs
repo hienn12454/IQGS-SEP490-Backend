@@ -38,8 +38,13 @@ public class QuestionSetRepository : IQuestionSetRepository
 
     public async Task AddAsync(QuestionSet questionSet, IEnumerable<QuestionSetQuestion> questions)
     {
+        var list = questions.ToList();
+        foreach (var q in list)
+            q.QuestionSetId = questionSet.Id;
+
         await _context.QuestionSets.AddAsync(questionSet);
-        await _context.QuestionSetQuestions.AddRangeAsync(questions);
+        if (list.Count > 0)
+            await _context.QuestionSetQuestions.AddRangeAsync(list);
         await _context.SaveChangesAsync();
     }
 
@@ -51,7 +56,10 @@ public class QuestionSetRepository : IQuestionSetRepository
         if (old.Count > 0)
             _context.QuestionSetQuestions.RemoveRange(old);
 
-        await _context.QuestionSetQuestions.AddRangeAsync(newQuestions);
+        var list = newQuestions.ToList();
+        foreach (var q in list)
+            q.QuestionSetId = questionSet.Id;
+        await _context.QuestionSetQuestions.AddRangeAsync(list);
         _context.QuestionSets.Update(questionSet);
         await _context.SaveChangesAsync();
     }

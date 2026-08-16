@@ -20,6 +20,7 @@ public class QuestionSetService : IQuestionSetService
     private readonly IHrQuestionSetBookmarkRepository _bookmarkRepository;
     private readonly ISubscriptionGateService _subscriptionGate;
     private readonly IBlobStorageService _blobStorage;
+    private readonly IRagService _ragService;
 
     private static readonly HashSet<string> AllowedQuestionImageContentTypes = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -41,7 +42,8 @@ public class QuestionSetService : IQuestionSetService
         IPracticeSessionRepository practiceSessionRepository,
         IHrQuestionSetBookmarkRepository bookmarkRepository,
         ISubscriptionGateService subscriptionGate,
-        IBlobStorageService blobStorage)
+        IBlobStorageService blobStorage,
+        IRagService ragService)
     {
         _questionSetRepository = questionSetRepository;
         _jobRepository = jobRepository;
@@ -51,6 +53,7 @@ public class QuestionSetService : IQuestionSetService
         _bookmarkRepository = bookmarkRepository;
         _subscriptionGate = subscriptionGate;
         _blobStorage = blobStorage;
+        _ragService = ragService;
     }
 
     public async Task<SaveDraftResponseDto> SaveDraftFromJobAsync(Guid jobId, Guid ownerId)
@@ -393,6 +396,43 @@ public class QuestionSetService : IQuestionSetService
         };
     }
 
+    public Task<UpdateQuestionSetJobDescriptionResponseDto> SetJobDescriptionFromTextAsync(
+        Guid questionSetId, Guid ownerId, string jobDescription)
+    {
+        var jd = JobDescriptionValidator.Validate(jobDescription);
+        return PersistJobDescriptionAsync(questionSetId, ownerId, jd);
+    }
+
+    public async Task<UpdateQuestionSetJobDescriptionResponseDto> SetJobDescriptionFromFileAsync(
+        Guid questionSetId, Guid ownerId, Stream file, string fileName, CancellationToken ct = default)
+    {
+        var ext = Path.GetExtension(fileName ?? "").ToLowerInvariant();
+        if (ext is not ".pdf" and not ".docx" and not ".txt")
+            throw new BadRequestException("Chỉ hỗ trợ file PDF, DOCX hoặc TXT.");
+
+        var parsed = await _ragService.ParseJdAsync(file, string.IsNullOrWhiteSpace(fileName) ? "jd.txt" : fileName, ct);
+        if (!parsed.Success || string.IsNullOrWhiteSpace(parsed.JobDescription))
+            throw new BadRequestException(parsed.Error ?? "Không đọc được Job Description từ file.");
+
+        var jd = JobDescriptionValidator.Validate(parsed.JobDescription, fileName);
+        return await PersistJobDescriptionAsync(questionSetId, ownerId, jd);
+    }
+
+    private async Task<UpdateQuestionSetJobDescriptionResponseDto> PersistJobDescriptionAsync(
+        Guid questionSetId, Guid ownerId, string jd)
+    {
+        var questionSet = await EnsureOwnedQuestionSetAsync(questionSetId, ownerId);
+        questionSet.JobDescription = jd;
+        questionSet.UpdatedAt = DateTime.UtcNow;
+        await _questionSetRepository.UpdateAsync(questionSet);
+        return new UpdateQuestionSetJobDescriptionResponseDto
+        {
+            QuestionSetId = questionSet.Id,
+            HasJobDescription = true,
+            CharacterCount = jd.Length
+        };
+    }
+
     public async Task<IReadOnlyList<QuestionSetPractitionerDto>> GetPractitionersAsync(Guid questionSetId, Guid ownerId)
     {
         await EnsureOwnedQuestionSetAsync(questionSetId, ownerId);
@@ -400,6 +440,7 @@ public class QuestionSetService : IQuestionSetService
         var rows = await _practiceSessionRepository.ListPractitionersByQuestionSetAsync(questionSetId);
         return rows.Select(r => new QuestionSetPractitionerDto
         {
+            SessionId = r.SessionId,
             CandidateUserId = r.CandidateUserId,
             CandidateName = r.CandidateName,
             CandidateEmail = r.CandidateEmail,
