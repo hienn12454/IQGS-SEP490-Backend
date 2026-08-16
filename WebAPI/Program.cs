@@ -166,8 +166,8 @@ public class Program
 
         builder.Services.AddHangfireServer(options =>
         {
-            options.Queues = new[] { "knowledge-ingestion", "question-generation", "default" };
-            options.WorkerCount = Math.Max(kbSettings.MaxConcurrentIngestJobs, 2);
+            options.Queues = new[] { "question-generation", "knowledge-ingestion", "default" };
+            options.WorkerCount = Math.Max(kbSettings.MaxConcurrentIngestJobs + 2, 4);
         });
 
         var ragSettings = builder.Configuration
@@ -373,6 +373,8 @@ public class Program
         builder.Services.AddScoped<ICandidatePrivacySettingsService, CandidatePrivacySettingsService>();
         builder.Services.AddScoped<IRecommendationService, RecommendationService>();
         builder.Services.AddScoped<IHrCandidateOverviewService, HrCandidateOverviewService>();
+        builder.Services.AddScoped<IHrPracticeSessionFeedbackService, HrPracticeSessionFeedbackService>();
+        builder.Services.AddScoped<IHrTalentService, HrTalentService>();
         builder.Services.AddScoped<ICandidateInvitationService, CandidateInvitationService>();
         builder.Services.AddScoped<ICandidateOfferService, CandidateOfferService>();
         builder.Services.AddScoped<IPlatformSettingsService, PlatformSettingsService>();
