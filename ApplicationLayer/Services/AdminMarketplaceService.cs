@@ -78,6 +78,7 @@ public class AdminMarketplaceService : IAdminMarketplaceService
             Questions = questions.ToList(),
             Practitioners = practitioners.Select(p => new QuestionSetPractitionerDto
             {
+                SessionId = p.SessionId,
                 CandidateUserId = p.CandidateUserId,
                 CandidateName = p.CandidateName,
                 CandidateEmail = p.CandidateEmail,

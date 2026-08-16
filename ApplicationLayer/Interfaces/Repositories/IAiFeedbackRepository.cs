@@ -1,3 +1,4 @@
+using ApplicationLayer.DTOs.Recommendation;
 using DomainLayer.Entities;
 
 namespace ApplicationLayer.Interfaces.Repositories;
@@ -23,4 +24,6 @@ public interface IAiFeedbackRepository
     /// </summary>
     Task<double?> GetPreviousBestSucceededScoreAsync(
         Guid candidateUserId, Guid questionSetQuestionId, Guid excludePracticeSessionId);
+
+    Task<IReadOnlyList<SkillScoreDto>> GetSkillAveragesBySessionAsync(Guid practiceSessionId);
 }

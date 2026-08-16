@@ -89,6 +89,7 @@ public class HrCandidateOverviewService : IHrCandidateOverviewService
             Achievements = BuildAchievements(stats.TotalSessions, stats.BestScore, streakDays, hasFastSession),
             PracticeOnMySets = practiceOnMySets.Select(r => new HrCandidatePracticeOnMySetItemDto
             {
+                SessionId = r.SessionId,
                 QuestionSetId = r.QuestionSetId,
                 Title = r.Title,
                 SessionStatus = r.SessionStatus,

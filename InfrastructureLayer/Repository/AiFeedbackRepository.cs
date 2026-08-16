@@ -1,3 +1,4 @@
+using ApplicationLayer.DTOs.Recommendation;
 using ApplicationLayer.Interfaces.Repositories;
 using DomainLayer.Constants;
 using DomainLayer.Entities;
@@ -66,5 +67,26 @@ public class AiFeedbackRepository : IAiFeedbackRepository
             .OrderByDescending(f => f.CandidateAnswer.PracticeSession.CompletedAt)
             .Select(f => (double?)f.Score!.Value)
             .FirstOrDefaultAsync();
+    }
+
+    public async Task<IReadOnlyList<SkillScoreDto>> GetSkillAveragesBySessionAsync(Guid practiceSessionId)
+    {
+        return await _context.AiFeedbacks
+            .AsNoTracking()
+            .Where(f =>
+                f.CandidateAnswer.PracticeSessionId == practiceSessionId
+                && f.EvaluationStatus == AiFeedbackEvaluationStatus.Succeeded
+                && f.Score != null
+                && f.CandidateAnswer.QuestionSetQuestion.Skill != null
+                && f.CandidateAnswer.QuestionSetQuestion.Skill != "")
+            .GroupBy(f => f.CandidateAnswer.QuestionSetQuestion.Skill!)
+            .Select(g => new SkillScoreDto
+            {
+                Skill = g.Key,
+                AvgScore = Math.Round(g.Average(x => x.Score!.Value), 1),
+                QuestionCount = g.Count()
+            })
+            .OrderBy(x => x.Skill)
+            .ToListAsync();
     }
 }

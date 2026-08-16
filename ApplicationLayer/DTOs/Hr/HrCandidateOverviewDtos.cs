@@ -46,6 +46,7 @@ public class HrCandidateAchievementFlagDto
 
 public class HrCandidatePracticeOnMySetItemDto
 {
+    public Guid SessionId { get; set; }
     public Guid QuestionSetId { get; set; }
     public string Title { get; set; } = string.Empty;
     public string SessionStatus { get; set; } = string.Empty;
@@ -57,6 +58,7 @@ public class HrCandidatePracticeOnMySetItemDto
 /// <summary>Projection nội bộ repository — session của candidate trên set thuộc HR.</summary>
 public class HrCandidatePracticeOnMySetRow
 {
+    public Guid SessionId { get; set; }
     public Guid QuestionSetId { get; set; }
     public string Title { get; set; } = string.Empty;
     public string SessionStatus { get; set; } = string.Empty;
