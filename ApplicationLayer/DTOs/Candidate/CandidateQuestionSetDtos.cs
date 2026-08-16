@@ -18,8 +18,11 @@ public class CandidateQuestionSetListQueryDto
     /// <summary>Lọc theo kỹ năng của câu hỏi (question_set_questions.Skill), OR match — có thể truyền nhiều lần.</summary>
     public List<string>? Skills { get; set; }
 
-    /// <summary>SCRUM-404: featured | newest | most_practiced | highest_rated — mặc định featured.</summary>
+    /// <summary>SCRUM-404: featured | newest | most_practiced | highest_rated | best_match — mặc định featured.</summary>
     public string? SortBy { get; set; }
+
+    /// <summary>cv | targetRole | weak | trending | unattempted | retry — chip gợi ý trên Practice (saved/mine xử lý FE bằng API khác).</summary>
+    public string? Chip { get; set; }
 }
 
 /// <summary>1 item hiển thị trên card marketplace.</summary>
@@ -58,6 +61,13 @@ public class CandidateQuestionSetListItemDto
 
     /// <summary>SCRUM-404: AttemptCount đạt ngưỡng MinAttemptsForTrending.</summary>
     public bool IsTrending { get; set; }
+
+    public int? MatchPercent { get; set; }
+    public List<string>? MatchedSkills { get; set; }
+    public List<string>? MissingSkills { get; set; }
+    public double? MyLastScore { get; set; }
+    public DateTime? MyLastCompletedAt { get; set; }
+    public int? AvgCompletionMinutes { get; set; }
 }
 
 /// <summary>Chi tiết 1 bộ câu hỏi public — KHÔNG chứa sampleAnswer/evaluationCriteria (AC-04 SCRUM-269).</summary>

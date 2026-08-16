@@ -19,7 +19,8 @@ public class CandidateMarketplaceRepository : ICandidateMarketplaceRepository
     private IQueryable<PublishedQuestionSetJoin> PublishedWithCompanyQuery()
         => _context.QuestionSets
             .AsNoTracking()
-            .Where(qs => qs.Status == QuestionSetStatus.Published && qs.IsActive)
+            .Where(qs => qs.Status == QuestionSetStatus.Published && qs.IsActive
+                         && qs.Kind == QuestionSetKind.Marketplace)
             .Join(_context.HRProfiles.AsNoTracking(),
                 qs => qs.OwnerId, hr => hr.UserId,
                 (qs, hr) => new { qs, hr })
@@ -94,7 +95,9 @@ public class CandidateMarketplaceRepository : ICandidateMarketplaceRepository
 
     public async Task<(IReadOnlyList<PublishedQuestionSetRow> Items, int TotalCount)> ListPublishedAsync(
         int page, int pageSize, string? keyword, Guid? companyId, string? difficulty,
-        IReadOnlyList<string>? skills, string sortBy = "featured")
+        IReadOnlyList<string>? skills, string sortBy = "featured",
+        string? targetRole = null, IReadOnlyList<string>? requireOverlapSkills = null,
+        int? minAttemptCount = null, Guid? practiceFilterCandidateId = null, bool? hasCompletedPractice = null)
     {
         var query = PublishedWithCompanyQuery();
 
@@ -117,7 +120,46 @@ public class CandidateMarketplaceRepository : ICandidateMarketplaceRepository
             query = query.Where(x => x.QuestionSet.Questions.Any(q =>
                 q.IsActive && q.Skill != null && skills.Any(s => EF.Functions.ILike(q.Skill, s))));
 
-        var projected = ApplySort(ProjectToRow(query), sortBy);
+        if (!string.IsNullOrWhiteSpace(targetRole))
+        {
+            var term = $"%{targetRole.Trim()}%";
+            query = query.Where(x =>
+                EF.Functions.ILike(x.QuestionSet.Title ?? "", term) ||
+                EF.Functions.ILike(x.QuestionSet.HrNote ?? "", term));
+        }
+
+        if (requireOverlapSkills is { Count: > 0 })
+        {
+            var overlap = requireOverlapSkills;
+            query = query.Where(x => x.QuestionSet.Questions.Any(q =>
+                q.IsActive && q.Skill != null && overlap.Any(s => EF.Functions.ILike(q.Skill, s))));
+        }
+
+        if (practiceFilterCandidateId is Guid cid && hasCompletedPractice is bool completed)
+        {
+            var completedStatus = PracticeSessionStatus.Completed;
+            if (completed)
+            {
+                query = query.Where(x => _context.PracticeSessions.Any(ps =>
+                    ps.QuestionSetId == x.QuestionSet.Id
+                    && ps.CandidateUserId == cid
+                    && ps.IsActive
+                    && ps.Status == completedStatus));
+            }
+            else
+            {
+                query = query.Where(x => !_context.PracticeSessions.Any(ps =>
+                    ps.QuestionSetId == x.QuestionSet.Id
+                    && ps.CandidateUserId == cid
+                    && ps.IsActive
+                    && ps.Status == completedStatus));
+            }
+        }
+
+        var projected = ProjectToRow(query);
+        if (minAttemptCount is int minAttempts)
+            projected = projected.Where(x => x.AttemptCount >= minAttempts);
+        projected = ApplySort(projected, sortBy);
 
         var totalCount = await projected.CountAsync();
         var items = await projected
@@ -166,7 +208,94 @@ public class CandidateMarketplaceRepository : ICandidateMarketplaceRepository
     }
 
     public Task<bool> IsPublishedAsync(Guid id)
-        => _context.QuestionSets.AnyAsync(qs => qs.Id == id && qs.Status == QuestionSetStatus.Published && qs.IsActive);
+        => _context.QuestionSets.AnyAsync(qs =>
+            qs.Id == id
+            && qs.Status == QuestionSetStatus.Published
+            && qs.IsActive
+            && qs.Kind == QuestionSetKind.Marketplace);
+
+    public Task<bool> CanCandidateStartAsync(Guid questionSetId, Guid candidateUserId)
+        => _context.QuestionSets.AnyAsync(qs =>
+            qs.Id == questionSetId
+            && qs.Status == QuestionSetStatus.Published
+            && qs.IsActive
+            && (qs.Kind == QuestionSetKind.Marketplace
+                || (qs.Kind == QuestionSetKind.Personal && qs.OwnerId == candidateUserId)));
+
+    public async Task<PublishedQuestionSetDetail?> GetPersonalByIdForOwnerAsync(Guid id, Guid candidateUserId)
+    {
+        var set = await _context.QuestionSets.AsNoTracking()
+            .FirstOrDefaultAsync(qs =>
+                qs.Id == id
+                && qs.Kind == QuestionSetKind.Personal
+                && qs.OwnerId == candidateUserId
+                && qs.IsActive
+                && qs.Status == QuestionSetStatus.Published);
+        if (set is null)
+            return null;
+
+        var skills = await _context.QuestionSetQuestions.AsNoTracking()
+            .Where(q => q.QuestionSetId == id && q.IsActive && q.Skill != null && q.Skill != "")
+            .Select(q => q.Skill!)
+            .Distinct()
+            .ToListAsync();
+
+        var difficulty = await _context.QuestionSetQuestions.AsNoTracking()
+            .Where(q => q.QuestionSetId == id && q.IsActive && q.Difficulty != null && q.Difficulty != "")
+            .GroupBy(q => q.Difficulty)
+            .OrderByDescending(g => g.Count())
+            .Select(g => g.Key)
+            .FirstOrDefaultAsync() ?? "medium";
+
+        var detail = new PublishedQuestionSetDetail
+        {
+            Id = set.Id,
+            Title = set.Title,
+            CompanyId = Guid.Empty,
+            CompanyName = "Bộ của tôi",
+            Difficulty = difficulty,
+            TimeLimitMinutes = set.TimeLimitMinutes,
+            Description = set.HrNote,
+            AttemptCount = await _context.PracticeSessions.CountAsync(ps => ps.QuestionSetId == id && ps.IsActive),
+            Rating = await _context.PracticeSessions
+                .Where(ps => ps.QuestionSetId == id && ps.IsActive)
+                .AverageAsync(ps => (double?)ps.OverallScore)
+        };
+        detail.Questions = (await GetQuestionsSnapshotAsync(id)).ToList();
+        return detail;
+    }
+
+    public async Task<IReadOnlyList<PublishedQuestionSetRow>> ListPersonalByOwnerAsync(Guid candidateUserId)
+    {
+        var sets = await _context.QuestionSets.AsNoTracking()
+            .Where(qs => qs.Kind == QuestionSetKind.Personal && qs.OwnerId == candidateUserId && qs.IsActive)
+            .OrderByDescending(qs => qs.CreatedAt)
+            .ToListAsync();
+
+        var rows = new List<PublishedQuestionSetRow>();
+        foreach (var qs in sets)
+        {
+            var skills = await _context.QuestionSetQuestions.AsNoTracking()
+                .Where(q => q.QuestionSetId == qs.Id && q.IsActive && q.Skill != null && q.Skill != "")
+                .Select(q => q.Skill!)
+                .Distinct()
+                .ToListAsync();
+            var total = await _context.QuestionSetQuestions.CountAsync(q => q.QuestionSetId == qs.Id && q.IsActive);
+            rows.Add(new PublishedQuestionSetRow
+            {
+                Id = qs.Id,
+                Title = qs.Title,
+                CompanyName = "Bộ của tôi",
+                Difficulty = "medium",
+                QuestionSkills = skills,
+                TotalQuestions = total,
+                TimeLimitMinutes = qs.TimeLimitMinutes,
+                Description = qs.HrNote,
+                PublishedAt = qs.PublishedAt ?? qs.CreatedAt
+            });
+        }
+        return rows;
+    }
 
     public async Task<IReadOnlyList<PublishedQuestionRow>> GetQuestionsSnapshotAsync(Guid questionSetId)
         => await _context.QuestionSetQuestions

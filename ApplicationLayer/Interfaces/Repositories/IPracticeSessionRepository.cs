@@ -45,4 +45,25 @@ public interface IPracticeSessionRepository
     /// </summary>
     Task<IReadOnlyList<PracticeSessionHeatmapRawRow>> ListCompletedTimestampsForHeatmapAsync(
         Guid candidateUserId, DateTime fromUtc);
+
+    Task<(IReadOnlyList<HrTalentRow> Items, int TotalCount)> ListTalentForHrAsync(
+        Guid hrOwnerId,
+        int page,
+        int pageSize,
+        string? keyword,
+        Guid? questionSetId,
+        string? status,
+        double? minScore);
+
+    Task<PracticeSession?> GetBestCompletedSessionOnSetAsync(Guid candidateUserId, Guid questionSetId);
+
+    Task<bool> HasAnySessionOnSetAsync(Guid candidateUserId, Guid questionSetId);
+
+    Task<int> CountCompletedOnHrOwnedSetsSinceAsync(Guid hrOwnerId, DateTime fromUtc);
+
+    Task<IReadOnlyList<SetLastScoreDto>> ListLatestCompletedScoresAsync(Guid candidateUserId, IReadOnlyList<Guid> questionSetIds);
+
+    Task<IReadOnlyList<SetAvgDurationDto>> ListAverageCompletionMinutesAsync(IReadOnlyList<Guid> questionSetIds);
+
+    Task<IReadOnlyList<CandidateSkillStatDto>> ListSkillStatsAsync(Guid candidateUserId);
 }

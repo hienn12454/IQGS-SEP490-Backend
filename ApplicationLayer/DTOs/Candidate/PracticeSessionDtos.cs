@@ -141,6 +141,26 @@ public class PracticeSessionStatsDto
     public long TotalDurationSeconds { get; set; }
 }
 
+public class CandidateSkillStatDto
+{
+    public string Skill { get; set; } = string.Empty;
+    public double AverageScore { get; set; }
+    public int SampleCount { get; set; }
+}
+
+public class SetLastScoreDto
+{
+    public Guid QuestionSetId { get; set; }
+    public double? Score { get; set; }
+    public DateTime? CompletedAt { get; set; }
+}
+
+public class SetAvgDurationDto
+{
+    public Guid QuestionSetId { get; set; }
+    public int AvgCompletionMinutes { get; set; }
+}
+
 /// <summary>Read-model 1 dòng session (projection JOIN practice_sessions/question_sets/HRProfiles/Companies) — dùng nội bộ bởi repository.</summary>
 public class PracticeSessionRow
 {

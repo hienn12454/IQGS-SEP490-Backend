@@ -47,6 +47,14 @@ public class CandidatePracticeSessionsController : ControllerBase
         return SuccessResp.Ok(result);
     }
 
+    /// <summary>Điểm TB theo skill từ các câu đã chấm — dùng chip Skill đang yếu.</summary>
+    [HttpGet("skill-stats")]
+    public async Task<IActionResult> GetSkillStats()
+    {
+        var result = await _service.GetSkillStatsAsync(User.GetUserId());
+        return SuccessResp.Ok(result);
+    }
+
     /// <summary>Chi tiết 1 phiên luyện tập (đang chạy hoặc đã xong) — danh sách câu hỏi kèm câu trả lời candidate đã submit cho từng câu (null nếu chưa trả lời).</summary>
     /// <remarks>Chỉ chủ phiên mới xem được — 403 nếu là candidate khác, 404 nếu không tồn tại.</remarks>
     /// <param name="id">Id phiên luyện tập.</param>

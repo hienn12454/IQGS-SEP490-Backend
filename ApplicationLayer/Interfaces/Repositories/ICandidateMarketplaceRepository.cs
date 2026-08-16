@@ -7,11 +7,19 @@ public interface ICandidateMarketplaceRepository
 {
     Task<(IReadOnlyList<PublishedQuestionSetRow> Items, int TotalCount)> ListPublishedAsync(
         int page, int pageSize, string? keyword, Guid? companyId, string? difficulty,
-        IReadOnlyList<string>? skills, string sortBy = "featured");
+        IReadOnlyList<string>? skills, string sortBy = "featured",
+        string? targetRole = null, IReadOnlyList<string>? requireOverlapSkills = null,
+        int? minAttemptCount = null, Guid? practiceFilterCandidateId = null, bool? hasCompletedPractice = null);
 
     Task<PublishedQuestionSetDetail?> GetPublishedByIdAsync(Guid id);
 
     Task<bool> IsPublishedAsync(Guid id);
+
+    Task<bool> CanCandidateStartAsync(Guid questionSetId, Guid candidateUserId);
+
+    Task<PublishedQuestionSetDetail?> GetPersonalByIdForOwnerAsync(Guid id, Guid candidateUserId);
+
+    Task<IReadOnlyList<PublishedQuestionSetRow>> ListPersonalByOwnerAsync(Guid candidateUserId);
 
     /// <summary>Snapshot câu hỏi của 1 bộ — KHÔNG lọc theo Status (dùng khi session đã tạo, set có thể đã bị unpublish sau đó). Cố tình không có SampleAnswer/EvaluationCriteria.</summary>
     Task<IReadOnlyList<PublishedQuestionRow>> GetQuestionsSnapshotAsync(Guid questionSetId);

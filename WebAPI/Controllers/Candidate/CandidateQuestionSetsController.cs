@@ -33,7 +33,8 @@ public class CandidateQuestionSetsController : ControllerBase
     [AllowAnonymous]
     public async Task<IActionResult> List([FromQuery] CandidateQuestionSetListQueryDto query)
     {
-        var result = await _service.ListPublishedAsync(query);
+        Guid? userId = User.Identity?.IsAuthenticated == true ? User.GetUserId() : null;
+        var result = await _service.ListPublishedAsync(query, userId);
         return SuccessResp.Ok(result);
     }
 

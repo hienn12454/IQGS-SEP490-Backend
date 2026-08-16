@@ -18,4 +18,5 @@ public interface ICandidatePracticeSessionService
     Task<PracticeSessionFeedbackDto> GetFeedbackAsync(Guid sessionId, Guid candidateUserId);
     Task<PagedResultDto<PracticeSessionListItemDto>> ListAsync(Guid candidateUserId, PracticeSessionListQueryDto query);
     Task<PracticeSessionStatsDto> GetStatsAsync(Guid candidateUserId, PracticeSessionStatsQueryDto query);
+    Task<IReadOnlyList<CandidateSkillStatDto>> GetSkillStatsAsync(Guid candidateUserId);
 }

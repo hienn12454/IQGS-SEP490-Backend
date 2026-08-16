@@ -33,6 +33,8 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
     private readonly IUsageMeteringService _usageMetering;
     private readonly IBlobStorageService _blobStorage;
     private readonly IGamificationService _gamificationService;
+    private readonly ICandidatePersonalSetJobRepository _personalSetJobs;
+    private readonly ICandidateSkillPlanService _skillPlanService;
     private readonly ILogger<CandidatePracticeSessionService> _logger;
 
     public CandidatePracticeSessionService(
@@ -46,6 +48,8 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
         IUsageMeteringService usageMetering,
         IBlobStorageService blobStorage,
         IGamificationService gamificationService,
+        ICandidatePersonalSetJobRepository personalSetJobs,
+        ICandidateSkillPlanService skillPlanService,
         ILogger<CandidatePracticeSessionService> logger)
     {
         _sessionRepository = sessionRepository;
@@ -58,13 +62,15 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
         _usageMetering = usageMetering;
         _blobStorage = blobStorage;
         _gamificationService = gamificationService;
+        _personalSetJobs = personalSetJobs;
+        _skillPlanService = skillPlanService;
         _logger = logger;
     }
 
     /// <summary>Tạo phiên mới, hoặc trả về phiên IN_PROGRESS đã có cho cùng bộ câu hỏi (resume — AC-02 SCRUM-298).</summary>
     public async Task<PracticeSessionResponseDto> StartAsync(Guid questionSetId, Guid candidateUserId)
     {
-        if (!await _marketplaceRepository.IsPublishedAsync(questionSetId))
+        if (!await _marketplaceRepository.CanCandidateStartAsync(questionSetId, candidateUserId))
             throw new NotFoundException("Bộ câu hỏi không tồn tại hoặc chưa được publish.");
 
         var existingSession = await _sessionRepository.GetInProgressByQuestionSetAsync(candidateUserId, questionSetId);
@@ -225,103 +231,8 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
         var feedbacks = await _feedbackRepository.GetBySessionIdAsync(sessionId);
 
         var canDetailed = await _subscriptionGate.CanDetailedAiFeedbackAsync(candidateUserId);
-        var accessLevel = canDetailed
-            ? PracticeFeedbackAccessLevel.Full
-            : PracticeFeedbackAccessLevel.FreeTeaser;
-
-        var feedbackByAnswerId = feedbacks.ToDictionary(f => f.CandidateAnswerId);
-        var answerByQuestionId = answers.ToDictionary(a => a.QuestionSetQuestionId);
-
-        // Free: câu teaser = câu đã có feedback Succeeded (đã chọn lúc finalize)
-        var teaserQuestionIds = new HashSet<Guid>();
-        if (!canDetailed)
-        {
-            foreach (var answer in answers)
-            {
-                if (feedbackByAnswerId.TryGetValue(answer.Id, out var fb)
-                    && fb.EvaluationStatus == AiFeedbackEvaluationStatus.Succeeded
-                    && fb.Score.HasValue)
-                {
-                    teaserQuestionIds.Add(answer.QuestionSetQuestionId);
-                }
-            }
-        }
-
-        // Luôn trả đủ mọi câu trong set (kể cả chưa trả lời) — FE hiển thị full list + empty state.
-        var items = new List<PracticeSessionFeedbackItemDto>();
-        foreach (var q in questions.OrderBy(x => x.Order))
-        {
-            var hasAnswer = answerByQuestionId.TryGetValue(q.Id, out var answer);
-            var answerText = hasAnswer ? (answer!.AnswerText ?? string.Empty) : string.Empty;
-            AiFeedback? feedback = null;
-            if (hasAnswer)
-                feedbackByAnswerId.TryGetValue(answer!.Id, out feedback);
-
-            var isTeaser = !canDetailed && teaserQuestionIds.Contains(q.Id);
-            var isLocked = !canDetailed && !isTeaser;
-
-            if (isLocked)
-            {
-                // Không lộ score/feedback chi tiết cho Free — FE blur + upsell
-                // Câu chưa trả lời vẫn nằm trong list (locked) theo freemium teaser.
-                items.Add(new PracticeSessionFeedbackItemDto
-                {
-                    QuestionId = q.Id,
-                    QuestionText = q.Question,
-                    QuestionType = q.QuestionType,
-                    Difficulty = q.Difficulty,
-                    AnswerText = answerText,
-                    Score = null,
-                    Strengths = [],
-                    Improvements = [],
-                    Suggestion = null,
-                    DimensionScores = null,
-                    EvaluationStatus = AiFeedbackEvaluationStatus.Pending,
-                    IsLocked = true,
-                    IsTeaser = false
-                });
-                continue;
-            }
-
-            items.Add(new PracticeSessionFeedbackItemDto
-            {
-                QuestionId = q.Id,
-                QuestionText = q.Question,
-                QuestionType = q.QuestionType,
-                Difficulty = q.Difficulty,
-                AnswerText = answerText,
-                Score = feedback?.Score,
-                Strengths = DeserializeStringList(feedback?.StrengthsJson),
-                Improvements = DeserializeStringList(feedback?.ImprovementsJson),
-                Suggestion = feedback?.Suggestion,
-                DimensionScores = DeserializeDimensionScores(feedback?.DimensionScoresJson),
-                // Chưa có CandidateAnswer → Pending (điểm 0 đóng góp overall như trước)
-                EvaluationStatus = feedback?.EvaluationStatus ?? AiFeedbackEvaluationStatus.Pending,
-                IsLocked = false,
-                IsTeaser = isTeaser
-            });
-        }
-
-        double? overall = session.OverallScore;
-        if (overall is null && canDetailed)
-        {
-            var succeededScores = items
-                .Where(i =>
-                    i.EvaluationStatus == AiFeedbackEvaluationStatus.Succeeded
-                    && i.Score.HasValue)
-                .Select(i => i.Score!.Value);
-            overall = PracticeOverallScoreCalculator.Compute(succeededScores, questions.Count);
-        }
-
-        return new PracticeSessionFeedbackDto
-        {
-            SessionId = session.Id,
-            OverallScore = overall,
-            Status = session.Status,
-            AccessLevel = accessLevel,
-            AiInsight = canDetailed ? MapAiInsight(session) : null,
-            Items = items
-        };
+        return PracticeSessionFeedbackMapper.Map(
+            session, questions, answers, feedbacks, lockTeaser: !canDetailed);
     }
 
     public async Task<PagedResultDto<PracticeSessionListItemDto>> ListAsync(
@@ -364,6 +275,9 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
         var (from, to) = DateRangeFilterHelper.Resolve(query.FromDate, query.ToDate, query.Year, query.Month);
         return await _sessionRepository.GetStatsAsync(candidateUserId, from, to);
     }
+
+    public Task<IReadOnlyList<CandidateSkillStatDto>> GetSkillStatsAsync(Guid candidateUserId)
+        => _sessionRepository.ListSkillStatsAsync(candidateUserId);
 
     private async Task<(
         string EvaluationStatus,
@@ -547,6 +461,7 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
             await TryGenerateAiInsightAsync(session);
             await _sessionRepository.UpdateAsync(session);
             await TryGenerateRecommendationAsync(session);
+            await TryUpsertCoachPlanAsync(session);
         }
         else
         {
@@ -561,6 +476,24 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
             xpRewards.Add(setReward);
 
         return xpRewards;
+    }
+
+    private async Task TryUpsertCoachPlanAsync(PracticeSession session)
+    {
+        try
+        {
+            var job = await _personalSetJobs.GetByQuestionSetIdAsync(session.QuestionSetId);
+            if (job is null || job.CandidateUserId != session.CandidateUserId)
+                return;
+            if (job.Purpose != CandidatePersonalSetPurpose.CvDiagnostic
+                && job.Purpose != CandidatePersonalSetPurpose.CvDrill)
+                return;
+            await _skillPlanService.UpsertFromSessionAsync(session, job);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Không cập nhật skill plan sau session {SessionId}", session.Id);
+        }
     }
 
     /// <summary>
@@ -761,11 +694,19 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
             }
 
             var summaries = new List<QuestionInsightSummaryDto>();
+            var meaningfulAnswered = 0;
             foreach (var answer in answers)
             {
+                var skipGated = AnswerEvaluationGate.TrySkip(answer.AnswerText, out _);
+                if (!skipGated)
+                    meaningfulAnswered++;
+
                 if (!feedbackByAnswerId.TryGetValue(answer.Id, out var fb))
                     continue;
                 if (fb.EvaluationStatus != AiFeedbackEvaluationStatus.Succeeded || fb.Score is null)
+                    continue;
+                // Câu trống/quá ngắn (không gọi AI) không đưa vào insight — tránh nhận xét "đa số câu quá ngắn".
+                if (skipGated)
                     continue;
 
                 var q = questions.FirstOrDefault(x => x.Id == answer.QuestionSetQuestionId);
@@ -790,7 +731,7 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
             {
                 OverallScore = session.OverallScore,
                 TotalQuestions = questions.Count,
-                AnsweredCount = answers.Count,
+                AnsweredCount = meaningfulAnswered,
                 SetTitle = setDetail?.Title,
                 SetSkills = setSkills,
                 QuestionSummaries = summaries
