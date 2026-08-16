@@ -49,6 +49,9 @@ public class CandidateCvService : ICandidateCvService
     {
         ValidateUpload(fileName, fileLength);
 
+        // Browser đôi khi gửi octet-stream/rỗng cho PDF — gán MIME đúng để iframe preview được.
+        contentType = NormalizeCvContentType(fileName, contentType);
+
         using var buffer = new MemoryStream();
         await fileStream.CopyToAsync(buffer, ct);
         var fileBytes = buffer.ToArray();
@@ -277,5 +280,15 @@ public class CandidateCvService : ICandidateCvService
         if (!_cvSettings.AllowedExtensions.Contains(ext))
             throw new BadRequestException(
                 $"Định dạng file không được hỗ trợ. Chỉ chấp nhận: {string.Join(", ", _cvSettings.AllowedExtensions)}.");
+    }
+
+    private static string NormalizeCvContentType(string fileName, string contentType)
+    {
+        var ext = Path.GetExtension(fileName).ToLowerInvariant();
+        var ct = (contentType ?? "").Trim();
+        if (ext == ".pdf" && (string.IsNullOrEmpty(ct)
+            || ct.Equals("application/octet-stream", StringComparison.OrdinalIgnoreCase)))
+            return "application/pdf";
+        return string.IsNullOrEmpty(ct) ? "application/octet-stream" : ct;
     }
 }
