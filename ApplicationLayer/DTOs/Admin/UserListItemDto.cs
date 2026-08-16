@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace ApplicationLayer.DTOs.Admin;
 
 /// <summary>SCRUM-163 AC-01: Dòng trong bảng danh sách user.</summary>
@@ -12,6 +14,10 @@ public class UserListItemDto
     public bool IsProfileComplete { get; set; }
     public string Provider { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; }
+
+    /// <summary>URL ảnh đại diện (Cloudinary / Google). Null nếu chưa có.</summary>
+    [JsonPropertyName("avatarUrl")]
+    public string? AvatarUrl { get; set; }
 
     /// <summary>Mã gói subscription (HR_FREE / CANDIDATE_PREMIUM…). Null nếu chưa có sub / role Admin.</summary>
     public string? PlanCode { get; set; }
