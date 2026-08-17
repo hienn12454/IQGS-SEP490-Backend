@@ -3,6 +3,7 @@ using System.Text.Json;
 using ApplicationLayer.DTOs.Auth;
 using ApplicationLayer.Interfaces.Services;
 using DomainLayer.Exceptions;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 
 namespace ApplicationLayer.Services;
@@ -18,15 +19,27 @@ public class GithubTokenValidator : IGithubTokenValidator
 {
     private readonly HttpClient _http;
     private readonly IConfiguration _config;
+    private readonly IMemoryCache _cache;
 
-    public GithubTokenValidator(HttpClient http, IConfiguration config)
+    // GitHub Authorization Code chỉ đổi lấy access_token được ĐÚNG 1 LẦN với GitHub, nhưng FE
+    // flow gọi backend 2 lượt với cùng 1 code (POST .../verify rồi POST .../oauth/github).
+    // Cache kết quả theo code trong ít phút để lượt gọi thứ 2 không phải đổi code với GitHub
+    // lần nữa (sẽ bị GitHub từ chối "bad_verification_code").
+    private static readonly TimeSpan CodeResultTtl = TimeSpan.FromMinutes(5);
+
+    public GithubTokenValidator(HttpClient http, IConfiguration config, IMemoryCache cache)
     {
         _http = http;
         _config = config;
+        _cache = cache;
     }
 
     public async Task<GithubAccountInfo> ValidateAsync(string code)
     {
+        var cacheKey = $"github-oauth-code:{code}";
+        if (_cache.TryGetValue(cacheKey, out GithubAccountInfo? cached) && cached != null)
+            return cached;
+
         var clientId = _config["GithubOAuth:ClientId"]
             ?? throw new InvalidOperationException("GithubOAuth:ClientId chưa được cấu hình.");
         var clientSecret = _config["GithubOAuth:ClientSecret"]
@@ -40,7 +53,7 @@ public class GithubTokenValidator : IGithubTokenValidator
             throw new BadRequestException(
                 "Tài khoản GitHub của bạn chưa có email nào được xác minh. Vui lòng xác minh email trong Settings > Emails trên GitHub rồi thử lại.");
 
-        return new GithubAccountInfo
+        var account = new GithubAccountInfo
         {
             Id = id,
             Login = login,
@@ -50,6 +63,9 @@ public class GithubTokenValidator : IGithubTokenValidator
             ProfileUrl = htmlUrl,
             EmailVerified = emailVerified
         };
+
+        _cache.Set(cacheKey, account, CodeResultTtl);
+        return account;
     }
 
     // ────────────────────────────────────────────────────────────────

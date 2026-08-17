@@ -19,6 +19,8 @@
     <!-- Infrastructure abstractions -->
     <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="8.0.0" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.0" />
+    <!-- GitHub OAuth: cache kết quả theo Authorization Code (dùng 1 lần) giữa bước verify + login -->
+    <PackageReference Include="Microsoft.Extensions.Caching.Memory" Version="8.0.0" />
     <PackageReference Include="ClosedXML" Version="0.104.2" />
   </ItemGroup>
 

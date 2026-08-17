@@ -337,7 +337,9 @@ public class Program
         builder.Services.AddScoped<IJwtService, JwtService>();
         builder.Services.AddScoped<IEmailService, EmailService>();
         builder.Services.AddScoped<IGoogleTokenValidator, GoogleTokenValidator>();
-        // GitHub OAuth: cần HttpClient để đổi code lấy access_token + gọi GitHub REST API.
+        // GitHub OAuth: cần HttpClient để đổi code lấy access_token + gọi GitHub REST API,
+        // và IMemoryCache để cache kết quả theo code (dùng 1 lần) giữa bước verify + login.
+        builder.Services.AddMemoryCache();
         builder.Services.AddHttpClient<IGithubTokenValidator, GithubTokenValidator>(client =>
         {
             client.Timeout = TimeSpan.FromSeconds(10);
