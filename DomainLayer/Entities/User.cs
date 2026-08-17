@@ -18,8 +18,9 @@ public class User : BaseEntity
     public DateTime? RefreshTokenExpiresAt { get; set; }
     public int FailedLoginAttempts { get; set; } = 0;
     public DateTime? LockoutUntil { get; set; }
-    public string Provider { get; set; } = "local";     // "local" | "google"
+    public string Provider { get; set; } = "local";     // "local" | "google" | "github"
     public string? GoogleId { get; set; }
+    public string? GithubId { get; set; }
 
     // ── Forgot Password ───────────────────────────────
     public string? PasswordResetToken { get; set; }     // SHA-256 hash của raw token

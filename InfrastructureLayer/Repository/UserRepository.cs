@@ -18,6 +18,10 @@ public class UserRepository : BaseRepository<User>, IUserRepository
         => await _dbSet.Include(u => u.Role)
             .FirstOrDefaultAsync(u => u.GoogleId == googleId && u.IsActive);
 
+    public async Task<User?> GetByGithubIdAsync(string githubId)
+        => await _dbSet.Include(u => u.Role)
+            .FirstOrDefaultAsync(u => u.GithubId == githubId && u.IsActive);
+
     public async Task<User?> GetByRefreshTokenAsync(string refreshToken)
         => await _dbSet.Include(u => u.Role)
             .FirstOrDefaultAsync(u => u.RefreshToken == refreshToken && u.IsActive);
@@ -38,6 +42,10 @@ public class UserRepository : BaseRepository<User>, IUserRepository
     public async Task<User?> GetByGoogleIdAnyStatusAsync(string googleId)
         => await _dbSet.Include(u => u.Role)
             .FirstOrDefaultAsync(u => u.GoogleId == googleId);
+
+    public async Task<User?> GetByGithubIdAnyStatusAsync(string githubId)
+        => await _dbSet.Include(u => u.Role)
+            .FirstOrDefaultAsync(u => u.GithubId == githubId);
 
     public async Task LoadRoleAsync(User user)
     {

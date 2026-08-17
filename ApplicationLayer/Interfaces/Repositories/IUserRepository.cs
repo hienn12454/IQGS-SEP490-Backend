@@ -7,6 +7,7 @@ public interface IUserRepository : IBaseRepository<User>
 {
     Task<User?> GetByEmailAsync(string email);
     Task<User?> GetByGoogleIdAsync(string googleId);
+    Task<User?> GetByGithubIdAsync(string githubId);
     Task<User?> GetByRefreshTokenAsync(string refreshToken);
     Task<User?> GetByPasswordResetTokenAsync(string tokenHash);
     Task<User?> GetByEmailVerificationTokenAsync(string tokenHash);
@@ -20,6 +21,9 @@ public interface IUserRepository : IBaseRepository<User>
 
     /// <summary>Tìm user theo GoogleId bất kể IsActive.</summary>
     Task<User?> GetByGoogleIdAnyStatusAsync(string googleId);
+
+    /// <summary>Tìm user theo GithubId bất kể IsActive.</summary>
+    Task<User?> GetByGithubIdAnyStatusAsync(string githubId);
 
     /// <summary>Load Role navigation property.</summary>
     Task LoadRoleAsync(User user);

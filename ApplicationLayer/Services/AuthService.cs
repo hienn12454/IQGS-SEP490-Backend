@@ -19,6 +19,7 @@ public class AuthService : IAuthService
     private readonly IJwtService _jwtService;
     private readonly IEmailService _emailService;
     private readonly IGoogleTokenValidator _googleValidator;
+    private readonly IGithubTokenValidator _githubValidator;
     private readonly IConfiguration _config;
     private readonly ISubscriptionService _subscriptionService;
 
@@ -37,6 +38,7 @@ public class AuthService : IAuthService
         IJwtService jwtService,
         IEmailService emailService,
         IGoogleTokenValidator googleValidator,
+        IGithubTokenValidator githubValidator,
         IConfiguration config,
         ISubscriptionService subscriptionService)
     {
@@ -47,6 +49,7 @@ public class AuthService : IAuthService
         _jwtService = jwtService;
         _emailService = emailService;
         _googleValidator = googleValidator;
+        _githubValidator = githubValidator;
         _config = config;
         _subscriptionService = subscriptionService;
 
@@ -83,8 +86,11 @@ public class AuthService : IAuthService
         }
 
         if (user.Provider != AuthProvider.Local && string.IsNullOrEmpty(user.PasswordHash))
+        {
+            var providerLabel = user.Provider == AuthProvider.Github ? "GitHub" : "Google";
             throw new BadRequestException(
-                "Tài khoản này đăng nhập qua Google. Vui lòng sử dụng nút 'Đăng nhập với Google'.");
+                $"Tài khoản này đăng nhập qua {providerLabel}. Vui lòng sử dụng nút 'Đăng nhập với {providerLabel}'.");
+        }
 
         if (!user.IsEmailVerified)
             throw new UnauthorizedException("Vui lòng xác minh email trước khi đăng nhập.");
@@ -158,40 +164,150 @@ public class AuthService : IAuthService
     }
 
     // ────────────────────────────────────────────────────────────────
-    // OAuth helpers
+    // GitHub OAuth — Verify-only (bước 1). Học theo Google, khác ở chỗ
+    // GitHub dùng Authorization Code flow (Code) thay vì ID Token.
     // ────────────────────────────────────────────────────────────────
-    private async Task<User> CreateOAuthUserAsync(
-        GoogleAccountInfo account,
-        OAuthLoginRequestDto request)
+    public async Task<OAuthVerifyResponseDto> VerifyGithubTokenAsync(OAuthGithubVerifyRequestDto request)
+    {
+        var account = await _githubValidator.ValidateAsync(request.Code);
+
+        var user = await _userRepo.GetByGithubIdAsync(account.Id)
+                   ?? await _userRepo.GetByEmailAsync(account.Email);
+
+        var linkedToLocal = user != null && user.Provider == AuthProvider.Local;
+        var isNewUser = user == null;
+
+        return new OAuthVerifyResponseDto
+        {
+            IsNewUser = isNewUser,
+            Email = account.Email,
+            Name = account.Name ?? account.Login,
+            Picture = account.AvatarUrl,
+            EmailVerified = account.EmailVerified,
+            LinkedToLocalAccount = linkedToLocal
+        };
+    }
+
+    // ────────────────────────────────────────────────────────────────
+    // GitHub OAuth — Login / Register (bước 2)
+    // ────────────────────────────────────────────────────────────────
+    public async Task<LoginResponseDto> GithubOAuthLoginAsync(OAuthGithubLoginRequestDto request)
+    {
+        var account = await _githubValidator.ValidateAsync(request.Code);
+
+        var user = await _userRepo.GetByGithubIdAnyStatusAsync(account.Id)
+                   ?? await _userRepo.GetByEmailAnyStatusAsync(account.Email);
+        var isNewUser = false;
+
+        if (user != null && !user.IsActive)
+            throw new UnauthorizedException("Tài khoản của bạn đã bị vô hiệu hóa. Vui lòng liên hệ quản trị viên.");
+
+        if (user == null)
+        {
+            user = await CreateGithubOAuthUserAsync(account, request);
+            isNewUser = true;
+        }
+        else if (user.GithubId != account.Id)
+        {
+            // Liên kết GitHub với tài khoản đã tồn tại cùng email — giữ password/GoogleId hiện có.
+            user.GithubId = account.Id;
+            await _userRepo.UpdateAsync(user);
+
+            // Auto-fill field GithubUrl trong profile — chỉ khi đang trống, không ghi đè
+            // link mà user đã tự nhập/chỉnh trước đó.
+            await AutoFillGithubUrlAsync(user, account.ProfileUrl);
+        }
+
+        var response = await IssueTokensAsync(user);
+        response.IsNewUser = isNewUser;
+        return response;
+    }
+
+    // ────────────────────────────────────────────────────────────────
+    // OAuth helpers — dùng chung cho Google & GitHub
+    // ────────────────────────────────────────────────────────────────
+    private Task<User> CreateOAuthUserAsync(GoogleAccountInfo account, OAuthLoginRequestDto request)
+        => CreateOAuthUserCoreAsync(
+            fullName: account.Name ?? account.Email.Split('@')[0],
+            email: account.Email,
+            emailVerified: account.EmailVerified,
+            avatarUrl: account.Picture,
+            provider: AuthProvider.Google,
+            googleId: account.Subject,
+            githubId: null,
+            githubProfileUrl: null,
+            intendedRole: request.IntendedRole,
+            companyId: request.CompanyId,
+            companyName: request.CompanyName,
+            jobTitle: request.JobTitle,
+            targetRole: request.TargetRole,
+            seniorityLevel: request.SeniorityLevel,
+            techStack: request.TechStack);
+
+    private Task<User> CreateGithubOAuthUserAsync(GithubAccountInfo account, OAuthGithubLoginRequestDto request)
+        => CreateOAuthUserCoreAsync(
+            fullName: account.Name ?? account.Login,
+            email: account.Email,
+            emailVerified: account.EmailVerified,
+            avatarUrl: account.AvatarUrl,
+            provider: AuthProvider.Github,
+            googleId: null,
+            githubId: account.Id,
+            githubProfileUrl: account.ProfileUrl,
+            intendedRole: request.IntendedRole,
+            companyId: request.CompanyId,
+            companyName: request.CompanyName,
+            jobTitle: request.JobTitle,
+            targetRole: request.TargetRole,
+            seniorityLevel: request.SeniorityLevel,
+            techStack: request.TechStack);
+
+    private async Task<User> CreateOAuthUserCoreAsync(
+        string fullName,
+        string email,
+        bool emailVerified,
+        string? avatarUrl,
+        string provider,
+        string? googleId,
+        string? githubId,
+        string? githubProfileUrl,
+        string? intendedRole,
+        Guid? companyId,
+        string? companyName,
+        string? jobTitle,
+        string? targetRole,
+        string? seniorityLevel,
+        List<string>? techStack)
     {
         // Không cho phép tự đặt role Admin. Case-insensitive — báo lỗi nếu role lạ.
-        var roleId = ParseIntendedRole(request.IntendedRole);
+        var roleId = ParseIntendedRole(intendedRole);
 
         // Validate input TRƯỚC khi insert User (AddAsync = SaveChanges ngay) để tránh
         // tạo User mồ côi nếu profile-required field thiếu.
         if (roleId == UserRole.CandidateId)
         {
-            if (string.IsNullOrWhiteSpace(request.TargetRole))
+            if (string.IsNullOrWhiteSpace(targetRole))
                 throw new BadRequestException("Vui lòng chọn vị trí mục tiêu mà bạn muốn ứng tuyển.");
-            if (string.IsNullOrWhiteSpace(request.SeniorityLevel))
+            if (string.IsNullOrWhiteSpace(seniorityLevel))
                 throw new BadRequestException("Vui lòng chọn cấp độ kinh nghiệm của bạn.");
         }
 
         // HR: resolve/create Company trước. Nếu thất bại, không có User mồ côi.
         Guid? hrCompanyId = null;
         if (roleId == UserRole.HRId)
-            hrCompanyId = await ResolveOrCreateCompanyAsync(request.CompanyId, request.CompanyName);
+            hrCompanyId = await ResolveOrCreateCompanyAsync(companyId, companyName);
 
         var user = new User
         {
-            FullName = account.Name ?? account.Email.Split('@')[0],
-            Email = account.Email,
+            FullName = fullName,
+            Email = email,
             RoleId = roleId,
-            Provider = AuthProvider.Google,
-            GoogleId = account.Subject,
-            IsEmailVerified = account.EmailVerified,
+            Provider = provider,
+            GoogleId = googleId,
+            GithubId = githubId,
+            IsEmailVerified = emailVerified,
             IsProfileComplete = true,
-            AvatarUrl = account.Picture
+            AvatarUrl = avatarUrl
         };
         await _userRepo.AddAsync(user);
 
@@ -201,7 +317,9 @@ public class AuthService : IAuthService
             {
                 UserId = user.Id,
                 CompanyId = hrCompanyId!.Value,
-                JobTitle = request.JobTitle
+                JobTitle = jobTitle,
+                // Auto-fill field GithubUrl khi đăng ký mới qua GitHub OAuth.
+                GithubUrl = githubProfileUrl
             });
             // SCRUM-380: gán gói Free + LimitsSnapshot + kỳ anniversary
             await _subscriptionService.AssignFreePlanAsync(user.Id, SubscriptionAudience.HR);
@@ -211,14 +329,43 @@ public class AuthService : IAuthService
             await _candidateProfileRepo.AddAsync(new CandidateProfile
             {
                 UserId = user.Id,
-                TargetRole = request.TargetRole,
-                SeniorityLevel = request.SeniorityLevel,
-                TechStack = (request.TechStack ?? new List<string>()).ToArray()
+                TargetRole = targetRole,
+                SeniorityLevel = seniorityLevel,
+                TechStack = (techStack ?? new List<string>()).ToArray(),
+                // Auto-fill field GithubUrl khi đăng ký mới qua GitHub OAuth.
+                GithubUrl = githubProfileUrl
             });
             await _subscriptionService.AssignFreePlanAsync(user.Id, SubscriptionAudience.Candidate);
         }
 
         return user;
+    }
+
+    /// <summary>
+    /// Auto-fill field GithubUrl trong HRProfile/CandidateProfile khi user liên kết tài khoản
+    /// GitHub vào một User đã tồn tại (returning user login qua GitHub lần đầu). Chỉ set khi
+    /// đang trống — không ghi đè link mà user đã tự nhập/chỉnh trước đó.
+    /// </summary>
+    private async Task AutoFillGithubUrlAsync(User user, string githubProfileUrl)
+    {
+        if (user.RoleId == UserRole.HRId)
+        {
+            var profile = await _hrProfileRepo.GetByUserIdAsync(user.Id);
+            if (profile != null && string.IsNullOrWhiteSpace(profile.GithubUrl))
+            {
+                profile.GithubUrl = githubProfileUrl;
+                await _hrProfileRepo.UpdateAsync(profile);
+            }
+        }
+        else if (user.RoleId == UserRole.CandidateId)
+        {
+            var profile = await _candidateProfileRepo.GetByUserIdAsync(user.Id);
+            if (profile != null && string.IsNullOrWhiteSpace(profile.GithubUrl))
+            {
+                profile.GithubUrl = githubProfileUrl;
+                await _candidateProfileRepo.UpdateAsync(profile);
+            }
+        }
     }
 
     private static int ParseIntendedRole(string? intendedRole)

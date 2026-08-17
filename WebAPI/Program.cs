@@ -337,6 +337,11 @@ public class Program
         builder.Services.AddScoped<IJwtService, JwtService>();
         builder.Services.AddScoped<IEmailService, EmailService>();
         builder.Services.AddScoped<IGoogleTokenValidator, GoogleTokenValidator>();
+        // GitHub OAuth: cần HttpClient để đổi code lấy access_token + gọi GitHub REST API.
+        builder.Services.AddHttpClient<IGithubTokenValidator, GithubTokenValidator>(client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(10);
+        });
         builder.Services.AddScoped<IAuthService, AuthService>();
         builder.Services.AddScoped<IUserService, UserService>();
         builder.Services.AddScoped<ICompanyService, CompanyService>();

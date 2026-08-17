@@ -1536,6 +1536,10 @@ namespace InfrastructureLayer.Migrations
                         .HasMaxLength(255)
                         .HasColumnType("character varying(255)");
 
+                    b.Property<string>("GithubId")
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)");
+
                     b.Property<string>("GoogleId")
                         .HasMaxLength(255)
                         .HasColumnType("character varying(255)");
@@ -1594,6 +1598,10 @@ namespace InfrastructureLayer.Migrations
 
                     b.HasIndex("Email")
                         .IsUnique();
+
+                    b.HasIndex("GithubId")
+                        .IsUnique()
+                        .HasFilter("\"GithubId\" IS NOT NULL");
 
                     b.HasIndex("GoogleId")
                         .IsUnique()

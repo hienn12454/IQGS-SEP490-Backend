@@ -11,6 +11,11 @@ public interface IAuthService
     Task<OAuthVerifyResponseDto> VerifyGoogleTokenAsync(OAuthVerifyRequestDto request);
 
     Task<LoginResponseDto> OAuthLoginAsync(OAuthLoginRequestDto request);
+
+    /// <summary>Verify-only: đổi GitHub code + tra user, KHÔNG tạo user, KHÔNG cấp JWT.</summary>
+    Task<OAuthVerifyResponseDto> VerifyGithubTokenAsync(OAuthGithubVerifyRequestDto request);
+
+    Task<LoginResponseDto> GithubOAuthLoginAsync(OAuthGithubLoginRequestDto request);
     Task<LoginResponseDto> RefreshTokenAsync(RefreshTokenRequestDto request);
     Task LogoutAsync(string refreshToken);
 

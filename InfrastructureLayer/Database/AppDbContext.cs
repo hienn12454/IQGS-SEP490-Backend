@@ -119,6 +119,11 @@ public class AppDbContext : DbContext
             entity.HasIndex(u => u.GoogleId)
                   .IsUnique()
                   .HasFilter("\"GoogleId\" IS NOT NULL");
+            entity.Property(u => u.GithubId).HasMaxLength(255);
+            // Unique trên GithubId nhưng cho phép nhiều row NULL (chưa liên kết GitHub).
+            entity.HasIndex(u => u.GithubId)
+                  .IsUnique()
+                  .HasFilter("\"GithubId\" IS NOT NULL");
             entity.Property(u => u.RefreshToken).HasMaxLength(512);
             entity.HasIndex(u => u.RefreshToken);
 

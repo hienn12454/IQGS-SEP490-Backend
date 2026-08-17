@@ -305,6 +305,7 @@ public class UserService : IUserService
             IsProfileComplete = user.IsProfileComplete,
             Provider = user.Provider,
             IsGoogleLinked = IsGoogleAccountLinked(user),
+            IsGithubLinked = IsGithubAccountLinked(user),
             CreatedAt = user.CreatedAt
         };
 
@@ -379,4 +380,12 @@ public class UserService : IUserService
     private static bool IsGoogleAccountLinked(User user) =>
         !string.IsNullOrWhiteSpace(user.GoogleId)
         || string.Equals(user.Provider, AuthProvider.Google, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Local user đã gắn GithubId cũng được tính là đã liên kết, không chỉ user đăng ký
+    /// thuần GitHub (Provider = github). Tương tự IsGoogleAccountLinked.
+    /// </summary>
+    private static bool IsGithubAccountLinked(User user) =>
+        !string.IsNullOrWhiteSpace(user.GithubId)
+        || string.Equals(user.Provider, AuthProvider.Github, StringComparison.OrdinalIgnoreCase);
 }

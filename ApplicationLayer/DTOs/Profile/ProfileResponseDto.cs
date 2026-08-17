@@ -18,6 +18,12 @@ public class ProfileResponseDto
     /// </summary>
     public bool IsGoogleLinked { get; set; }
 
+    /// <summary>
+    /// True khi user đăng ký bằng GitHub hoặc đã liên kết GitHub với tài khoản hiện có (GithubId khác null).
+    /// Không trả GithubId ra client — chỉ cần cờ hiển thị trên trang cài đặt hồ sơ.
+    /// </summary>
+    public bool IsGithubLinked { get; set; }
+
     public DateTime CreatedAt { get; set; }
 
     // Role-specific (null nếu không phải role đó)

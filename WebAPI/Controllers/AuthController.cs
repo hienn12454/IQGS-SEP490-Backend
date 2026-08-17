@@ -10,6 +10,7 @@ namespace WebAPI.Controllers;
 /// SCRUM-154: Đăng nhập + cấp JWT (email/password &amp; Google OAuth)
 /// SCRUM-155: Refresh token + giới hạn đăng nhập thất bại + logout
 /// SCRUM-157: Quên mật khẩu + đặt lại mật khẩu qua email
+/// GitHub OAuth: học theo flow Google — /oauth/github/verify + /oauth/github.
 /// </summary>
 [ApiController]
 [Route("api/auth")]
@@ -65,6 +66,38 @@ public class AuthController : ControllerBase
     public async Task<IActionResult> GoogleLogin([FromBody] OAuthLoginRequestDto request)
     {
         var result = await _authService.OAuthLoginAsync(request);
+        return SuccessResp.Ok(result);
+    }
+
+    // ────────────────────────────────────────────────────────────────
+    // POST api/auth/oauth/github/verify
+    // Bước 1 GitHub OAuth flow: đổi Authorization Code lấy thông tin tài khoản, KHÔNG tạo user,
+    // KHÔNG cấp JWT. Học theo /oauth/google/verify.
+    // ────────────────────────────────────────────────────────────────
+    /// <summary>Verify GitHub Authorization Code để biết user mới hay cũ trước khi tạo account.</summary>
+    [AllowAnonymous]
+    [HttpPost("oauth/github/verify")]
+    public async Task<IActionResult> GithubVerify([FromBody] OAuthGithubVerifyRequestDto request)
+    {
+        var result = await _authService.VerifyGithubTokenAsync(request);
+        return SuccessResp.Ok(result);
+    }
+
+    // ────────────────────────────────────────────────────────────────
+    // POST api/auth/oauth/github
+    // Bước 2 GitHub OAuth flow: đăng nhập (returning user) hoặc tạo user + profile (new user).
+    // Field GithubUrl trong HRProfile/CandidateProfile được auto-fill từ tài khoản GitHub.
+    // ────────────────────────────────────────────────────────────────
+    /// <summary>
+    /// Đăng nhập / đăng ký bằng GitHub OAuth. Với user mới phải kèm IntendedRole + các field
+    /// profile (CompanyId/CompanyName/JobTitle cho HR; TargetRole/SeniorityLevel/TechStack cho
+    /// Candidate) — giống /oauth/google.
+    /// </summary>
+    [AllowAnonymous]
+    [HttpPost("oauth/github")]
+    public async Task<IActionResult> GithubLogin([FromBody] OAuthGithubLoginRequestDto request)
+    {
+        var result = await _authService.GithubOAuthLoginAsync(request);
         return SuccessResp.Ok(result);
     }
 
