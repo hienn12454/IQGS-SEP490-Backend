@@ -40,10 +40,17 @@ public class GithubTokenValidator : IGithubTokenValidator
         if (_cache.TryGetValue(cacheKey, out GithubAccountInfo? cached) && cached != null)
             return cached;
 
-        var clientId = _config["GithubOAuth:ClientId"]
-            ?? throw new InvalidOperationException("GithubOAuth:ClientId chưa được cấu hình.");
-        var clientSecret = _config["GithubOAuth:ClientSecret"]
-            ?? throw new InvalidOperationException("GithubOAuth:ClientSecret chưa được cấu hình.");
+        var clientId = _config["GithubOAuth:ClientId"];
+        var clientSecret = _config["GithubOAuth:ClientSecret"];
+
+        // Dùng IsNullOrWhiteSpace thay vì "?? throw": appsettings.json để sẵn ClientSecret là
+        // chuỗi rỗng "" (placeholder, giá trị thật set qua env var GithubOAuth__ClientSecret trên
+        // Azure) — "" vẫn không phải null nên "??" không bắt được, sẽ âm thầm gửi secret rỗng
+        // sang GitHub và bị GitHub từ chối, hiện ra 401 chung chung không rõ nguyên nhân.
+        if (string.IsNullOrWhiteSpace(clientId))
+            throw new InvalidOperationException("GithubOAuth:ClientId chưa được cấu hình.");
+        if (string.IsNullOrWhiteSpace(clientSecret))
+            throw new InvalidOperationException("GithubOAuth:ClientSecret chưa được cấu hình.");
 
         var accessToken = await ExchangeCodeForTokenAsync(code, clientId, clientSecret);
         var (id, login, name, avatarUrl, htmlUrl) = await FetchGithubUserAsync(accessToken);
