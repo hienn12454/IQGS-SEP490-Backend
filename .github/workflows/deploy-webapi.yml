@@ -14,6 +14,7 @@ env:
   AZURE_WEBAPP_NAME: IQGS-BE
   DOTNET_VERSION: "8.0.x"
   PACKAGE_PATH: ${{ github.workspace }}/publish
+  TEST_DB_CONNECTION: "Host=localhost;Port=5432;Database=iqgs_test;Username=postgres;Password=postgres"
 
 jobs:
   build-test-migrate-deploy:
@@ -23,6 +24,23 @@ jobs:
 
     permissions:
       contents: read
+
+    # Postgres tạm (có pgvector) chỉ dùng để chạy test — tách biệt hoàn toàn với DB production
+    # ở bước "Scan and apply pending migrations" bên dưới.
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: iqgs_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
 
     steps:
       - name: Checkout
@@ -47,6 +65,23 @@ jobs:
       - name: Build solution (Release)
         run: dotnet build IQGS-BE.sln --configuration Release --no-restore
 
+      - name: Install dotnet-ef
+        run: |
+          dotnet tool install --global dotnet-ef --version 8.0.22
+          echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
+
+      - name: Apply migrations to ephemeral test database
+        env:
+          ConnectionStrings__DefaultConnection: ${{ env.TEST_DB_CONNECTION }}
+        run: |
+          dotnet ef database update \
+            --project WebAPI/WebAPI.csproj \
+            --startup-project WebAPI/WebAPI.csproj \
+            --configuration Release \
+            --no-build
+
+      # Trỏ vào Postgres service ở trên nên integration test / API smoke test (WebAPI.IntegrationTests)
+      # chạy thật 100% thay vì tự return sớm (skip) như trước khi có bước này.
       - name: Test solution
         run: |
           if grep -R --include='*.csproj' --exclude-dir='.git' --exclude-dir='bin' --exclude-dir='obj' -l 'Microsoft.NET.Test.Sdk' . 2>/dev/null | grep -q .; then
@@ -54,11 +89,9 @@ jobs:
           else
             echo "No test projects detected (no Microsoft.NET.Test.Sdk); skipping dotnet test."
           fi
-
-      - name: Install dotnet-ef
-        run: |
-          dotnet tool install --global dotnet-ef --version 8.0.22
-          echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
+        env:
+          ASPNETCORE_ENVIRONMENT: Development
+          ConnectionStrings__DefaultConnection: ${{ env.TEST_DB_CONNECTION }}
 
       - name: Scan and apply pending migrations
         env:

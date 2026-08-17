@@ -1,0 +1,93 @@
+name: CI Tests
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ci-tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_VERSION: "8.0.x"
+  TEST_DB_CONNECTION: "Host=localhost;Port=5432;Database=iqgs_test;Username=postgres;Password=postgres"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    # Postgres thật (có pgvector) chạy tạm cho vòng đời của job — không đụng tới DB production.
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: iqgs_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Restore solution
+        run: dotnet restore IQGS-BE.sln
+
+      - name: Build solution (Release)
+        run: dotnet build IQGS-BE.sln --configuration Release --no-restore
+
+      - name: Install dotnet-ef
+        run: |
+          dotnet tool install --global dotnet-ef --version 8.0.22
+          echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
+
+      - name: Apply migrations to ephemeral test database
+        env:
+          ConnectionStrings__DefaultConnection: ${{ env.TEST_DB_CONNECTION }}
+        run: |
+          dotnet ef database update \
+            --project WebAPI/WebAPI.csproj \
+            --startup-project WebAPI/WebAPI.csproj \
+            --configuration Release \
+            --no-build
+
+      # Trỏ vào Postgres service ở trên nên các integration test / API smoke test
+      # (WebAPI.IntegrationTests) không còn tự return sớm (skip) như trước — chạy thật 100%.
+      - name: Run full test suite (unit + integration + API)
+        env:
+          ASPNETCORE_ENVIRONMENT: Development
+          ConnectionStrings__DefaultConnection: ${{ env.TEST_DB_CONNECTION }}
+        run: |
+          dotnet test IQGS-BE.sln \
+            --configuration Release \
+            --no-build \
+            --no-restore \
+            --verbosity normal \
+            --logger "trx" \
+            --results-directory ./TestResults
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: ./TestResults
