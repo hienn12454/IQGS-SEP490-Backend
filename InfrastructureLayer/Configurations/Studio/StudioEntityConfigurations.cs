@@ -35,6 +35,7 @@ public sealed class JobDescriptionConfiguration : IEntityTypeConfiguration<JobDe
         builder.Property(x => x.Content).IsRequired();
         builder.Property(x => x.SourceType).HasConversion<string>().HasMaxLength(30);
         builder.Property(x => x.DetectedSkillsJson).HasColumnType("jsonb");
+        builder.Property(x => x.ExtractedInformationJson).HasColumnType("jsonb");
         builder.HasIndex(x => x.ProjectId).IsUnique();
 
         builder.HasOne(x => x.Project)
@@ -213,6 +214,9 @@ public sealed class StudioSettingsConfiguration : IEntityTypeConfiguration<Studi
         builder.Property(x => x.QuestionTypesJson).HasMaxLength(500);
         builder.Property(x => x.ContentMode).HasMaxLength(30).HasDefaultValue("Mixed");
         builder.Property(x => x.CodeTemplatesJson).HasMaxLength(1000);
+        builder.Property(x => x.QuestionDistributionJson).HasColumnType("jsonb");
+        builder.Property(x => x.QuestionStylesJson).HasColumnType("jsonb");
+        builder.Property(x => x.AiRecommendationJson).HasColumnType("jsonb");
         builder.HasIndex(x => x.ProjectId).IsUnique();
 
         builder.HasOne(x => x.Project)
@@ -236,6 +240,8 @@ public sealed class StudioFocusAreaConfiguration : IEntityTypeConfiguration<Stud
         builder.ToTable("tbl_studio_focus_areas");
         builder.Property(x => x.Name).IsRequired().HasMaxLength(150);
         builder.Property(x => x.Weight).HasPrecision(5, 2);
+        builder.Property(x => x.Description).HasColumnType("text");
+        builder.Property(x => x.SourceReason).HasColumnType("text");
 
         builder.HasOne(x => x.StudioSettings)
             .WithMany(s => s.FocusAreas)

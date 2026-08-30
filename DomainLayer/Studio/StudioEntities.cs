@@ -35,6 +35,8 @@ public sealed class JobDescription : BaseEntity
     public string? DetectedSeniority { get; set; }
     public string? DetectedLanguage { get; set; }
     public string? DetectedSkillsJson { get; set; }
+    /// <summary>JD extract only: responsibilities, summary — không lưu focus areas.</summary>
+    public string? ExtractedInformationJson { get; set; }
     public int WordCount { get; set; }
     public int CharacterCount { get; set; }
 
@@ -180,6 +182,13 @@ public sealed class StudioSettings : BaseEntity
     public string ContentMode { get; set; } = "Mixed";
     /// <summary>JSON array code template ids enabled for generation/builder.</summary>
     public string? CodeTemplatesJson { get; set; }
+    /// <summary>HR-approved distribution: [{category, percentage, questionCount}] — canonical categories.</summary>
+    public string? QuestionDistributionJson { get; set; }
+    /// <summary>HR-approved question styles: ["system_design",...].</summary>
+    public string? QuestionStylesJson { get; set; }
+    /// <summary>AI recommendation draft snapshot — không ghi đè final settings.</summary>
+    public string? AiRecommendationJson { get; set; }
+    public DateTime? AiRecommendationGeneratedAt { get; set; }
 
     public InterviewProject? Project { get; set; }
     public InterviewPlan? AppliedPlan { get; set; }
@@ -191,6 +200,8 @@ public sealed class StudioFocusArea : BaseEntity
     public Guid StudioSettingsId { get; set; }
     public string Name { get; set; } = string.Empty;
     public decimal Weight { get; set; }
+    public string? Description { get; set; }
+    public string? SourceReason { get; set; }
     public int OrderIndex { get; set; }
 
     public StudioSettings? StudioSettings { get; set; }
@@ -235,6 +246,8 @@ public sealed class QuestionGenerationRun : BaseEntity
     public DateTime? FailedAt { get; set; }
     public string? ErrorCode { get; set; }
     public string? ErrorMessage { get; set; }
+    /// <summary>SCRUM-429: regen 1 câu — callback update đúng câu này (null = generate full).</summary>
+    public Guid? TargetQuestionId { get; set; }
 
     public InterviewProject? Project { get; set; }
     public InterviewPlan? InterviewPlan { get; set; }
