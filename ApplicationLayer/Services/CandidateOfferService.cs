@@ -11,33 +11,40 @@ using Microsoft.Extensions.Configuration;
 
 namespace ApplicationLayer.Services;
 
-/// <summary>Lời đề nghị phỏng vấn qua email (offer) — độc lập với luồng CandidateInvitation in-app.</summary>
+/// <summary>
+/// Lời đề nghị phỏng vấn qua email (offer). Email vẫn gửi như cũ, nhưng nếu recommendation
+/// chưa có CandidateInvitation thì tạo thêm lời mời in-app — candidate thấy trong
+/// GET /api/candidate/invitations (tránh HR bấm Gửi Offer mà hộp thư candidate trống).
+/// </summary>
 public class CandidateOfferService : ICandidateOfferService
 {
     private readonly ICandidateOfferRepository _offerRepository;
     private readonly ICandidateRecommendationRepository _recommendationRepository;
+    private readonly ICandidateInvitationRepository _invitationRepository;
     private readonly IUserRepository _userRepository;
-    private readonly ICandidateProfileRepository _candidateProfileRepository;
     private readonly IHrCompanyInfoService _hrCompanyInfoService;
     private readonly IEmailService _emailService;
+    private readonly IHrAcceptanceNotifier _acceptanceNotifier;
     private readonly IConfiguration _config;
     private readonly int _tokenExpirationDays;
 
     public CandidateOfferService(
         ICandidateOfferRepository offerRepository,
         ICandidateRecommendationRepository recommendationRepository,
+        ICandidateInvitationRepository invitationRepository,
         IUserRepository userRepository,
-        ICandidateProfileRepository candidateProfileRepository,
         IHrCompanyInfoService hrCompanyInfoService,
         IEmailService emailService,
+        IHrAcceptanceNotifier acceptanceNotifier,
         IConfiguration config)
     {
         _offerRepository = offerRepository;
         _recommendationRepository = recommendationRepository;
+        _invitationRepository = invitationRepository;
         _userRepository = userRepository;
-        _candidateProfileRepository = candidateProfileRepository;
         _hrCompanyInfoService = hrCompanyInfoService;
         _emailService = emailService;
+        _acceptanceNotifier = acceptanceNotifier;
         _config = config;
         _tokenExpirationDays = int.Parse(config["CandidateOfferSettings:TokenExpirationDays"] ?? "7");
     }
@@ -74,6 +81,7 @@ public class CandidateOfferService : ICandidateOfferService
             TokenExpiresAt = DateTime.UtcNow.AddDays(_tokenExpirationDays)
         };
         await _offerRepository.AddAsync(offer);
+        await EnsureInAppInvitationAsync(recommendation, hrUserId, offer.Message);
 
         var apiBaseUrl = (_config["AppSettings:ApiBaseUrl"] ?? "https://localhost:5001").TrimEnd('/');
         var acceptLink = $"{apiBaseUrl}/api/public/candidate-offers/{rawToken}";
@@ -119,34 +127,62 @@ public class CandidateOfferService : ICandidateOfferService
         offer.Status = CandidateOfferStatus.Accepted;
         offer.AcceptedAt = DateTime.UtcNow;
         await _offerRepository.UpdateAsync(offer);
+        await SyncInvitationAcceptedAsync(offer);
 
-        await SendHrNotificationAsync(offer);
+        await _acceptanceNotifier.NotifyAsync(offer.HrUserId, offer.CandidateUserId, null);
 
         return CandidateOfferPageHtml.BuildSuccessPage(offer.Message);
+    }
+
+    /// <summary>
+    /// Tạo lời mời in-app nếu chưa có (unique 1 invitation / recommendation).
+    /// Không đụng invitation đã tồn tại — offer vẫn gửi được khi đã mời trước đó.
+    /// </summary>
+    private async Task EnsureInAppInvitationAsync(
+        CandidateRecommendation recommendation, Guid hrUserId, string? message)
+    {
+        if (await _invitationRepository.GetByRecommendationIdAsync(recommendation.Id) is not null)
+            return;
+
+        var trimmed = string.IsNullOrWhiteSpace(message) ? null : message.Trim();
+        // Invitation.Message max 2000; offer cho phép 5000 — cắt để không vỡ insert.
+        if (trimmed is { Length: > 2000 })
+            trimmed = trimmed[..2000];
+
+        await _invitationRepository.AddAsync(new CandidateInvitation
+        {
+            RecommendationId = recommendation.Id,
+            HrUserId = hrUserId,
+            CandidateUserId = recommendation.CandidateUserId,
+            Message = trimmed,
+            Status = InvitationStatus.Pending
+        });
+
+        if (recommendation.Status != CandidateRecommendationStatus.Invited)
+        {
+            recommendation.Status = CandidateRecommendationStatus.Invited;
+            recommendation.UpdatedAt = DateTime.UtcNow;
+            await _recommendationRepository.UpdateAsync(recommendation);
+        }
+    }
+
+    /// <summary>Candidate accept qua link email → đồng bộ invitation PENDING thành ACCEPTED.</summary>
+    private async Task SyncInvitationAcceptedAsync(CandidateOffer offer)
+    {
+        var invitation = await _invitationRepository.GetByRecommendationIdAsync(offer.RecommendationId);
+        if (invitation is null || invitation.Status != InvitationStatus.Pending)
+            return;
+
+        invitation.Status = InvitationStatus.Accepted;
+        invitation.RespondedAt = offer.AcceptedAt ?? DateTime.UtcNow;
+        invitation.UpdatedAt = DateTime.UtcNow;
+        await _invitationRepository.UpdateAsync(invitation);
     }
 
     private async Task<CandidateOffer?> GetActiveOfferByRawTokenAsync(string rawToken)
     {
         if (string.IsNullOrWhiteSpace(rawToken)) return null;
         return await _offerRepository.GetByTokenHashAsync(ComputeSha256(rawToken.Trim()));
-    }
-
-    private async Task SendHrNotificationAsync(CandidateOffer offer)
-    {
-        var hrUser = await _userRepository.GetByIdAsync(offer.HrUserId);
-        var candidateUser = await _userRepository.GetByIdAsync(offer.CandidateUserId);
-        if (hrUser is null || candidateUser is null) return; // best-effort, không chặn accept
-
-        var candidateProfile = await _candidateProfileRepository.GetByUserIdAsync(offer.CandidateUserId);
-        var frontendUrl = (_config["AppSettings:FrontendUrl"] ?? "https://iqgs.com").TrimEnd('/');
-
-        await _emailService.SendCandidateOfferAcceptedNotificationAsync(
-            hrUser.Email, hrUser.FullName,
-            candidateUser.FullName, candidateUser.Email,
-            candidateProfile?.TargetRole, candidateProfile?.SeniorityLevel,
-            candidateProfile?.TechStack ?? Array.Empty<string>(),
-            candidateProfile?.PhoneNumber,
-            $"{frontendUrl}/hr/recommendations");
     }
 
     private static string ComputeSha256(string input)

@@ -102,10 +102,10 @@ public class HrRecommendationsController : ControllerBase
         return SuccessResp.Ok(result);
     }
 
-    /// <summary>Gửi email đề nghị phỏng vấn (offline) cho candidate từ recommendation — nội dung tự do HR nhập,
-    /// kèm nút xem/xác nhận dẫn tới trang công khai. Gửi được cho MỌI recommendation HR sở hữu bất kể Status,
-    /// độc lập với /invite (lời mời trong app). Khi candidate bấm xác nhận, HR sẽ nhận email báo kèm thông tin
-    /// candidate (tên, email, vị trí, tech stack...). 409 nếu lần gửi offer gần nhất cho recommendation này đã được chấp nhận.</summary>
+    /// <summary>Gửi email đề nghị phỏng vấn cho candidate từ recommendation — nội dung tự do HR nhập,
+    /// kèm nút xem/xác nhận dẫn tới trang công khai. Nếu recommendation chưa có lời mời in-app thì tạo thêm
+    /// CandidateInvitation (PENDING) để candidate thấy trong GET /api/candidate/invitations. 409 nếu lần gửi
+    /// offer gần nhất cho recommendation này đã được chấp nhận hoặc offer còn hạn.</summary>
     /// <param name="id">Id recommendation.</param>
     /// <param name="dto">message: nội dung lời đề nghị (bắt buộc, tối đa 5000 ký tự).</param>
     [HttpPost("{id:guid}/offer")]

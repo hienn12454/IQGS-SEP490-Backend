@@ -8,14 +8,21 @@ using DomainLayer.Exceptions;
 
 namespace ApplicationLayer.Services;
 
-/// <summary>Candidate xem và phản hồi lời mời phỏng vấn (SCRUM-295).</summary>
+/// <summary>Candidate xem và phản hồi lời mời phỏng vấn (SCRUM-295 / SCRUM-415).</summary>
 public class CandidateInvitationService : ICandidateInvitationService
 {
     private readonly ICandidateInvitationRepository _invitationRepository;
+    private readonly ICandidateOfferRepository _offerRepository;
+    private readonly IHrAcceptanceNotifier _acceptanceNotifier;
 
-    public CandidateInvitationService(ICandidateInvitationRepository invitationRepository)
+    public CandidateInvitationService(
+        ICandidateInvitationRepository invitationRepository,
+        ICandidateOfferRepository offerRepository,
+        IHrAcceptanceNotifier acceptanceNotifier)
     {
         _invitationRepository = invitationRepository;
+        _offerRepository = offerRepository;
+        _acceptanceNotifier = acceptanceNotifier;
     }
 
     public async Task<IReadOnlyList<CandidateInvitationListItemDto>> ListAsync(Guid candidateUserId)
@@ -71,11 +78,36 @@ public class CandidateInvitationService : ICandidateInvitationService
 
         await _invitationRepository.UpdateAsync(invitation);
 
+        // Accept in-app không đi qua CandidateOfferService — nếu HR đã gửi email offer
+        // cùng recommendation, LatestOfferStatus vẫn SENT nên UI HR tưởng chưa accept.
+        if (newStatus == InvitationStatus.Accepted)
+        {
+            await SyncOfferAcceptedAsync(invitation);
+            // SCRUM-415: trước đây chỉ link email mới mail HR — accept trong app thì HR không nhận gì.
+            await _acceptanceNotifier.NotifyAsync(
+                invitation.HrUserId, invitation.CandidateUserId, invitation.SharedPhoneNumber);
+        }
+
         return new InvitationActionResponseDto
         {
             Id = invitation.Id,
             Status = invitation.Status,
             RespondedAt = invitation.RespondedAt
         };
+    }
+
+    /// <summary>
+    /// Đồng bộ offer SENT cùng recommendation thành ACCEPTED.
+    /// Rec.Status giữ INVITED — HR lọc tab "Đã mời", trạng thái accept nằm ở InvitationStatus / LatestOfferStatus.
+    /// </summary>
+    private async Task SyncOfferAcceptedAsync(CandidateInvitation invitation)
+    {
+        var offer = await _offerRepository.GetLatestByRecommendationIdAsync(invitation.RecommendationId);
+        if (offer is null || offer.Status != CandidateOfferStatus.Sent)
+            return;
+
+        offer.Status = CandidateOfferStatus.Accepted;
+        offer.AcceptedAt = invitation.RespondedAt ?? DateTime.UtcNow;
+        await _offerRepository.UpdateAsync(offer);
     }
 }

@@ -46,6 +46,12 @@ public class HRProfileDto
     public string? Bio { get; set; }
     public bool IsCompanyVerified { get; set; }
     public string? InviteMessageTemplate { get; set; }
+
+    /// <summary>SCRUM-424: prefs hiển thị list recommendation.</summary>
+    public double? RecDefaultMinScore { get; set; }
+    public string RecDefaultSortBy { get; set; } = "score";
+    public string RecDefaultSortDir { get; set; } = "desc";
+    public bool RecHideDismissed { get; set; }
 }
 
 public class CandidateProfileDto

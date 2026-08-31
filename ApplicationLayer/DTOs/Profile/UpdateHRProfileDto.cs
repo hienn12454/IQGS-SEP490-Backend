@@ -42,4 +42,23 @@ public class UpdateHRProfileDto
 
     [MaxLength(4000, ErrorMessage = "Template lời mời không được vượt quá 4000 ký tự.")]
     public string? InviteMessageTemplate { get; set; }
+
+    /// <summary>SCRUM-424: MinScore mặc định list recommendation — null = không lọc; 0–100 nếu có.</summary>
+    [Range(0, 100, ErrorMessage = "RecDefaultMinScore phải từ 0 đến 100.")]
+    public double? RecDefaultMinScore { get; set; }
+
+    /// <summary>SCRUM-424: score | date</summary>
+    [MaxLength(16)]
+    [RegularExpression(@"^(score|date)$", ErrorMessage = "RecDefaultSortBy phải là score hoặc date.",
+        MatchTimeoutInMilliseconds = 1000)]
+    public string? RecDefaultSortBy { get; set; }
+
+    /// <summary>SCRUM-424: asc | desc</summary>
+    [MaxLength(8)]
+    [RegularExpression(@"^(asc|desc)$", ErrorMessage = "RecDefaultSortDir phải là asc hoặc desc.",
+        MatchTimeoutInMilliseconds = 1000)]
+    public string? RecDefaultSortDir { get; set; }
+
+    /// <summary>SCRUM-424: ẩn DISMISSED khỏi mặc định list.</summary>
+    public bool? RecHideDismissed { get; set; }
 }

@@ -82,9 +82,6 @@ public class RecommendationService : IRecommendationService
         if (session.Status != PracticeSessionStatus.Completed)
             return;
 
-        if (session.OverallScore is not double score || score < MinScoreForRecommendation)
-            return;
-
         // SCRUM-382: Free soft paywall — không ghi data gợi ý HR
         if (!await _subscriptionGate.CanPersistHrRecommendationAsync(session.CandidateUserId))
             return;
@@ -97,6 +94,14 @@ public class RecommendationService : IRecommendationService
         if (questionSet is null)
             return;
         if (questionSet.Kind == QuestionSetKind.Personal)
+            return;
+
+        // SCRUM-424: HR tắt auto trên bộ này → không tạo recommendation mới
+        if (!questionSet.AutoRecommendEnabled)
+            return;
+
+        var minScore = ResolveIntakeMinScore(questionSet.RecommendationMinScore);
+        if (session.OverallScore is not double score || score < minScore)
             return;
 
         var existing = await _recommendationRepository.GetByCandidateAndSetAsync(
@@ -123,6 +128,14 @@ public class RecommendationService : IRecommendationService
             existing.UpdatedAt = DateTime.UtcNow;
             await _recommendationRepository.UpdateAsync(existing);
         }
+    }
+
+    /// <summary>SCRUM-424: dùng ngưỡng trên QuestionSet; fallback constant nếu ngoài [50, 95].</summary>
+    public static double ResolveIntakeMinScore(double configured)
+    {
+        if (configured < 50 || configured > 95)
+            return MinScoreForRecommendation;
+        return configured;
     }
 
     public async Task<PagedResultDto<HrRecommendationListItemDto>> ListForHrAsync(

@@ -22,4 +22,16 @@ public class HRProfile : BaseEntity
 
     /// <summary>Template lời mời — placeholder {{name}} {{title}} {{score}}.</summary>
     public string? InviteMessageTemplate { get; set; }
+
+    /// <summary>SCRUM-424: MinScore mặc định khi mở list recommendation — null = không lọc.</summary>
+    public double? RecDefaultMinScore { get; set; }
+
+    /// <summary>SCRUM-424: Sort mặc định — score | date.</summary>
+    public string RecDefaultSortBy { get; set; } = "score";
+
+    /// <summary>SCRUM-424: Hướng sort mặc định — asc | desc.</summary>
+    public string RecDefaultSortDir { get; set; } = "desc";
+
+    /// <summary>SCRUM-424: Ẩn tab/status DISMISSED khỏi mặc định list (FE init filter).</summary>
+    public bool RecHideDismissed { get; set; }
 }

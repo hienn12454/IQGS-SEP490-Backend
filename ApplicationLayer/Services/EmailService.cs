@@ -149,11 +149,14 @@ public class EmailService : IEmailService
         string appLink)
     {
         var fromName = _config["EmailSettings:FromName"] ?? "HireGen AI";
-        var fromAddress = _config["EmailSettings:FromAddress"] ?? "noreply@iqgs.com";
         var smtpHost = _config["EmailSettings:SmtpHost"];
         var smtpPort = int.Parse(_config["EmailSettings:SmtpPort"] ?? "587");
         var username = _config["EmailSettings:Username"];
         var password = _config["EmailSettings:Password"];
+        // Gmail SMTP từ chối From khác account đăng nhập (noreply@iqgs.com vs fpt.edu.vn) — mail HR biến mất.
+        var fromAddress = !string.IsNullOrWhiteSpace(username)
+            ? username
+            : (_config["EmailSettings:FromAddress"] ?? "noreply@iqgs.com");
 
         if (string.IsNullOrWhiteSpace(smtpHost) || string.IsNullOrWhiteSpace(username))
         {

@@ -19,13 +19,16 @@ public class AdminMarketplaceService : IAdminMarketplaceService
 
     private readonly IAdminMarketplaceRepository _repository;
     private readonly IPlatformSettingsRepository _platformSettingsRepository;
+    private readonly IPracticeSessionRepository _practiceSessionRepository;
 
     public AdminMarketplaceService(
         IAdminMarketplaceRepository repository,
-        IPlatformSettingsRepository platformSettingsRepository)
+        IPlatformSettingsRepository platformSettingsRepository,
+        IPracticeSessionRepository practiceSessionRepository)
     {
         _repository = repository;
         _platformSettingsRepository = platformSettingsRepository;
+        _practiceSessionRepository = practiceSessionRepository;
     }
 
     public async Task<PagedResultDto<AdminMarketplaceListItemDto>> ListAsync(AdminMarketplaceListQueryDto query)
@@ -148,6 +151,36 @@ public class AdminMarketplaceService : IAdminMarketplaceService
             QuestionSetId = questionSet.Id,
             IsPinned = false,
             PinnedAt = null
+        };
+    }
+
+    /// <summary>UC65: copy rule HR unpublish nhưng không check owner — Admin được gỡ mọi bộ PUBLISHED.</summary>
+    public async Task<QuestionSetActionResponseDto> UnpublishAsync(Guid id)
+    {
+        var questionSet = await _repository.GetByIdForUpdateAsync(id)
+            ?? throw new NotFoundException("Bộ câu hỏi không tồn tại.");
+
+        if (questionSet.Status != QuestionSetStatus.Published)
+            throw new ConflictException("Bộ câu hỏi hiện không ở trạng thái PUBLISHED.");
+
+        questionSet.Status = QuestionSetStatus.Draft;
+        questionSet.PublishedAt = null;
+        // SCRUM-404: unpublish thì bỏ pin khỏi Marketplace
+        questionSet.IsPinned = false;
+        questionSet.PinnedAt = null;
+        questionSet.UpdatedAt = DateTime.UtcNow;
+
+        await _repository.UpdateAsync(questionSet);
+
+        // SCRUM-408: hủy phiên đang làm — publish lại sẽ tạo phiên mới, không resume.
+        var abandoned = await _practiceSessionRepository.AbandonInProgressByQuestionSetAsync(questionSet.Id);
+
+        return new QuestionSetActionResponseDto
+        {
+            QuestionSetId = questionSet.Id,
+            Status = questionSet.Status,
+            PublishedAt = questionSet.PublishedAt,
+            AbandonedSessionCount = abandoned
         };
     }
 

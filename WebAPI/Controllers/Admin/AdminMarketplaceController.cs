@@ -58,4 +58,12 @@ public class AdminMarketplaceController : ControllerBase
         var result = await _service.UnpinAsync(id);
         return SuccessResp.Ok(result);
     }
+
+    /// <summary>UC65: Admin gỡ bộ khỏi Marketplace (PUBLISHED → DRAFT), không cần là owner HR.</summary>
+    [HttpPost("question-sets/{id:guid}/unpublish")]
+    public async Task<IActionResult> Unpublish(Guid id)
+    {
+        var result = await _service.UnpublishAsync(id);
+        return SuccessResp.Ok(result);
+    }
 }
