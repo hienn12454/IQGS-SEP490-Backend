@@ -69,10 +69,24 @@ public class QuestionSetDetailResponseDto
     public string CompanyLogo { get; set; } = string.Empty;
 
     public string JobDescription { get; set; } = string.Empty;
+
+    /// <summary>PastedText | UploadedFile</summary>
+    public string JdSourceType { get; set; } = "PastedText";
+
+    /// <summary>Tên file gốc khi JD upload; null khi paste.</summary>
+    public string? JdOriginalFileName { get; set; }
+
     public string? HrNote { get; set; }
 
     /// <summary>Giới hạn thời gian làm bài practice (phút) — null = không giới hạn.</summary>
     public int? TimeLimitMinutes { get; set; }
+
+    /// <summary>SCRUM-424: HR bật/tắt auto tạo recommendation khi candidate hoàn thành practice.</summary>
+    public bool AutoRecommendEnabled { get; set; } = true;
+
+    /// <summary>SCRUM-424: Ngưỡng OverallScore tối thiểu để tạo recommendation.</summary>
+    public double RecommendationMinScore { get; set; } = 70;
+
     public object? Plan { get; set; }
     public DateTime? GeneratedAt { get; set; }
     public DateTime SavedAt { get; set; }
@@ -89,6 +103,40 @@ public class QuestionSetActionResponseDto
     public int AbandonedSessionCount { get; set; }
 }
 
+/// <summary>SCRUM-439: Publish selective + time limit (+ recommend settings) trong 1 request.</summary>
+public class PublishQuestionSetRequestDto
+{
+    /// <summary>Null/empty = giữ active hiện tại; có list = chỉ các id này active, còn lại soft-deactivate.</summary>
+    public List<Guid>? QuestionIds { get; set; }
+
+    /// <summary>Số phút 1–480; null = không giới hạn thời gian practice.</summary>
+    [System.ComponentModel.DataAnnotations.Range(1, 480, ErrorMessage = "Giới hạn thời gian phải từ 1 đến 480 phút.")]
+    public int? TimeLimitMinutes { get; set; }
+
+    /// <summary>Null = giữ cấu hình hiện tại; có giá trị = ghi khi publish.</summary>
+    public bool? AutoRecommendEnabled { get; set; }
+
+    /// <summary>Ngưỡng điểm gợi ý ứng viên 50–95; chỉ áp dụng khi AutoRecommendEnabled có gửi hoặc đang bật.</summary>
+    [System.ComponentModel.DataAnnotations.Range(50, 95, ErrorMessage = "Ngưỡng điểm phải từ 50 đến 95.")]
+    public double? RecommendationMinScore { get; set; }
+}
+
+/// <summary>SCRUM-438: Tổng hợp set PUBLISHED của HR (practice + rating).</summary>
+public class PublishedOverviewItemDto
+{
+    public Guid QuestionSetId { get; set; }
+    public string Title { get; set; } = string.Empty;
+    public DateTime? PublishedAt { get; set; }
+    public int QuestionCount { get; set; }
+    public int? TimeLimitMinutes { get; set; }
+    public int AttemptCount { get; set; }
+    public int CompletedCount { get; set; }
+    public int InProgressCount { get; set; }
+    public double? AverageScore { get; set; }
+    public double? AverageRating { get; set; }
+    public int FeedbackCount { get; set; }
+}
+
 /// <summary>Request đặt giới hạn thời gian làm bài practice cho 1 bộ câu hỏi.</summary>
 public class SetTimeLimitRequestDto
 {
@@ -101,6 +149,23 @@ public class SetTimeLimitResponseDto
 {
     public Guid QuestionSetId { get; set; }
     public int? TimeLimitMinutes { get; set; }
+}
+
+/// <summary>SCRUM-424: cấu hình auto gợi ý ứng viên trên 1 bộ câu hỏi.</summary>
+public class SetRecommendationSettingsRequestDto
+{
+    public bool AutoRecommendEnabled { get; set; } = true;
+
+    /// <summary>Ngưỡng điểm 50–95 (thang 0–100).</summary>
+    [System.ComponentModel.DataAnnotations.Range(50, 95, ErrorMessage = "Ngưỡng điểm phải từ 50 đến 95.")]
+    public double RecommendationMinScore { get; set; } = 70;
+}
+
+public class SetRecommendationSettingsResponseDto
+{
+    public Guid QuestionSetId { get; set; }
+    public bool AutoRecommendEnabled { get; set; }
+    public double RecommendationMinScore { get; set; }
 }
 
 /// <summary>SCRUM-397: tạo bộ câu hỏi DRAFT rỗng từ Question Builder (không qua Studio).</summary>
@@ -142,6 +207,8 @@ public class UpdateQuestionSetJobDescriptionResponseDto
     public Guid QuestionSetId { get; set; }
     public bool HasJobDescription { get; set; }
     public int CharacterCount { get; set; }
+    public string JdSourceType { get; set; } = "PastedText";
+    public string? JdOriginalFileName { get; set; }
 }
 
 /// <summary>Read-model 1 candidate đã practice 1 bộ câu hỏi — dùng nội bộ bởi repository (SCRUM-326).</summary>
@@ -289,6 +356,9 @@ public class QuestionSetQuestionResponseDto
     public string? AttachedImageUrl { get; set; }
     /// <summary>SCRUM-400: Text | Code.</summary>
     public string AnswerMethod { get; set; } = "Text";
-    public List<object> EvaluationCriteria { get; set; } = new();
+    /// <summary>RubricV1 document hoặc legacy criteria array — FE normalizeFromUnknown.</summary>
+    public object EvaluationCriteria { get; set; } = new List<object>();
     public List<object> Citations { get; set; } = new();
+    /// <summary>SCRUM-439: false = không đưa lên marketplace (vẫn giữ trong draft để tick lại).</summary>
+    public bool IsActive { get; set; } = true;
 }

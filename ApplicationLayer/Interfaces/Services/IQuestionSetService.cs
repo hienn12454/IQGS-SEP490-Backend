@@ -17,9 +17,16 @@ public interface IQuestionSetService
     Task DeleteQuestionAsync(Guid questionSetId, Guid questionId, Guid ownerId);
     Task<IReadOnlyList<QuestionSetQuestionResponseDto>> ReorderQuestionsAsync(
         Guid questionSetId, Guid ownerId, ReorderQuestionsRequestDto dto);
-    Task<QuestionSetActionResponseDto> PublishAsync(Guid questionSetId, Guid ownerId);
+    /// <summary>SCRUM-439: publish selective + time limit.</summary>
+    Task<QuestionSetActionResponseDto> PublishAsync(
+        Guid questionSetId, Guid ownerId, PublishQuestionSetRequestDto? request = null);
     Task<QuestionSetActionResponseDto> UnpublishAsync(Guid questionSetId, Guid ownerId);
     Task<SetTimeLimitResponseDto> SetTimeLimitAsync(Guid questionSetId, Guid ownerId, SetTimeLimitRequestDto dto);
+    /// <summary>SCRUM-438: tổng hợp set PUBLISHED (practice + rating).</summary>
+    Task<IReadOnlyList<PublishedOverviewItemDto>> GetPublishedOverviewAsync(Guid ownerId);
+    /// <summary>SCRUM-424: bật/tắt auto recommend + ngưỡng điểm (cho phép khi PUBLISHED).</summary>
+    Task<SetRecommendationSettingsResponseDto> SetRecommendationSettingsAsync(
+        Guid questionSetId, Guid ownerId, SetRecommendationSettingsRequestDto dto);
     Task<RenameQuestionSetTitleResponseDto> RenameTitleAsync(
         Guid questionSetId, Guid ownerId, RenameQuestionSetTitleRequestDto dto);
     Task<UpdateQuestionSetJobDescriptionResponseDto> SetJobDescriptionFromTextAsync(

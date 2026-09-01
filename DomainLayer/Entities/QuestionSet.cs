@@ -21,6 +21,13 @@ public class QuestionSet : BaseEntity
     public string Kind { get; set; } = Constants.QuestionSetKind.Marketplace;
     public string? Title { get; set; }
     public string JobDescription { get; set; } = string.Empty;
+
+    /// <summary>PastedText | UploadedFile — nguồn JD khi gắn vào bộ.</summary>
+    public string JdSourceType { get; set; } = "PastedText";
+
+    /// <summary>Tên file gốc nếu JD upload (PDF/DOCX/TXT); null khi paste.</summary>
+    public string? JdOriginalFileName { get; set; }
+
     public string? HrNote { get; set; }
     public string PlanJson { get; set; } = "{}";
     public DateTime? GeneratedAt { get; set; }
@@ -28,6 +35,12 @@ public class QuestionSet : BaseEntity
 
     /// <summary>Giới hạn thời gian làm bài practice (phút) do HR đặt — null = không giới hạn.</summary>
     public int? TimeLimitMinutes { get; set; }
+
+    /// <summary>SCRUM-424: HR bật/tắt auto tạo recommendation khi candidate hoàn thành practice.</summary>
+    public bool AutoRecommendEnabled { get; set; } = true;
+
+    /// <summary>SCRUM-424: Ngưỡng OverallScore (0–100) tối thiểu để tạo recommendation — mặc định 70.</summary>
+    public double RecommendationMinScore { get; set; } = 70;
 
     /// <summary>SCRUM-404: Admin ghim bộ lên đầu Marketplace Candidate.</summary>
     public bool IsPinned { get; set; }

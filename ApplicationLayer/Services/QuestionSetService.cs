@@ -1,7 +1,7 @@
 using System.Text.Json;
 using ApplicationLayer.DTOs.QuestionSet;
-using ApplicationLayer.DTOs.QuestionGeneration;
 using ApplicationLayer.Helpers;
+using ApplicationLayer.DTOs.QuestionGeneration;
 using ApplicationLayer.Interfaces.Repositories;
 using ApplicationLayer.Interfaces.Services;
 using DomainLayer.Constants;
@@ -21,6 +21,7 @@ public class QuestionSetService : IQuestionSetService
     private readonly ISubscriptionGateService _subscriptionGate;
     private readonly IBlobStorageService _blobStorage;
     private readonly IRagService _ragService;
+    private readonly IQuestionSetFeedbackRepository _feedbackRepository;
 
     private static readonly HashSet<string> AllowedQuestionImageContentTypes = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -43,7 +44,8 @@ public class QuestionSetService : IQuestionSetService
         IHrQuestionSetBookmarkRepository bookmarkRepository,
         ISubscriptionGateService subscriptionGate,
         IBlobStorageService blobStorage,
-        IRagService ragService)
+        IRagService ragService,
+        IQuestionSetFeedbackRepository feedbackRepository)
     {
         _questionSetRepository = questionSetRepository;
         _jobRepository = jobRepository;
@@ -54,6 +56,7 @@ public class QuestionSetService : IQuestionSetService
         _subscriptionGate = subscriptionGate;
         _blobStorage = blobStorage;
         _ragService = ragService;
+        _feedbackRepository = feedbackRepository;
     }
 
     public async Task<SaveDraftResponseDto> SaveDraftFromJobAsync(Guid jobId, Guid ownerId)
@@ -193,6 +196,9 @@ public class QuestionSetService : IQuestionSetService
         var questionSet = await _questionSetRepository.GetByIdWithQuestionsAsync(questionSetId)
             ?? throw new NotFoundException("Question set không tồn tại.");
 
+        if (!questionSet.IsActive)
+            throw new NotFoundException("Question set không tồn tại.");
+
         if (questionSet.OwnerId != ownerId)
             throw new ForbiddenException("Bạn không có quyền truy cập question set này.");
 
@@ -212,14 +218,19 @@ public class QuestionSetService : IQuestionSetService
             CompanyName = companyName,
             CompanyLogo = companyLogo,
             JobDescription = questionSet.JobDescription,
+            JdSourceType = string.IsNullOrWhiteSpace(questionSet.JdSourceType) ? "PastedText" : questionSet.JdSourceType,
+            JdOriginalFileName = questionSet.JdOriginalFileName,
             HrNote = questionSet.HrNote,
             TimeLimitMinutes = questionSet.TimeLimitMinutes,
+            AutoRecommendEnabled = questionSet.AutoRecommendEnabled,
+            RecommendationMinScore = questionSet.RecommendationMinScore,
             Plan = planObj,
             GeneratedAt = questionSet.GeneratedAt,
             SavedAt = questionSet.CreatedAt,
             PublishedAt = questionSet.PublishedAt,
             Questions = (await Task.WhenAll(
                 questionSet.Questions
+                    // SCRUM-439: HR thấy cả inactive để tick lại khi publish
                     .OrderBy(q => q.Order)
                     .Select(async q => await MapQuestionAsync(q))))
                 .ToList()
@@ -268,7 +279,7 @@ public class QuestionSetService : IQuestionSetService
             Rationale = dto.Rationale?.Trim(),
             SampleAnswer = dto.SampleAnswer?.Trim(),
             AnswerMethod = answerMethod,
-            EvaluationCriteriaJson = JsonSerializer.Serialize(dto.EvaluationCriteria, JsonOptions),
+            EvaluationCriteriaJson = SerializeEvaluationCriteria(dto.EvaluationCriteria),
             CitationsJson = JsonSerializer.Serialize(dto.Citations, JsonOptions)
         };
 
@@ -333,18 +344,70 @@ public class QuestionSetService : IQuestionSetService
             .ToList();
     }
 
-    public async Task<QuestionSetActionResponseDto> PublishAsync(Guid questionSetId, Guid ownerId)
+    public async Task<QuestionSetActionResponseDto> PublishAsync(
+        Guid questionSetId, Guid ownerId, PublishQuestionSetRequestDto? request = null)
     {
         var questionSet = await EnsureOwnedQuestionSetAsync(questionSetId, ownerId);
 
         if (questionSet.Status == QuestionSetStatus.Published)
             throw new ConflictException("Bộ câu hỏi đã được publish trước đó.");
 
+        // SCRUM-439: soft-select câu đưa lên marketplace
+        var selectedIds = request?.QuestionIds?
+            .Where(id => id != Guid.Empty)
+            .Distinct()
+            .ToList();
+        if (selectedIds is { Count: > 0 })
+        {
+            try
+            {
+                PublishQuestionSelectionHelper.ApplySelection(
+                    questionSet.Questions.Select(q => (q.Id, q.IsActive)),
+                    selectedIds,
+                    (id, shouldActive) =>
+                    {
+                        var q = questionSet.Questions.First(x => x.Id == id);
+                        q.IsActive = shouldActive;
+                        q.UpdatedAt = DateTime.UtcNow;
+                    });
+            }
+            catch (ArgumentException ex)
+            {
+                throw new BadRequestException(ex.Message);
+            }
+
+            foreach (var q in questionSet.Questions)
+                await _questionSetRepository.UpdateQuestionAsync(q);
+
+            // Reload active flags on tracked entity
+            questionSet = await EnsureOwnedQuestionSetAsync(questionSetId, ownerId);
+        }
+
+        // Time limit trong cùng request (null = không giới hạn)
+        questionSet.TimeLimitMinutes = request?.TimeLimitMinutes;
+
+        // SCRUM-439 UX: cấu hình gợi ý ứng viên khi publish (null = giữ nguyên)
+        if (request?.AutoRecommendEnabled is bool autoRec)
+            questionSet.AutoRecommendEnabled = autoRec;
+        if (request?.RecommendationMinScore is double minScore)
+            questionSet.RecommendationMinScore = RecommendationService.ResolveIntakeMinScore(minScore);
+
         var minQuestionsToPublish = (await _platformSettingsRepository.GetAsync()).MinQuestionsToPublish;
-        var activeQuestionCount = questionSet.Questions.Count(q => q.IsActive);
-        if (activeQuestionCount < minQuestionsToPublish)
+        var activeQuestions = questionSet.Questions.Where(q => q.IsActive).ToList();
+        if (activeQuestions.Count < minQuestionsToPublish)
             throw new BadRequestException(
-                $"Bộ câu hỏi cần tối thiểu {minQuestionsToPublish} câu hỏi để publish (hiện có {activeQuestionCount}).");
+                $"Bộ câu hỏi cần tối thiểu {minQuestionsToPublish} câu hỏi để publish (hiện có {activeQuestions.Count}).");
+
+        foreach (var q in activeQuestions)
+        {
+            if (string.IsNullOrWhiteSpace(q.SampleAnswer))
+                throw new BadRequestException($"Câu hỏi #{q.Order} thiếu đáp án mẫu — không thể publish.");
+
+            var rubricDoc = RubricNormalizer.NormalizeFromJson(q.EvaluationCriteriaJson);
+            if (!RubricNormalizer.IsPublishReady(rubricDoc))
+                throw new BadRequestException(
+                    $"Câu hỏi #{q.Order} thiếu tiêu chí chấm hợp lệ (weight=100%, mỗi tiêu chí ≥2 mốc).");
+        }
 
         questionSet.Status = QuestionSetStatus.Published;
         questionSet.PublishedAt = DateTime.UtcNow;
@@ -379,6 +442,25 @@ public class QuestionSetService : IQuestionSetService
         };
     }
 
+    /// <summary>SCRUM-424: cho phép sửa khi PUBLISHED — chỉ ảnh hưởng gợi ý tương lai.</summary>
+    public async Task<SetRecommendationSettingsResponseDto> SetRecommendationSettingsAsync(
+        Guid questionSetId, Guid ownerId, SetRecommendationSettingsRequestDto dto)
+    {
+        var questionSet = await EnsureOwnedQuestionSetAsync(questionSetId, ownerId);
+
+        questionSet.AutoRecommendEnabled = dto.AutoRecommendEnabled;
+        questionSet.RecommendationMinScore = RecommendationService.ResolveIntakeMinScore(dto.RecommendationMinScore);
+        questionSet.UpdatedAt = DateTime.UtcNow;
+        await _questionSetRepository.UpdateAsync(questionSet);
+
+        return new SetRecommendationSettingsResponseDto
+        {
+            QuestionSetId = questionSet.Id,
+            AutoRecommendEnabled = questionSet.AutoRecommendEnabled,
+            RecommendationMinScore = questionSet.RecommendationMinScore
+        };
+    }
+
     public async Task<RenameQuestionSetTitleResponseDto> RenameTitleAsync(
         Guid questionSetId, Guid ownerId, RenameQuestionSetTitleRequestDto dto)
     {
@@ -400,7 +482,7 @@ public class QuestionSetService : IQuestionSetService
         Guid questionSetId, Guid ownerId, string jobDescription)
     {
         var jd = JobDescriptionValidator.Validate(jobDescription);
-        return PersistJobDescriptionAsync(questionSetId, ownerId, jd);
+        return PersistJobDescriptionAsync(questionSetId, ownerId, jd, "PastedText", null);
     }
 
     public async Task<UpdateQuestionSetJobDescriptionResponseDto> SetJobDescriptionFromFileAsync(
@@ -410,26 +492,31 @@ public class QuestionSetService : IQuestionSetService
         if (ext is not ".pdf" and not ".docx" and not ".txt")
             throw new BadRequestException("Chỉ hỗ trợ file PDF, DOCX hoặc TXT.");
 
-        var parsed = await _ragService.ParseJdAsync(file, string.IsNullOrWhiteSpace(fileName) ? "jd.txt" : fileName, ct);
+        var safeName = string.IsNullOrWhiteSpace(fileName) ? "jd.txt" : Path.GetFileName(fileName.Trim());
+        var parsed = await _ragService.ParseJdAsync(file, safeName, ct);
         if (!parsed.Success || string.IsNullOrWhiteSpace(parsed.JobDescription))
             throw new BadRequestException(parsed.Error ?? "Không đọc được Job Description từ file.");
 
-        var jd = JobDescriptionValidator.Validate(parsed.JobDescription, fileName);
-        return await PersistJobDescriptionAsync(questionSetId, ownerId, jd);
+        var jd = JobDescriptionValidator.Validate(parsed.JobDescription, safeName);
+        return await PersistJobDescriptionAsync(questionSetId, ownerId, jd, "UploadedFile", safeName);
     }
 
     private async Task<UpdateQuestionSetJobDescriptionResponseDto> PersistJobDescriptionAsync(
-        Guid questionSetId, Guid ownerId, string jd)
+        Guid questionSetId, Guid ownerId, string jd, string sourceType, string? originalFileName)
     {
         var questionSet = await EnsureOwnedQuestionSetAsync(questionSetId, ownerId);
         questionSet.JobDescription = jd;
+        questionSet.JdSourceType = sourceType;
+        questionSet.JdOriginalFileName = sourceType == "UploadedFile" ? originalFileName : null;
         questionSet.UpdatedAt = DateTime.UtcNow;
         await _questionSetRepository.UpdateAsync(questionSet);
         return new UpdateQuestionSetJobDescriptionResponseDto
         {
             QuestionSetId = questionSet.Id,
             HasJobDescription = true,
-            CharacterCount = jd.Length
+            CharacterCount = jd.Length,
+            JdSourceType = questionSet.JdSourceType,
+            JdOriginalFileName = questionSet.JdOriginalFileName
         };
     }
 
@@ -479,6 +566,54 @@ public class QuestionSetService : IQuestionSetService
             PublishedAt = questionSet.PublishedAt,
             AbandonedSessionCount = abandoned
         };
+    }
+
+    /// <summary>SCRUM-438: tổng hợp mọi set PUBLISHED của HR.</summary>
+    public async Task<IReadOnlyList<PublishedOverviewItemDto>> GetPublishedOverviewAsync(Guid ownerId)
+    {
+        var sets = (await _questionSetRepository.ListByOwnerAsync(ownerId))
+            .Where(qs => qs.IsActive && qs.Status == QuestionSetStatus.Published)
+            .OrderByDescending(qs => qs.PublishedAt ?? qs.UpdatedAt ?? qs.CreatedAt)
+            .ToList();
+
+        if (sets.Count == 0)
+            return Array.Empty<PublishedOverviewItemDto>();
+
+        var counts = await _questionSetRepository.GetQuestionCountsBySetIdsAsync(sets.Select(s => s.Id));
+        var result = new List<PublishedOverviewItemDto>(sets.Count);
+
+        foreach (var qs in sets)
+        {
+            var practitioners = await _practiceSessionRepository.ListPractitionersByQuestionSetAsync(qs.Id);
+            var attemptCount = practitioners.Count;
+            var completed = practitioners.Where(p =>
+                string.Equals(p.Status, PracticeSessionStatus.Completed, StringComparison.OrdinalIgnoreCase)).ToList();
+            var inProgress = practitioners.Count(p =>
+                string.Equals(p.Status, PracticeSessionStatus.InProgress, StringComparison.OrdinalIgnoreCase));
+            double? avgScore = null;
+            var scores = completed.Where(p => p.OverallScore.HasValue).Select(p => p.OverallScore!.Value).ToList();
+            if (scores.Count > 0)
+                avgScore = Math.Round(scores.Average(), 1);
+
+            var (avgRating, feedbackCount) = await _feedbackRepository.GetSummaryAsync(qs.Id);
+
+            result.Add(new PublishedOverviewItemDto
+            {
+                QuestionSetId = qs.Id,
+                Title = qs.Title,
+                PublishedAt = qs.PublishedAt,
+                QuestionCount = counts.TryGetValue(qs.Id, out var c) ? c : qs.Questions.Count(q => q.IsActive),
+                TimeLimitMinutes = qs.TimeLimitMinutes,
+                AttemptCount = attemptCount,
+                CompletedCount = completed.Count,
+                InProgressCount = inProgress,
+                AverageScore = avgScore,
+                AverageRating = avgRating.HasValue ? Math.Round(avgRating.Value, 2) : null,
+                FeedbackCount = feedbackCount
+            });
+        }
+
+        return result;
     }
 
     /// <summary>SCRUM-391: xuất Excel — kiểm tra subscription CanExport.</summary>
@@ -630,8 +765,33 @@ public class QuestionSetService : IQuestionSetService
         question.Rationale = rationale?.Trim();
         question.SampleAnswer = sampleAnswer?.Trim();
         question.AnswerMethod = AnswerMethodNormalizer.Require(answerMethod);
-        question.EvaluationCriteriaJson = JsonSerializer.Serialize(evaluationCriteria, JsonOptions);
+        question.EvaluationCriteriaJson = SerializeEvaluationCriteria(evaluationCriteria);
         question.CitationsJson = JsonSerializer.Serialize(citations, JsonOptions);
+    }
+
+    /// <summary>SCRUM-418: Chuẩn hóa rubric trước khi lưu jsonb.</summary>
+    private static string SerializeEvaluationCriteria(List<object> evaluationCriteria)
+    {
+        if (evaluationCriteria is not { Count: > 0 })
+            return RubricNormalizer.SerializeForStorage(RubricNormalizer.NormalizeFromJson(null));
+
+        var first = evaluationCriteria[0];
+        if (first is JsonElement el && el.ValueKind == JsonValueKind.Object
+            && el.TryGetProperty("criteria", out _))
+        {
+            return RubricNormalizer.SerializeForStorage(
+                RubricNormalizer.NormalizeFromObjects(evaluationCriteria));
+        }
+
+        if (first is JsonElement el2 && el2.ValueKind == JsonValueKind.Object
+            && (el2.TryGetProperty("label", out _) || el2.TryGetProperty("anchors", out _)))
+        {
+            var doc = RubricNormalizer.NormalizeFromObjects(evaluationCriteria);
+            return RubricNormalizer.SerializeForStorage(doc);
+        }
+
+        var docFromLegacy = RubricNormalizer.NormalizeFromObjects(evaluationCriteria);
+        return RubricNormalizer.SerializeForStorage(docFromLegacy);
     }
 
     private async Task NormalizeQuestionOrdersAsync(Guid questionSetId)
@@ -676,9 +836,45 @@ public class QuestionSetService : IQuestionSetService
             SampleAnswer = q.SampleAnswer,
             AttachedImageUrl = url,
             AnswerMethod = AnswerMethodNormalizer.Resolve(q.AnswerMethod),
-            EvaluationCriteria = JsonSerializer.Deserialize<List<object>>(q.EvaluationCriteriaJson, JsonOptions) ?? new(),
-            Citations = JsonSerializer.Deserialize<List<object>>(q.CitationsJson, JsonOptions) ?? new()
+            // Studio lưu RubricV1 object; legacy là array — không Deserialize<List> cứng (gây 500 khi mở History)
+            EvaluationCriteria = ParseEvaluationCriteriaPayload(q.EvaluationCriteriaJson),
+            Citations = ParseCitationsPayload(q.CitationsJson),
+            IsActive = q.IsActive
         };
+    }
+
+    /// <summary>Nhận RubricV1 JSON object hoặc legacy criteria array — không throw.</summary>
+    private static object ParseEvaluationCriteriaPayload(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return new List<object>();
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            // Clone raw JSON tree — tránh Deserialize<List> khi Studio lưu RubricV1 object
+            return doc.RootElement.Clone();
+        }
+        catch
+        {
+            return new List<object>();
+        }
+    }
+
+    private static List<object> ParseCitationsPayload(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return new List<object>();
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind != JsonValueKind.Array)
+                return new List<object>();
+            return JsonSerializer.Deserialize<List<object>>(json, JsonOptions) ?? new List<object>();
+        }
+        catch
+        {
+            return new List<object>();
+        }
     }
 
     private static string? TryExtractRoleTitle(string? planJson)
