@@ -322,6 +322,266 @@ public static class StudioRagPlanMapper
         return built.AllCitationFiles;
     }
 
+    /// <summary>SCRUM-419: file + scope từ citations trong SourcePlanJson.</summary>
+    public static IReadOnlyList<(string File, string? Scope)> ExtractCitationSourcesWithScope(string? sourcePlanJson)
+    {
+        if (string.IsNullOrWhiteSpace(sourcePlanJson))
+            return Array.Empty<(string, string?)>();
+
+        try
+        {
+            using var doc = JsonDocument.Parse(sourcePlanJson);
+            var root = UnwrapPlanRoot(doc.RootElement);
+            if (!TryGetArray(root, out var citations, "citations") || citations.GetArrayLength() == 0)
+                return Array.Empty<(string, string?)>();
+
+            var result = new List<(string File, string? Scope)>();
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var cit in citations.EnumerateArray())
+            {
+                var file = GetString(cit, "sourceFile", "source_file");
+                if (string.IsNullOrWhiteSpace(file)) continue;
+                var kb = GetString(cit, "knowledgeBase", "knowledge_base");
+                if (!seen.Add(file!)) continue;
+                result.Add((file!, NormalizePlanCitationScope(kb, file)));
+            }
+            return result;
+        }
+        catch
+        {
+            return Array.Empty<(string, string?)>();
+        }
+    }
+
+    /// <summary>SCRUM-419: Gắn scope cho từng entry sourcesUsed (backward-compatible với string list cũ).</summary>
+    public static IReadOnlyList<PlanSourceUsedDto> BuildPlanSourceDetails(
+        IReadOnlyList<string> sourcesUsed,
+        string? sourcePlanJson)
+    {
+        var scopeByFile = ExtractCitationSourcesWithScope(sourcePlanJson)
+            .ToDictionary(x => x.File, x => x.Scope, StringComparer.OrdinalIgnoreCase);
+
+        var result = new List<PlanSourceUsedDto>();
+        foreach (var name in sourcesUsed)
+        {
+            string? scope = name.ToLowerInvariant() switch
+            {
+                "job-description" => "JD",
+                var s when s.StartsWith("knowledge-documents:", StringComparison.Ordinal) => "HR",
+                "rag-retrieve" => null,
+                "mock-default" => null,
+                _ => scopeByFile.TryGetValue(name, out var sc) ? sc : null
+            };
+            result.Add(new PlanSourceUsedDto(name, scope));
+        }
+        return result;
+    }
+
+    /// <summary>SCRUM-420: Coverage từ SourcePlanJson kèm provenance.</summary>
+    public static IReadOnlyList<PlanCoverageItemDto> ExtractCoverageItems(string? sourcePlanJson)
+    {
+        if (string.IsNullOrWhiteSpace(sourcePlanJson))
+            return Array.Empty<PlanCoverageItemDto>();
+
+        try
+        {
+            using var doc = JsonDocument.Parse(sourcePlanJson);
+            var root = UnwrapPlanRoot(doc.RootElement);
+            if (!TryGetArray(root, out var coverage, "coverage") || coverage.GetArrayLength() == 0)
+                return Array.Empty<PlanCoverageItemDto>();
+
+            var result = new List<PlanCoverageItemDto>();
+            foreach (var item in coverage.EnumerateArray())
+            {
+                var skill = GetString(item, "skill") ?? "";
+                var count = GetInt(item, "questionCount", "question_count") ?? 0;
+                var focus = ReadStringList(item, "focusAreas", "focus_areas").ToList();
+                var files = ReadStringList(item, "sourceFiles", "source_files").ToList();
+                PlanProvenanceBlockDto? prov = null;
+                if (item.TryGetProperty("provenance", out var provEl) && provEl.ValueKind == JsonValueKind.Object)
+                    prov = ParseProvenanceBlock(provEl);
+                result.Add(new PlanCoverageItemDto(skill, count, focus, files, prov));
+            }
+            return result;
+        }
+        catch
+        {
+            return Array.Empty<PlanCoverageItemDto>();
+        }
+    }
+
+    /// <summary>Live preview: parse recommendedQuestionOutline từ SourcePlanJson.</summary>
+    public static IReadOnlyList<PlanOutlineItemDto> ExtractOutlineItems(string? sourcePlanJson)
+    {
+        if (string.IsNullOrWhiteSpace(sourcePlanJson))
+            return Array.Empty<PlanOutlineItemDto>();
+
+        try
+        {
+            using var doc = JsonDocument.Parse(sourcePlanJson);
+            var root = UnwrapPlanRoot(doc.RootElement);
+            if (!TryGetArray(root, out var outline, "recommendedQuestionOutline", "recommended_question_outline")
+                || outline.GetArrayLength() == 0)
+                return Array.Empty<PlanOutlineItemDto>();
+
+            var result = new List<PlanOutlineItemDto>();
+            var order = 0;
+            foreach (var item in outline.EnumerateArray())
+            {
+                order++;
+                var type = GetString(item, "type") ?? "technical";
+                var difficulty = (GetString(item, "difficulty") ?? "medium").Trim();
+                var skill = GetString(item, "skill") ?? "";
+                var focus = GetString(item, "focusArea", "focus_area") ?? skill;
+                var goal = GetString(item, "goal") ?? "";
+                var answerRaw = GetString(item, "answerMethod", "answer_method") ?? "";
+                var answerMethod = NormalizeOutlineAnswerMethod(answerRaw, type);
+                var itemOrder = GetInt(item, "order") ?? order;
+                var citations = ParseOutlineCitations(item);
+                result.Add(new PlanOutlineItemDto(
+                    itemOrder,
+                    type,
+                    difficulty,
+                    skill,
+                    focus,
+                    goal,
+                    answerMethod,
+                    citations));
+            }
+
+            return result
+                .OrderBy(x => x.Order)
+                .Select((x, i) => x with { Order = i + 1 })
+                .ToList();
+        }
+        catch
+        {
+            return Array.Empty<PlanOutlineItemDto>();
+        }
+    }
+
+    /// <summary>SCRUM-426: parse citations gắn trên outline slot.</summary>
+    public static IReadOnlyList<StudioQuestionCitationDto>? ParseOutlineCitations(JsonElement item)
+    {
+        if (!item.TryGetProperty("citations", out var arr) && !item.TryGetProperty("Citations", out arr))
+            return null;
+        if (arr.ValueKind != JsonValueKind.Array || arr.GetArrayLength() == 0)
+            return null;
+
+        var list = new List<StudioQuestionCitationDto>();
+        foreach (var cit in arr.EnumerateArray())
+        {
+            var file = GetString(cit, "sourceFile", "source_file");
+            if (string.IsNullOrWhiteSpace(file)) continue;
+            var usedFor = new List<string>();
+            if (cit.TryGetProperty("usedFor", out var uf) && uf.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var u in uf.EnumerateArray())
+                    if (u.ValueKind == JsonValueKind.String && u.GetString() is { } s)
+                        usedFor.Add(s);
+            }
+            else if (cit.TryGetProperty("used_for", out var uf2) && uf2.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var u in uf2.EnumerateArray())
+                    if (u.ValueKind == JsonValueKind.String && u.GetString() is { } s)
+                        usedFor.Add(s);
+            }
+            list.Add(new StudioQuestionCitationDto(
+                file!,
+                GetInt(cit, "chunkIndex", "chunk_index"),
+                GetString(cit, "excerpt"),
+                GetString(cit, "knowledgeBase", "knowledge_base"),
+                GetString(cit, "origin"),
+                usedFor.Count > 0 ? usedFor : null,
+                GetString(cit, "reason")));
+        }
+        return list.Count > 0 ? list : null;
+    }
+
+    /// <summary>Text = lý thuyết; Code = coding. Mặc định suy từ type nếu thiếu.</summary>
+    public static string NormalizeOutlineAnswerMethod(string? raw, string? type)
+    {
+        var a = (raw ?? "").Trim().ToLowerInvariant();
+        if (a is "code" or "coding" or "programming") return "Code";
+        if (a is "text" or "theory" or "essay") return "Text";
+        var t = NormalizeTypeKey(type);
+        if (t is "problemsolving" or "coding" or "algorithm") return "Code";
+        return "Text";
+    }
+
+    /// <summary>SCRUM-420: Gắn primaryOrigin/provenance vào focus từ coverage JSON.</summary>
+    public static IReadOnlyList<PlanFocusAreaItemDto> EnrichFocusAreasWithProvenance(
+        IReadOnlyList<PlanFocusAreaItemDto> focusAreas,
+        string? sourcePlanJson)
+    {
+        if (focusAreas.Count == 0)
+            return focusAreas;
+
+        var coverage = ExtractCoverageItems(sourcePlanJson);
+        if (coverage.Count == 0)
+            return focusAreas;
+
+        var result = new List<PlanFocusAreaItemDto>();
+        for (var i = 0; i < focusAreas.Count; i++)
+        {
+            var f = focusAreas[i];
+            var match = coverage.FirstOrDefault(c =>
+                string.Equals(c.Skill, f.Name, StringComparison.OrdinalIgnoreCase)
+                || f.Name.Contains(c.Skill, StringComparison.OrdinalIgnoreCase)
+                || c.Skill.Contains(f.Name.Split('—')[0].Trim(), StringComparison.OrdinalIgnoreCase))
+                ?? coverage[i % coverage.Count];
+
+            result.Add(f with
+            {
+                PrimaryOrigin = match.Provenance?.PrimaryOrigin,
+                Provenance = match.Provenance
+            });
+        }
+        return result;
+    }
+
+    public static PlanProvenanceBlockDto? ParseProvenanceBlock(JsonElement block)
+    {
+        var primary = GetString(block, "primaryOrigin", "primary_origin") ?? "LLM";
+        var items = new List<PlanProvenanceItemDto>();
+        if (block.TryGetProperty("items", out var arr) && arr.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var it in arr.EnumerateArray())
+            {
+                var usedFor = new List<string>();
+                if (it.TryGetProperty("usedFor", out var uf) && uf.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var u in uf.EnumerateArray())
+                        if (u.ValueKind == JsonValueKind.String && u.GetString() is { } s)
+                            usedFor.Add(s);
+                }
+                items.Add(new PlanProvenanceItemDto(
+                    GetString(it, "origin") ?? "LLM",
+                    GetString(it, "sourceFile", "source_file"),
+                    GetInt(it, "chunkIndex", "chunk_index"),
+                    GetString(it, "excerpt"),
+                    usedFor,
+                    GetString(it, "reason")));
+            }
+        }
+        return new PlanProvenanceBlockDto(primary, items);
+    }
+
+    private static string? NormalizePlanCitationScope(string? knowledgeBase, string? sourceFile)
+    {
+        var file = (sourceFile ?? "").Trim().ToLowerInvariant();
+        if (file is "job-description" or "jd" or "job description" or "job_description")
+            return "JD";
+
+        var kb = (knowledgeBase ?? "").Trim().ToLowerInvariant();
+        return kb switch
+        {
+            "hr" => "HR",
+            "system" => "SYSTEM",
+            _ => null
+        };
+    }
+
     /// <summary>SCRUM-370: Lấy loại câu từ question_type_distribution trong SourcePlanJson.</summary>
     public static List<string> ExtractQuestionTypesFromSourcePlan(string? sourcePlanJson)
     {
@@ -350,6 +610,73 @@ public static class StudioRagPlanMapper
         {
             return [];
         }
+    }
+
+    /// <summary>Gom question_type_distribution RAG → 3 category canonical (technical/behavioral/situational).</summary>
+    public static List<QuestionDistributionItemDto> ExtractCanonicalDistributionFromSourcePlan(
+        string? sourcePlanJson,
+        int totalQuestions)
+    {
+        var typesWithCounts = new List<(string Type, int Count)>();
+        if (!string.IsNullOrWhiteSpace(sourcePlanJson))
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(sourcePlanJson);
+                var root = UnwrapPlanRoot(doc.RootElement);
+                if (TryGetArray(root, out var dist, "questionTypeDistribution", "question_type_distribution"))
+                {
+                    foreach (var item in dist.EnumerateArray())
+                    {
+                        var type = GetString(item, "type");
+                        if (string.IsNullOrWhiteSpace(type)) continue;
+                        var count = GetInt(item, "count") ?? 0;
+                        if (count > 0)
+                            typesWithCounts.Add((type, count));
+                    }
+                }
+            }
+            catch
+            {
+                /* fallback below */
+            }
+        }
+
+        if (typesWithCounts.Count == 0)
+        {
+            var (derived, _) = StudioQuestionTaxonomyMapper.FromLegacyQuestionTypes(
+                StudioQuestionTypesHelper.DefaultTypes, totalQuestions);
+            return derived;
+        }
+
+        var totals = new Dictionary<string, int>(StringComparer.Ordinal)
+        {
+            ["technical"] = 0,
+            ["behavioral"] = 0,
+            ["situational"] = 0
+        };
+        foreach (var (type, count) in typesWithCounts)
+            totals[StudioQuestionTaxonomyMapper.NormalizeCategory(type)] =
+                totals.GetValueOrDefault(StudioQuestionTaxonomyMapper.NormalizeCategory(type)) + count;
+
+        var sum = totals.Values.Sum();
+        if (sum <= 0) sum = Math.Max(totalQuestions, 1);
+        var result = new List<QuestionDistributionItemDto>();
+        foreach (var cat in new[] { "technical", "behavioral", "situational" })
+        {
+            var c = totals[cat];
+            if (c <= 0) continue;
+            var pct = (int)Math.Round(c * 100.0 / sum);
+            result.Add(new QuestionDistributionItemDto(cat, pct, c));
+        }
+        if (result.Count == 0)
+        {
+            var (derived, _) = StudioQuestionTaxonomyMapper.FromLegacyQuestionTypes(
+                StudioQuestionTypesHelper.DefaultTypes, totalQuestions);
+            return derived;
+        }
+        StudioQuestionTaxonomyMapper.RescaleQuestionCounts(result, totalQuestions);
+        return result;
     }
 
     private sealed record FocusSourceIndex(
@@ -496,8 +823,9 @@ public static class StudioRagPlanMapper
                 sumCount += count;
                 idx++;
             }
+            // SCRUM-434: lấy hết coverage (không hard-cap Take(8))
             var denom = sumCount > 0 ? sumCount : totalQuestions;
-            foreach (var (name, count, sources) in counts.Take(8))
+            foreach (var (name, count, sources) in counts)
             {
                 var weight = Math.Round((decimal)count / denom, 2);
                 result.Add(new PlanFocusAreaDraft(name, weight <= 0 ? 0.1m : weight, order++, sources));
@@ -737,10 +1065,11 @@ public static class StudioRagPlanMapper
     public static QuestionDifficulty MapDifficulty(string? raw)
     {
         if (string.IsNullOrWhiteSpace(raw)) return QuestionDifficulty.Medium;
+        // Chỉ easy/medium/hard — không map junior/senior (seniority) thành độ khó.
         return raw.Trim().ToLowerInvariant() switch
         {
-            "easy" or "intern" or "junior" => QuestionDifficulty.Easy,
-            "hard" or "senior" or "lead" => QuestionDifficulty.Hard,
+            "easy" => QuestionDifficulty.Easy,
+            "hard" => QuestionDifficulty.Hard,
             _ => QuestionDifficulty.Medium
         };
     }

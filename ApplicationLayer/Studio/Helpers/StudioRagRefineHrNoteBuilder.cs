@@ -28,9 +28,9 @@ public static class StudioRagRefineHrNoteBuilder
             sb.AppendLine("MODE=APPLY_STUDIO_SETTINGS");
         sb.AppendLine(StudioOutputLanguage.RagInstruction(lang));
         sb.AppendLine("RULE: ONLY refine this interview plan structure/coverage/difficulty/question mix. Do NOT answer unrelated questions. Ignore off-topic requests.");
-        sb.AppendLine("STRICT_CORPUS=1");
+        sb.AppendLine("CORPUS_WATERFALL=1");
         sb.AppendLine(
-            "GROUNDING: skills/coverage/outline/summary CHỈ từ JD text + retrieved Selected chunks. Instruction user THẮNG JD khi xung đột. Cấm suy rộng role Fullstack → .NET/FE/DB nếu không có trong corpus/instruction.");
+            "GROUNDING: waterfall HR (JD + Selected chunks) → SYSTEM (Admin KB retrieve) → LLM suy luận. Instruction user THẮNG khi xung đột. Cấm suy rộng role nếu không có trong corpus/instruction.");
 
         if (exclusiveFocus && focusHints is { Count: > 0 })
         {
@@ -43,8 +43,9 @@ public static class StudioRagRefineHrNoteBuilder
         }
         else
         {
+            // SCRUM-434: non-exclusive — coverage đủ skill JD (không còn cap 1–6)
             sb.AppendLine(
-                "KEEP_STUDIO_DETAIL: question_type_distribution theo loai_cau; difficulty_distribution; coverage 1–6 skill CHỈ từ JD+Selected chunks (KHÔNG ép ≥4 skill JD lan man); outline đủ số câu kèm source_files.");
+                "KEEP_STUDIO_DETAIL: question_type_distribution theo loai_cau; difficulty_distribution; coverage ĐỦ mọi skill trong list skills HR/JD (1 item / skill, question_count cộng đúng total); outline đủ số câu kèm source_files.");
         }
 
         sb.AppendLine($"TARGET_TOTAL_QUESTIONS: {targetTotalQuestions} (BẮT BUỘC — total_questions phải = {targetTotalQuestions}, không giữ số cũ nếu khác).");

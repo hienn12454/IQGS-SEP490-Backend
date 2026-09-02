@@ -14,15 +14,26 @@ public interface IInterviewProjectService
     Task<InterviewProject> EnsureProjectAccessAsync(Guid projectId, Guid userId, bool requireEdit, CancellationToken ct);
     /// <summary>Snapshot InterviewQuestions → question_sets (private DRAFT). UX: Save.</summary>
     Task<StudioSaveQuestionSetResponseDto> SaveQuestionSetAsync(Guid projectId, Guid userId, CancellationToken ct);
-    Task PublishFromProjectAsync(Guid projectId, Guid userId, CancellationToken ct);
+    /// <summary>SCRUM-439: save (optional filter) + publish selective + time limit.</summary>
+    Task PublishFromProjectAsync(Guid projectId, Guid userId, StudioPublishRequestDto? request, CancellationToken ct);
     Task<ApplicationLayer.DTOs.QuestionSet.QuestionSetActionResponseDto> UnpublishFromProjectAsync(Guid projectId, Guid userId, CancellationToken ct);
 }
 
 public interface IJobDescriptionService
 {
-    Task UpsertAsync(Guid projectId, Guid userId, UpsertJobDescriptionRequest request, CancellationToken ct);
+    /// <summary>SCRUM-432: validate + classify + lưu JD; trả summary extract (1 round-trip).</summary>
+    Task<AnalyzeJobDescriptionResponse> UpsertAsync(Guid projectId, Guid userId, UpsertJobDescriptionRequest request, CancellationToken ct);
     Task<AnalyzeJobDescriptionResponse> AnalyzeAsync(Guid projectId, Guid userId, CancellationToken ct);
+    Task<RecommendInterviewConfigurationResponseDto> RecommendConfigurationAsync(
+        Guid projectId, Guid userId, RecommendInterviewConfigurationRequestDto? request, CancellationToken ct);
     Task<JobDescriptionContentDto?> GetContentAsync(Guid projectId, Guid userId, CancellationToken ct);
+    /// <summary>SCRUM-416: cập nhật vị trí (JobDescription.Title) sau khi extract.</summary>
+    Task<AnalyzeJobDescriptionResponse> UpdatePositionAsync(
+        Guid projectId, Guid userId, UpdateJobDescriptionPositionRequest request, CancellationToken ct);
+
+    /// <summary>SCRUM-417: xác nhận Position + Seniority (+ Role) trước generate plan.</summary>
+    Task<AnalyzeJobDescriptionResponse> UpdateMetadataAsync(
+        Guid projectId, Guid userId, UpdateJobDescriptionMetadataRequest request, CancellationToken ct);
 }
 
 /// <summary>Upload JD file (PDF/DOCX/TXT/ảnh) → extract/OCR → lưu → analyze summary.</summary>
@@ -57,6 +68,14 @@ public interface IStudioKnowledgeDocumentService
     /// <summary>SCRUM-373: gắn 1+ KnowledgeDocumentId đã upload ở KB vào Studio project (không upload lại).</summary>
     Task<IReadOnlyList<StudioDocumentDto>> AttachFromLibraryAsync(
         Guid projectId, Guid userId, AttachStudioDocumentsRequest request, CancellationToken ct);
+
+    /// <summary>SCRUM-443: gợi ý tài liệu KB khớp JD (chưa gắn).</summary>
+    Task<IReadOnlyList<StudioKnowledgeSuggestionDto>> SuggestAttachAsync(
+        Guid projectId, Guid userId, CancellationToken ct);
+
+    /// <summary>SCRUM-444: preview retrieve 1 doc với JD project.</summary>
+    Task<StudioRetrievePreviewDto> RetrievePreviewAsync(
+        Guid projectId, Guid userId, StudioRetrievePreviewRequest request, CancellationToken ct);
 }
 
 public interface IInterviewPlanService
@@ -86,7 +105,7 @@ public interface IQuestionGenerationService
     Task<StudioQuestionListResponse> ListQuestionsAsync(Guid projectId, Guid userId, StudioQuestionListRequest request, CancellationToken ct);
     Task<StudioQuestionDto> UpdateQuestionAsync(Guid projectId, Guid questionId, Guid userId, UpdateQuestionRequest request, CancellationToken ct);
     Task DeleteQuestionAsync(Guid projectId, Guid questionId, Guid userId, CancellationToken ct);
-    Task<StudioQuestionDto> RegenerateQuestionAsync(Guid projectId, Guid questionId, Guid userId, RegenerateQuestionRequest request, CancellationToken ct);
+    Task<GenerationRunDto> RegenerateQuestionAsync(Guid projectId, Guid questionId, Guid userId, RegenerateQuestionRequest request, CancellationToken ct);
     /// <summary>SCRUM-396: upload ảnh đính kèm câu hỏi lên Azure Blob.</summary>
     Task<StudioQuestionDto> UploadQuestionImageAsync(Guid projectId, Guid questionId, Guid userId, Stream fileStream, string fileName, string contentType, long fileLength, CancellationToken ct);
     /// <summary>SCRUM-396: xóa ảnh đính kèm câu hỏi.</summary>
