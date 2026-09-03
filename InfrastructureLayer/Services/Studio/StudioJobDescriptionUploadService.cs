@@ -1,3 +1,4 @@
+using ApplicationLayer.Helpers;
 using ApplicationLayer.Interfaces.Services;
 using ApplicationLayer.Studio.Contracts;
 using ApplicationLayer.Studio.Interfaces;
@@ -11,7 +12,7 @@ namespace InfrastructureLayer.Services.Studio;
 
 /// <summary>
 /// Upload JD file cho Studio: PDF/DOCX/TXT qua RAG ParseJd (fallback extractor local),
-/// ảnh JPG/PNG qua OCR pattern ParseCv (Summary text). Sau đó lưu JD + analyze summary.
+/// ảnh JPG/PNG qua OCR pattern ParseCv (Summary text). Validate IT trước khi lưu (SCRUM-416).
 /// </summary>
 public sealed class StudioJobDescriptionUploadService(
     AppDbContext dbContext,
@@ -52,7 +53,12 @@ public sealed class StudioJobDescriptionUploadService(
         if (string.IsNullOrWhiteSpace(extracted))
             throw new StudioBusinessException("JD_EMPTY_AFTER_EXTRACT", StatusCodes.Status422UnprocessableEntity, "Không trích xuất được nội dung từ file JD.");
 
-        var text = extracted.Trim();
+        // SCRUM-416: validate cấu trúc + domain IT (keyword) trước LLM.
+        var text = JobDescriptionValidator.Validate(extracted, safeName);
+
+        // SCRUM-432: classify IT job posting TRƯỚC SaveChanges — fail → không ghi DB.
+        var summary = await analyzer.AnalyzeAsync(text, ct);
+
         var row = await dbContext.StudioJobDescriptions.FirstOrDefaultAsync(x => x.ProjectId == projectId && x.IsActive, ct);
         if (row is null)
         {
@@ -75,14 +81,18 @@ public sealed class StudioJobDescriptionUploadService(
 
         row.WordCount = text.Split(new char[] { ' ', '\n', '\r', '\t' }, StringSplitOptions.RemoveEmptyEntries).Length;
         row.CharacterCount = text.Length;
-
-        var summary = await analyzer.AnalyzeAsync(text, ct);
         row.DetectedRole = summary.DetectedRole;
         row.DetectedSeniority = summary.DetectedSeniority;
         row.DetectedLanguage = summary.DetectedLanguage;
         row.DetectedSkillsJson = System.Text.Json.JsonSerializer.Serialize(summary.Skills);
+        row.Title = FirstNonEmpty(summary.Position, summary.DetectedRole);
+        row.ExtractedInformationJson = ApplicationLayer.Studio.Helpers.StudioAiConfigurationHelper.SerializeExtractedInformation(
+            summary.Responsibilities ?? [],
+            summary.Summary);
 
         await dbContext.SaveChangesAsync(ct);
+
+        summary = summary with { Position = row.Title };
 
         return new UploadJobDescriptionResponse(
             text,
@@ -101,7 +111,6 @@ public sealed class StudioJobDescriptionUploadService(
         if (isImage)
             return await ExtractFromImageAsync(fileName, content, ct);
 
-        // PDF/DOCX/TXT: ưu tiên RAG parse-jd (luồng cũ đã ổn định), fallback extractor local
         try
         {
             await using var stream = new MemoryStream(content);
@@ -129,9 +138,6 @@ public sealed class StudioJobDescriptionUploadService(
         }
     }
 
-    /// <summary>
-    /// OCR ảnh JD: tái dùng RAG parse-cv (vision) — lấy Summary + Skills làm text JD.
-    /// </summary>
     private async Task<string> ExtractFromImageAsync(string fileName, byte[] content, CancellationToken ct)
     {
         try
@@ -174,5 +180,16 @@ public sealed class StudioJobDescriptionUploadService(
         foreach (var c in Path.GetInvalidFileNameChars())
             name = name.Replace(c, '_');
         return string.IsNullOrWhiteSpace(name) ? "jd.bin" : name;
+    }
+
+    private static string? FirstNonEmpty(params string?[] values)
+    {
+        foreach (var v in values)
+        {
+            if (!string.IsNullOrWhiteSpace(v))
+                return v.Trim();
+        }
+
+        return null;
     }
 }

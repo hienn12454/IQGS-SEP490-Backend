@@ -15,6 +15,7 @@ namespace ApplicationLayer.Services;
 public class QuestionGenerationJobInternalService : IQuestionGenerationJobInternalService
 {
     private readonly IQuestionGenerationJobRepository _repository;
+    private readonly IUsageMeteringService _usageMetering;
     private readonly ILogger<QuestionGenerationJobInternalService> _logger;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -25,9 +26,11 @@ public class QuestionGenerationJobInternalService : IQuestionGenerationJobIntern
 
     public QuestionGenerationJobInternalService(
         IQuestionGenerationJobRepository repository,
+        IUsageMeteringService usageMetering,
         ILogger<QuestionGenerationJobInternalService> logger)
     {
         _repository = repository;
+        _usageMetering = usageMetering;
         _logger = logger;
     }
 
@@ -47,6 +50,10 @@ public class QuestionGenerationJobInternalService : IQuestionGenerationJobIntern
             throw new BadRequestException($"Phase callback không hợp lệ: {dto.Phase}");
 
         await _repository.UpdateAsync(job);
+
+        // SCRUM-445: Free 1/24h — trừ khi sinh câu hỏi V1 thành công.
+        if (phase == "QUESTIONS" && job.Status == QuestionGenerationJobStatus.Completed)
+            await _usageMetering.MarkGenerateSuccessAsync(job.OwnerId);
 
         JobFailureDto? failure = null;
         if (job.Status == QuestionGenerationJobStatus.Failed)
@@ -134,8 +141,8 @@ public class QuestionGenerationJobInternalService : IQuestionGenerationJobIntern
                 FocusArea = q.FocusArea,
                 Rationale = q.Rationale,
                 SampleAnswer = q.SampleAnswer,
-                EvaluationCriteriaJson = JsonSerializer.Serialize(
-                    q.EvaluationCriteria ?? new List<string>(), JsonOptions),
+                EvaluationCriteriaJson = RubricNormalizer.SerializeForStorage(
+                    RubricNormalizer.NormalizeFromRagCriteria(q.EvaluationCriteria)),
                 CitationsJson = JsonSerializer.Serialize(
                     q.Citations ?? new List<object>(), JsonOptions)
             }).ToList();

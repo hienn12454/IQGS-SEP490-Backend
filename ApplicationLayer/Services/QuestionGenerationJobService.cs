@@ -157,7 +157,7 @@ public class QuestionGenerationJobService : IQuestionGenerationJobService
         };
 
         await _repository.AddAsync(job);
-        await _usageMetering.MarkGenerateSuccessAsync(ownerId);
+        // SCRUM-445: chưa trừ lượt lúc lập plan — trừ khi sinh câu hỏi thành công.
         _jobScheduler.EnqueueGeneratePlan(job.Id);
 
         return new CreatePlanJobResponseDto

@@ -129,6 +129,52 @@ public class RagService : IRagService
         return (await response.Content.ReadFromJsonAsync<ValidateJdResult>(JsonOptions, ct))!;
     }
 
+    public async Task<AnalyzeJdResult> AnalyzeJdAsync(AnalyzeJdRequest request, CancellationToken ct = default)
+    {
+        HttpResponseMessage response;
+        try
+        {
+            response = await _httpClient.PostAsJsonAsync("/internal/rag/analyze-jd", request, JsonOptions, ct);
+        }
+        catch (HttpRequestException ex)
+        {
+            throw CreateRagUnavailableException(ex);
+        }
+        catch (TaskCanceledException ex) when (!ct.IsCancellationRequested)
+        {
+            throw CreateRagUnavailableException(ex);
+        }
+
+        if (!response.IsSuccessStatusCode)
+            throw await BuildRagExceptionAsync(response, ct);
+
+        return (await response.Content.ReadFromJsonAsync<AnalyzeJdResult>(JsonOptions, ct))!;
+    }
+
+    public async Task<RecommendInterviewConfigurationResult> RecommendInterviewConfigurationAsync(
+        RecommendInterviewConfigurationRequest request, CancellationToken ct = default)
+    {
+        HttpResponseMessage response;
+        try
+        {
+            response = await _httpClient.PostAsJsonAsync(
+                "/internal/rag/recommend-interview-configuration", request, JsonOptions, ct);
+        }
+        catch (HttpRequestException ex)
+        {
+            throw CreateRagUnavailableException(ex);
+        }
+        catch (TaskCanceledException ex) when (!ct.IsCancellationRequested)
+        {
+            throw CreateRagUnavailableException(ex);
+        }
+
+        if (!response.IsSuccessStatusCode)
+            throw await BuildRagExceptionAsync(response, ct);
+
+        return (await response.Content.ReadFromJsonAsync<RecommendInterviewConfigurationResult>(JsonOptions, ct))!;
+    }
+
     public async Task<GeneratePlanResult> GeneratePlanAsync(GeneratePlanRequest request, CancellationToken ct = default)
     {
         HttpResponseMessage response;
@@ -152,6 +198,57 @@ public class RagService : IRagService
         if (result is null || !result.Success)
             throw BuildPlanFailureException(result);
         return result;
+    }
+
+    public async Task<RefinePlanResult> RefinePlanAsync(RefinePlanRequest request, CancellationToken ct = default)
+    {
+        HttpResponseMessage response;
+        try
+        {
+            response = await _httpClient.PostAsJsonAsync("/internal/rag/refine-plan", request, JsonOptions, ct);
+        }
+        catch (HttpRequestException ex)
+        {
+            throw CreateRagUnavailableException(ex);
+        }
+        catch (TaskCanceledException ex) when (!ct.IsCancellationRequested)
+        {
+            throw CreateRagUnavailableException(ex);
+        }
+
+        if (!response.IsSuccessStatusCode)
+            throw await BuildRagExceptionAsync(response, ct);
+
+        var result = await response.Content.ReadFromJsonAsync<RefinePlanResult>(JsonOptions, ct);
+        if (result is null || !result.Success)
+            throw BuildRefinePlanFailureException(result);
+        return result;
+    }
+
+    public async Task<BindOutlineSourcesResult> BindOutlineSourcesAsync(
+        BindOutlineSourcesRequest request,
+        CancellationToken ct = default)
+    {
+        HttpResponseMessage response;
+        try
+        {
+            response = await _httpClient.PostAsJsonAsync(
+                "/internal/rag/bind-outline-sources", request, JsonOptions, ct);
+        }
+        catch (HttpRequestException ex)
+        {
+            throw CreateRagUnavailableException(ex);
+        }
+        catch (TaskCanceledException ex) when (!ct.IsCancellationRequested)
+        {
+            throw CreateRagUnavailableException(ex);
+        }
+
+        if (!response.IsSuccessStatusCode)
+            throw await BuildRagExceptionAsync(response, ct);
+
+        return (await response.Content.ReadFromJsonAsync<BindOutlineSourcesResult>(JsonOptions, ct))
+            ?? new BindOutlineSourcesResult { Success = false, Error = "Bind outline sources trả về rỗng." };
     }
 
     public async Task<GenerateQuestionsFromPlanResult> GenerateQuestionsAsync(
@@ -193,6 +290,7 @@ public class RagService : IRagService
             request.QuestionTypes,
             request.Skills,
             request.HrNote,
+            request.ExperienceLevel,
             request.Language,
             DocumentIds = request.DocumentIds
         };
@@ -461,6 +559,29 @@ public class RagService : IRagService
             serviceUrl, checkedAt, raw, responseTimeMs, connectionFailed, connectionFailMessage, timeoutSeconds);
     }
 
+    public async Task<RagRetrieveResult> RetrieveAsync(RagRetrieveRequest request, CancellationToken ct = default)
+    {
+        HttpResponseMessage response;
+        try
+        {
+            response = await _httpClient.PostAsJsonAsync("/internal/rag/retrieve", request, JsonOptions, ct);
+        }
+        catch (HttpRequestException ex)
+        {
+            throw CreateRagUnavailableException(ex);
+        }
+        catch (TaskCanceledException ex) when (!ct.IsCancellationRequested)
+        {
+            throw CreateRagUnavailableException(ex);
+        }
+
+        if (!response.IsSuccessStatusCode)
+            throw await BuildRagExceptionAsync(response, ct);
+
+        return (await response.Content.ReadFromJsonAsync<RagRetrieveResult>(JsonOptions, ct))
+               ?? new RagRetrieveResult { Success = false, Error = "Empty retrieve response" };
+    }
+
     private const string CheckConnection = "Kết nối tới RAG";
     private const string CheckConfig = "Cấu hình RAG";
     private const string CheckDatabase = "Cơ sở dữ liệu vector";
@@ -668,6 +789,22 @@ public class RagService : IRagService
         }, StatusCodes.Status502BadGateway);
     }
 
+    private static RagServiceException BuildRefinePlanFailureException(RefinePlanResult? result)
+    {
+        var errors = result?.Errors ?? [];
+        if (errors.Count == 0 && !string.IsNullOrWhiteSpace(result?.Error))
+            errors = [result!.Error!];
+
+        return new RagServiceException(new StructuredErrorPayload
+        {
+            Error = result?.Error ?? "Lỗi refine plan",
+            Detail = result?.Detail ?? result?.Error ?? "RAG refine-plan thất bại.",
+            Stage = result?.Stage ?? ErrorStage.PlanGeneration,
+            Source = "RAG",
+            Errors = errors
+        }, StatusCodes.Status502BadGateway);
+    }
+
     private static async Task<Exception> BuildRagExceptionAsync(HttpResponseMessage response, CancellationToken ct)
     {
         var status = (int)response.StatusCode;
@@ -684,7 +821,8 @@ public class RagService : IRagService
 
             var beStatus = status switch
             {
-                422 or 400 => StatusCodes.Status400BadRequest,
+                422 => StatusCodes.Status422UnprocessableEntity,
+                400 => StatusCodes.Status400BadRequest,
                 503 or 504 => StatusCodes.Status503ServiceUnavailable,
                 _ => StatusCodes.Status502BadGateway
             };

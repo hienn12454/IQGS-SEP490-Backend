@@ -1,3 +1,5 @@
+using System.Text.Json;
+
 namespace ApplicationLayer.DTOs.Rag;
 
 public class RagIngestRequest
@@ -8,6 +10,10 @@ public class RagIngestRequest
     public Guid? OwnerId { get; set; }
     public string FileName { get; set; } = string.Empty;
     public string? SourceTitle { get; set; }
+    /// <summary>SCRUM-442: loại tài liệu (Policy/…) — ghi vào chunk metadata.</summary>
+    public string? Section { get; set; }
+    public string? SourceUrl { get; set; }
+    public int? Year { get; set; }
 }
 
 public class RagIngestResult
@@ -66,6 +72,69 @@ public class ParseJdResult
     public List<string> Errors { get; set; } = new();
 }
 
+/// <summary>SCRUM-416: LLM analyze JD — null nếu RAG không chắc (không default Software Engineer).</summary>
+public class AnalyzeJdRequest
+{
+    public string JobDescription { get; set; } = string.Empty;
+    public string? FileName { get; set; }
+}
+
+public class AnalyzeJdResult
+{
+    public bool Success { get; set; }
+    public string? Position { get; set; }
+    public string? DetectedRole { get; set; }
+    public string? DetectedSeniority { get; set; }
+    public string? DetectedLanguage { get; set; }
+    public List<string> Skills { get; set; } = new();
+    public List<string> Responsibilities { get; set; } = new();
+    public string? Summary { get; set; }
+    public string? JobTitle { get; set; }
+    public string? ExperienceLevel { get; set; }
+    /// <summary>SCRUM-432: job_description | resume | article | documentation | other</summary>
+    public string? DocumentType { get; set; }
+    /// <summary>SCRUM-432: true khi công việc chính thuộc IT/phần mềm.</summary>
+    public bool? IsItRole { get; set; }
+    /// <summary>SCRUM-432: lý do reject classify (tiếng Việt).</summary>
+    public string? RejectReason { get; set; }
+    public string? Error { get; set; }
+    public string? Detail { get; set; }
+    public string? Stage { get; set; }
+    public string? ExceptionType { get; set; }
+    public List<string> Errors { get; set; } = new();
+}
+
+public class RagJobProfileInput
+{
+    public string? JobTitle { get; set; }
+    public string? ExperienceLevel { get; set; }
+    public string? DetectedRole { get; set; }
+    public string? DetectedLanguage { get; set; }
+    public List<string> Skills { get; set; } = new();
+    public List<string> Responsibilities { get; set; } = new();
+    public string? Summary { get; set; }
+}
+
+public class RecommendInterviewConfigurationRequest
+{
+    public Guid OwnerId { get; set; }
+    public string JobDescription { get; set; } = string.Empty;
+    public RagJobProfileInput JobProfile { get; set; } = new();
+    public List<Guid> DocumentIds { get; set; } = new();
+    public int? NumberOfQuestions { get; set; }
+}
+
+public class RecommendInterviewConfigurationResult
+{
+    public bool Success { get; set; }
+    public JsonElement? RecommendedConfiguration { get; set; }
+    public string? Error { get; set; }
+    public string? Detail { get; set; }
+    public string? Stage { get; set; }
+    public string? ExceptionType { get; set; }
+    public List<string> Errors { get; set; } = new();
+}
+
 public class ParseCvResult
 {
     public bool Success { get; set; }
@@ -91,6 +160,22 @@ public class ParseCvResult
     public List<string> Errors { get; set; } = new();
 }
 
+public class RagQuestionDistributionItemDto
+{
+    public string Category { get; set; } = string.Empty;
+    public int Percentage { get; set; }
+    public int QuestionCount { get; set; }
+}
+
+public class RagFocusAreaItemDto
+{
+    public string Name { get; set; } = string.Empty;
+    public decimal Weight { get; set; }
+    public int OrderIndex { get; set; }
+    public string? Description { get; set; }
+    public string? SourceReason { get; set; }
+}
+
 public class GeneratePlanRequest
 {
     public Guid OwnerId { get; set; }
@@ -100,6 +185,8 @@ public class GeneratePlanRequest
     public List<string> QuestionTypes { get; set; } = new();
     public List<string> Skills { get; set; } = new();
     public string? HrNote { get; set; }
+    /// <summary>SCRUM-417: intern|junior|mid|senior|lead — HR đã confirm; RAG ưu tiên giá trị này.</summary>
+    public string? ExperienceLevel { get; set; }
     /// <summary>Vietnamese | English — ngôn ngữ plan/câu hỏi.</summary>
     public string? Language { get; set; }
     /// <summary>SCRUM-388: KnowledgeDocumentIds Selected → filter HR retrieve.</summary>
@@ -108,6 +195,10 @@ public class GeneratePlanRequest
     public string? Audience { get; set; }
     public string? CvContext { get; set; }
     public string? CandidateNote { get; set; }
+    public List<RagQuestionDistributionItemDto>? QuestionDistribution { get; set; }
+    public List<RagFocusAreaItemDto>? FocusAreas { get; set; }
+    public List<string>? QuestionStyles { get; set; }
+    public List<string>? CodingTaskTypes { get; set; }
 }
 
 public class GeneratePlanResult
@@ -120,6 +211,56 @@ public class GeneratePlanResult
     public string? Stage { get; set; }
     public string? ExceptionType { get; set; }
     public List<string> Errors { get; set; } = new();
+}
+
+/// <summary>SCRUM-420: Refine plan — baseline + instruction → PlanPatch delta.</summary>
+public class RefinePlanRequest
+{
+    public Guid OwnerId { get; set; }
+    public string JobDescription { get; set; } = string.Empty;
+    public object BaselinePlan { get; set; } = new();
+    public int NumberOfQuestions { get; set; }
+    public string Difficulty { get; set; } = "medium";
+    public List<string> QuestionTypes { get; set; } = new();
+    public List<string> Skills { get; set; } = new();
+    public string? HrNote { get; set; }
+    public string? ExperienceLevel { get; set; }
+    public string? Language { get; set; }
+    public List<Guid>? DocumentIds { get; set; }
+    public List<RagQuestionDistributionItemDto>? QuestionDistribution { get; set; }
+    public List<RagFocusAreaItemDto>? FocusAreas { get; set; }
+    public List<string>? QuestionStyles { get; set; }
+    public List<string>? CodingTaskTypes { get; set; }
+}
+
+public class RefinePlanResult
+{
+    public bool Success { get; set; }
+    public object? Patch { get; set; }
+    public double? ProcessingTimeMs { get; set; }
+    public string? Error { get; set; }
+    public string? Detail { get; set; }
+    public string? Stage { get; set; }
+    public string? ExceptionType { get; set; }
+    public List<string> Errors { get; set; } = new();
+}
+
+/// <summary>SCRUM-426: khóa/rebind citations trên outline slots.</summary>
+public class BindOutlineSourcesRequest
+{
+    public Guid OwnerId { get; set; }
+    public string JobDescription { get; set; } = string.Empty;
+    public List<object> Outline { get; set; } = new();
+    public List<string>? DocumentIds { get; set; }
+    public bool ForceRebind { get; set; }
+}
+
+public class BindOutlineSourcesResult
+{
+    public bool Success { get; set; }
+    public List<object>? Outline { get; set; }
+    public double? ProcessingTimeMs { get; set; }
+    public string? Error { get; set; }
 }
 
 public class GenerateQuestionsFromPlanRequest
@@ -147,13 +288,17 @@ public class RagGeneratedQuestionDto
     public int? Order { get; set; }
     public string? Skill { get; set; }
     public string? FocusArea { get; set; }
-    public List<string>? EvaluationCriteria { get; set; }
+    public List<object>? EvaluationCriteria { get; set; }
     public string? CodeTemplateType { get; set; }
     public string? CodeSnippet { get; set; }
     /// <summary>SCRUM-396: gợi ý text hình ảnh/diagram cho HR (không AI gen ảnh).</summary>
     public string? ImageHint { get; set; }
     /// <summary>SCRUM-400: Text | Code — phương thức trả lời Candidate.</summary>
     public string? AnswerMethod { get; set; }
+    /// <summary>SCRUM-421: Provenance waterfall JD → Admin → LLM.</summary>
+    public object? SourceProvenance { get; set; }
+    /// <summary>SCRUM-421: Cảnh báo thiếu tài liệu Admin (soft_llm).</summary>
+    public bool MissingAdminWarning { get; set; }
 }
 
 public class GenerateQuestionsFromPlanResult
@@ -292,4 +437,35 @@ public class JdFitReviewResponse
     public string? ContentHash { get; set; }
     public bool IsStale { get; set; }
     public bool HasJobDescription { get; set; }
+}
+
+/// <summary>SCRUM-443/444: gọi RAG /internal/rag/retrieve.</summary>
+public class RagRetrieveRequest
+{
+    public Guid OwnerId { get; set; }
+    public string JobDescription { get; set; } = string.Empty;
+    public List<Guid> DocumentIds { get; set; } = new();
+    public string? QueryExtra { get; set; }
+    public int? TopKSystem { get; set; }
+    public int? TopKHr { get; set; }
+}
+
+public class RagRetrievedChunkDto
+{
+    public Guid DocumentId { get; set; }
+    public int ChunkIndex { get; set; }
+    public string Content { get; set; } = string.Empty;
+    public string Scope { get; set; } = string.Empty;
+    public double Score { get; set; }
+    public string? FileName { get; set; }
+    public string? Section { get; set; }
+}
+
+public class RagRetrieveResult
+{
+    public bool Success { get; set; }
+    public List<RagRetrievedChunkDto> SystemChunks { get; set; } = new();
+    public List<RagRetrievedChunkDto> HrChunks { get; set; } = new();
+    public double? ProcessingTimeMs { get; set; }
+    public string? Error { get; set; }
 }

@@ -43,11 +43,12 @@ public sealed class StudioInterviewQuestionsController(IQuestionGenerationServic
         return NoContent();
     }
 
+    /// <summary>SCRUM-429: enqueue regen nền — trả GenerationRun để FE poll.</summary>
     [HttpPost("{questionId:guid}/regenerate")]
     public async Task<IActionResult> Regenerate(Guid projectId, Guid questionId, [FromBody] RegenerateQuestionRequest request, CancellationToken ct)
     {
         var result = await generationService.RegenerateQuestionAsync(projectId, questionId, GetUserId(), request, ct);
-        return Ok(result);
+        return Accepted(result);
     }
 
     /// <summary>SCRUM-396: HR upload ảnh đính kèm câu hỏi (Azure Blob).</summary>
