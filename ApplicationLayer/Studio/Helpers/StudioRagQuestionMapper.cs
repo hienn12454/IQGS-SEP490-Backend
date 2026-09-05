@@ -1,5 +1,6 @@
 using System.Text.Json;
 using ApplicationLayer.DTOs.Rag;
+using ApplicationLayer.Helpers;
 using ApplicationLayer.Studio.Contracts;
 using DomainLayer.Studio;
 using DomainLayer.Studio.Enums;
@@ -33,8 +34,48 @@ public static class StudioRagQuestionMapper
         public string? AttachedImageBlobPath { get; set; }
         /// <summary>SCRUM-400: Text | Code.</summary>
         public string? AnswerMethod { get; set; }
-        public List<string> EvaluationCriteria { get; set; } = new();
+        /// <summary>SCRUM-421: RubricV1 JSON — nguồn sự thật rubric trong TagsJson.</summary>
+        public string? RubricJson { get; set; }
+        /// <summary>SCRUM-421: Provenance waterfall JD → Admin → LLM.</summary>
+        public object? SourceProvenance { get; set; }
+        /// <summary>SCRUM-421: Cảnh báo soft_llm — thiếu tài liệu Admin.</summary>
+        public bool MissingAdminWarning { get; set; }
+        /// <summary>Legacy / mirror criteria objects (string hoặc RubricCriterion).</summary>
+        public List<object> EvaluationCriteria { get; set; } = new();
         public List<object> Citations { get; set; } = new();
+    }
+
+    /// <summary>SCRUM-418: Resolve rubric từ TagsJson (+ fallback ScoringRubric text).</summary>
+    public static RubricNormalizer.RubricDocumentV1 ResolveRubricDocument(QuestionMeta meta, string? scoringRubricFallback = null)
+    {
+        if (!string.IsNullOrWhiteSpace(meta.RubricJson))
+            return RubricNormalizer.NormalizeFromJson(meta.RubricJson);
+
+        if (meta.EvaluationCriteria is { Count: > 0 })
+            return RubricNormalizer.NormalizeFromObjects(meta.EvaluationCriteria);
+
+        if (!string.IsNullOrWhiteSpace(scoringRubricFallback))
+        {
+            var lines = scoringRubricFallback
+                .Split(['\n', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            return RubricNormalizer.NormalizeFromLegacyStrings(lines);
+        }
+
+        return RubricNormalizer.NormalizeFromJson(null);
+    }
+
+    public static void ApplyRubricToMeta(QuestionMeta meta, RubricNormalizer.RubricDocumentV1 doc)
+    {
+        meta.RubricJson = RubricNormalizer.SerializeDocument(doc);
+        meta.EvaluationCriteria = doc.Criteria
+            .Select(c => (object)new Dictionary<string, object?>
+            {
+                ["id"] = c.Id,
+                ["label"] = c.Label,
+                ["weight"] = c.Weight,
+                ["anchors"] = c.Anchors
+            })
+            .ToList();
     }
 
     public static List<InterviewQuestion> Map(
@@ -58,15 +99,16 @@ public static class StudioRagQuestionMapper
             var difficulty = StudioRagPlanMapper.MapDifficulty(q.Difficulty);
             var sectionId = ResolveSectionId(sections, type, q.FocusArea);
 
-            var criteria = q.EvaluationCriteria?
-                .Where(c => !string.IsNullOrWhiteSpace(c))
-                .Select(c => c.Trim())
-                .ToList() ?? new List<string>();
+            // SCRUM-418: RAG criteria (string[] hoặc object[]) → RubricV1
+            var rubricDoc = RubricNormalizer.NormalizeFromRagCriteria(
+                q.EvaluationCriteria?.Cast<object>().ToList());
 
             // Luôn lưu sample/rationale từ RAG vào entity khi có — Save/Publish marketplace cần đủ field kỹ thuật.
             var sample = string.IsNullOrWhiteSpace(q.SampleAnswer) ? null : q.SampleAnswer.Trim();
             var rationale = string.IsNullOrWhiteSpace(q.Rationale) ? null : q.Rationale.Trim();
-            var rubric = criteria.Count > 0 ? string.Join("; ", criteria) : rationale;
+            var rubricDisplay = RubricNormalizer.ToDisplayText(rubricDoc);
+            if (string.IsNullOrWhiteSpace(rubricDisplay) && !string.IsNullOrWhiteSpace(rationale))
+                rubricDisplay = rationale;
 
             var meta = new QuestionMeta
             {
@@ -78,9 +120,11 @@ public static class StudioRagQuestionMapper
                 ImageHint = string.IsNullOrWhiteSpace(q.ImageHint) ? null : q.ImageHint.Trim(),
                 AnswerMethod = ApplicationLayer.Helpers.AnswerMethodNormalizer.Resolve(
                     q.AnswerMethod, q.CodeTemplateType, q.CodeSnippet),
-                EvaluationCriteria = criteria,
-                Citations = q.Citations ?? new List<object>()
+                Citations = q.Citations ?? new List<object>(),
+                SourceProvenance = q.SourceProvenance,
+                MissingAdminWarning = q.MissingAdminWarning
             };
+            ApplyRubricToMeta(meta, rubricDoc);
 
             list.Add(new InterviewQuestion
             {
@@ -94,7 +138,7 @@ public static class StudioRagQuestionMapper
                 OrderIndex = q.Order is > 0 ? q.Order.Value : order,
                 EstimatedMinutes = 5,
                 ExpectedAnswer = sample,
-                ScoringRubric = rubric,
+                ScoringRubric = string.IsNullOrWhiteSpace(rubricDisplay) ? null : rubricDisplay,
                 GeneratedByModelName = "RAG",
                 TagsJson = JsonSerializer.Serialize(meta, JsonOptions)
             });
@@ -134,6 +178,7 @@ public static class StudioRagQuestionMapper
     public static StudioQuestionDto MapToStudioQuestionDto(InterviewQuestion q, string? attachedImageUrl = null)
     {
         var meta = ParseMeta(q.TagsJson);
+        var rubricDoc = ResolveRubricDocument(meta, q.ScoringRubric);
         return new StudioQuestionDto(
             q.Id,
             q.Content,
@@ -148,7 +193,14 @@ public static class StudioRagQuestionMapper
             string.IsNullOrWhiteSpace(meta.ImageHint) ? null : meta.ImageHint.Trim(),
             string.IsNullOrWhiteSpace(attachedImageUrl) ? null : attachedImageUrl.Trim(),
             ApplicationLayer.Helpers.AnswerMethodNormalizer.Resolve(
-                meta.AnswerMethod, meta.CodeTemplateType, meta.CodeSnippet)
+                meta.AnswerMethod, meta.CodeTemplateType, meta.CodeSnippet),
+            RubricNormalizer.SerializeDocument(rubricDoc),
+            ParseSourceProvenance(meta.SourceProvenance),
+            meta.MissingAdminWarning,
+            string.IsNullOrWhiteSpace(meta.Rationale) ? null : meta.Rationale.Trim(),
+            // SCRUM-436: skill/tech tag cho badge UI
+            string.IsNullOrWhiteSpace(meta.Skill) ? null : meta.Skill.Trim(),
+            string.IsNullOrWhiteSpace(meta.FocusArea) ? null : meta.FocusArea.Trim()
         );
     }
 
@@ -165,42 +217,120 @@ public static class StudioRagQuestionMapper
 
         foreach (var item in raw)
         {
-            if (!TryReadCitation(item, out var file, out var chunk, out var excerpt))
+            if (!TryReadCitation(item, out var file, out var chunk, out var excerpt, out var knowledgeBase,
+                    out var origin, out var usedFor, out var reason))
                 continue;
             if (string.IsNullOrWhiteSpace(file))
                 continue;
 
-            var key = $"{file}|{chunk}|{excerpt}";
+            var key = $"{file}|{chunk}|{excerpt}|{knowledgeBase}";
             if (!seen.Add(key))
                 continue;
 
-            result.Add(new StudioQuestionCitationDto(file.Trim(), chunk, string.IsNullOrWhiteSpace(excerpt) ? null : excerpt.Trim()));
+            result.Add(new StudioQuestionCitationDto(
+                file.Trim(),
+                chunk,
+                string.IsNullOrWhiteSpace(excerpt) ? null : excerpt.Trim(),
+                NormalizeKnowledgeBase(knowledgeBase, file),
+                InferCitationOrigin(origin, knowledgeBase, file),
+                ParseUsedFor(usedFor),
+                string.IsNullOrWhiteSpace(reason) ? null : reason.Trim()));
         }
 
         return result;
     }
 
-    private static bool TryReadCitation(object item, out string file, out int? chunk, out string? excerpt)
+    private static PlanProvenanceBlockDto? ParseSourceProvenance(object? raw)
+    {
+        if (raw is null) return null;
+        try
+        {
+            if (raw is JsonElement el && el.ValueKind == JsonValueKind.Object)
+                return StudioRagPlanMapper.ParseProvenanceBlock(el);
+
+            var json = JsonSerializer.Serialize(raw, JsonOptions);
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object) return null;
+            return StudioRagPlanMapper.ParseProvenanceBlock(doc.RootElement);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static string? InferCitationOrigin(string? origin, string? knowledgeBase, string sourceFile)
+    {
+        if (!string.IsNullOrWhiteSpace(origin))
+            return origin.Trim().ToUpperInvariant() switch
+            {
+                "HR" => "HR",
+                "SYSTEM" => "SYSTEM",
+                "LLM" => "LLM",
+                _ => origin.Trim()
+            };
+
+        if (IsJobDescriptionSource(sourceFile)) return "HR";
+        var kb = NormalizeKnowledgeBase(knowledgeBase, sourceFile);
+        return kb switch
+        {
+            "system" => "SYSTEM",
+            "hr" => "HR",
+            _ => null
+        };
+    }
+
+    private static IReadOnlyList<string>? ParseUsedFor(object? usedFor)
+    {
+        if (usedFor is null) return null;
+        try
+        {
+            if (usedFor is JsonElement el && el.ValueKind == JsonValueKind.Array)
+            {
+                var list = new List<string>();
+                foreach (var u in el.EnumerateArray())
+                    if (u.ValueKind == JsonValueKind.String && u.GetString() is { } s)
+                        list.Add(s);
+                return list.Count > 0 ? list : null;
+            }
+            if (usedFor is IEnumerable<string> strs)
+                return strs.Where(s => !string.IsNullOrWhiteSpace(s)).ToList();
+        }
+        catch
+        {
+            // ignore
+        }
+        return null;
+    }
+
+    private static bool TryReadCitation(object item, out string file, out int? chunk, out string? excerpt,
+        out string? knowledgeBase, out string? origin, out object? usedFor, out string? reason)
     {
         file = "";
         chunk = null;
         excerpt = null;
+        knowledgeBase = null;
+        origin = null;
+        usedFor = null;
+        reason = null;
 
         try
         {
             if (item is JsonElement el)
-                return TryReadCitationElement(el, out file, out chunk, out excerpt);
+                return TryReadCitationElement(el, out file, out chunk, out excerpt, out knowledgeBase,
+                    out origin, out usedFor, out reason);
 
             if (item is string s)
             {
                 using var doc = JsonDocument.Parse(s);
-                return TryReadCitationElement(doc.RootElement, out file, out chunk, out excerpt);
+                return TryReadCitationElement(doc.RootElement, out file, out chunk, out excerpt, out knowledgeBase,
+                    out origin, out usedFor, out reason);
             }
 
-            // Dictionary / anonymous từ deserialize object
             var json = JsonSerializer.Serialize(item, JsonOptions);
             using var parsed = JsonDocument.Parse(json);
-            return TryReadCitationElement(parsed.RootElement, out file, out chunk, out excerpt);
+            return TryReadCitationElement(parsed.RootElement, out file, out chunk, out excerpt, out knowledgeBase,
+                out origin, out usedFor, out reason);
         }
         catch
         {
@@ -208,17 +338,57 @@ public static class StudioRagQuestionMapper
         }
     }
 
-    private static bool TryReadCitationElement(JsonElement el, out string file, out int? chunk, out string? excerpt)
+    private static bool TryReadCitationElement(
+        JsonElement el,
+        out string file,
+        out int? chunk,
+        out string? excerpt,
+        out string? knowledgeBase,
+        out string? origin,
+        out object? usedFor,
+        out string? reason)
     {
         file = "";
         chunk = null;
         excerpt = null;
+        knowledgeBase = null;
+        origin = null;
+        usedFor = null;
+        reason = null;
         if (el.ValueKind != JsonValueKind.Object) return false;
 
         file = ReadStringProp(el, "sourceFile", "source_file", "source") ?? "";
         excerpt = ReadStringProp(el, "excerpt");
         chunk = ReadIntProp(el, "chunkIndex", "chunk_index");
+        knowledgeBase = ReadStringProp(el, "knowledgeBase", "knowledge_base");
+        origin = ReadStringProp(el, "origin");
+        reason = ReadStringProp(el, "reason");
+        if (el.TryGetProperty("usedFor", out var uf))
+            usedFor = uf.Clone();
+        else if (el.TryGetProperty("used_for", out var uf2))
+            usedFor = uf2.Clone();
         return !string.IsNullOrWhiteSpace(file);
+    }
+
+    /// <summary>SCRUM-419: Chuẩn hóa knowledgeBase từ RAG (hr|system).</summary>
+    private static string? NormalizeKnowledgeBase(string? knowledgeBase, string sourceFile)
+    {
+        if (IsJobDescriptionSource(sourceFile))
+            return "hr";
+
+        var kb = (knowledgeBase ?? "").Trim().ToLowerInvariant();
+        return kb switch
+        {
+            "hr" => "hr",
+            "system" => "system",
+            _ => string.IsNullOrWhiteSpace(kb) ? null : kb
+        };
+    }
+
+    private static bool IsJobDescriptionSource(string sourceFile)
+    {
+        var n = sourceFile.Trim().ToLowerInvariant();
+        return n is "job-description" or "jd" or "job description" or "job_description";
     }
 
     private static string? ReadStringProp(JsonElement el, params string[] names)

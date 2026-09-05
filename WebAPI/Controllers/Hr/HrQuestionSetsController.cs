@@ -118,6 +118,14 @@ public class HrQuestionSetsController : ControllerBase
         return SuccessResp.Ok(result);
     }
 
+    /// <summary>SCRUM-424: cấu hình auto gợi ý ứng viên (bật/tắt + ngưỡng điểm 50–95). Được sửa khi PUBLISHED — chỉ ảnh hưởng phiên hoàn thành sau này.</summary>
+    [HttpPut("{id:guid}/recommendation-settings")]
+    public async Task<IActionResult> SetRecommendationSettings(Guid id, [FromBody] SetRecommendationSettingsRequestDto dto)
+    {
+        var result = await _service.SetRecommendationSettingsAsync(id, GetCurrentUserId(), dto);
+        return SuccessResp.Ok(result);
+    }
+
     /// <summary>Đổi tên bộ câu hỏi (SCRUM-330) — không ảnh hưởng trạng thái DRAFT/PUBLISHED hiện tại. Marketplace/danh sách sẽ phản ánh tên mới ngay.</summary>
     /// <param name="id">Id bộ câu hỏi.</param>
     /// <param name="dto">title: 1–500 ký tự, không được để trống.</param>
@@ -165,12 +173,19 @@ public class HrQuestionSetsController : ControllerBase
         return SuccessResp.Ok(result);
     }
 
-    /// <summary>Publish bộ câu hỏi lên marketplace cho Candidate xem (DRAFT → PUBLISHED). Yêu cầu tối thiểu 10 câu hỏi, chỉ HR chủ sở hữu mới publish được.</summary>
-    /// <param name="id">Id bộ câu hỏi.</param>
+    /// <summary>Publish bộ câu hỏi lên marketplace (DRAFT → PUBLISHED). SCRUM-439: body chọn câu + time limit.</summary>
     [HttpPost("{id:guid}/publish")]
-    public async Task<IActionResult> Publish(Guid id)
+    public async Task<IActionResult> Publish(Guid id, [FromBody] PublishQuestionSetRequestDto? body)
     {
-        var result = await _service.PublishAsync(id, GetCurrentUserId());
+        var result = await _service.PublishAsync(id, GetCurrentUserId(), body);
+        return SuccessResp.Ok(result);
+    }
+
+    /// <summary>SCRUM-438: tổng hợp set đã publish (practice + rating).</summary>
+    [HttpGet("published-overview")]
+    public async Task<IActionResult> PublishedOverview()
+    {
+        var result = await _service.GetPublishedOverviewAsync(GetCurrentUserId());
         return SuccessResp.Ok(result);
     }
 

@@ -52,10 +52,14 @@ public sealed class StudioInterviewProjectsController(IInterviewProjectService p
         return Ok(result);
     }
 
+    /// <summary>SCRUM-439: body chọn interviewQuestionIds + timeLimitMinutes.</summary>
     [HttpPost("{projectId:guid}/publish")]
-    public async Task<IActionResult> Publish(Guid projectId, CancellationToken ct)
+    public async Task<IActionResult> Publish(
+        Guid projectId,
+        [FromBody] StudioPublishRequestDto? body,
+        CancellationToken ct)
     {
-        await projectService.PublishFromProjectAsync(projectId, GetUserId(), ct);
+        await projectService.PublishFromProjectAsync(projectId, GetUserId(), body, ct);
         return Ok(new { message = "Đã publish." });
     }
 
