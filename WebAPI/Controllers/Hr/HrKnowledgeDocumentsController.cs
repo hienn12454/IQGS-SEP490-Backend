@@ -31,7 +31,9 @@ public class HrKnowledgeDocumentsController : ControllerBase
         var dto = new KnowledgeDocumentUploadDto
         {
             Scope = KnowledgeDocumentScope.Hr,
-            OwnerId = ownerId
+            OwnerId = ownerId,
+            // SCRUM-442: HR bắt buộc DocumentType
+            DocumentType = form.DocumentType
         };
 
         await using var stream = form.File.OpenReadStream();
@@ -39,7 +41,14 @@ public class HrKnowledgeDocumentsController : ControllerBase
             stream, form.File.FileName, form.File.ContentType, form.File.Length,
             dto, ownerId);
 
-        return SuccessResp.Accepted(new { documentId = result.DocumentId, status = result.Status });
+        // Trả đủ field để FE map ngay (không hiện "Unknown file" rồi mất sau reload).
+        return SuccessResp.Accepted(new
+        {
+            documentId = result.DocumentId,
+            fileName = result.FileName,
+            status = result.Status,
+            documentType = result.DocumentType
+        });
     }
 
     [HttpGet]
@@ -54,6 +63,23 @@ public class HrKnowledgeDocumentsController : ControllerBase
     public async Task<IActionResult> GetById(Guid id)
     {
         var result = await _service.GetByIdAsync(id, GetCurrentUserId());
+        return SuccessResp.Ok(result);
+    }
+
+    /// <summary>SCRUM-442: đổi loại tài liệu (Policy / InternalStack / Rubric / RolePack).</summary>
+    [HttpPatch("{id:guid}")]
+    public async Task<IActionResult> UpdateType(Guid id, [FromBody] UpdateKnowledgeDocumentTypeDto body)
+    {
+        var result = await _service.UpdateDocumentTypeAsync(
+            id, body.DocumentType, GetCurrentUserId(), requireHrType: true);
+        return SuccessResp.Ok(result);
+    }
+
+    /// <summary>SCRUM-444: preview vài chunk đầu.</summary>
+    [HttpGet("{id:guid}/chunks")]
+    public async Task<IActionResult> GetChunks(Guid id, [FromQuery] int take = 20)
+    {
+        var result = await _service.GetChunksAsync(id, GetCurrentUserId(), take);
         return SuccessResp.Ok(result);
     }
 
@@ -82,4 +108,7 @@ public class HrKnowledgeDocumentsController : ControllerBase
 public class HrKnowledgeDocumentUploadForm
 {
     public IFormFile File { get; set; } = null!;
+
+    /// <summary>SCRUM-442: Policy | InternalStack | Rubric | RolePack</summary>
+    public string DocumentType { get; set; } = string.Empty;
 }

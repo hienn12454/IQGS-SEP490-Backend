@@ -23,7 +23,12 @@ public sealed class StudioKnowledgeRagController(IStudioKnowledgeDocumentService
     [HttpPost]
     [Consumes("multipart/form-data")]
     [RequestSizeLimit(50 * 1024 * 1024)]
-    public async Task<IActionResult> Upload(Guid projectId, IFormFile file, [FromForm] bool isSelected = true, CancellationToken ct = default)
+    public async Task<IActionResult> Upload(
+        Guid projectId,
+        IFormFile file,
+        [FromForm] bool isSelected = true,
+        [FromForm] string? documentType = null,
+        CancellationToken ct = default)
     {
         if (file is null || file.Length == 0)
             return BadRequest(new { errorCode = "DOCUMENT_FILE_REQUIRED", detail = "Thiếu file upload." });
@@ -33,7 +38,12 @@ public sealed class StudioKnowledgeRagController(IStudioKnowledgeDocumentService
         var result = await documentService.UploadAsync(
             projectId,
             GetUserId(),
-            new UploadStudioDocumentRequest(file.FileName, file.ContentType ?? "application/octet-stream", ms.ToArray(), isSelected),
+            new UploadStudioDocumentRequest(
+                file.FileName,
+                file.ContentType ?? "application/octet-stream",
+                ms.ToArray(),
+                isSelected,
+                documentType),
             ct);
         return Ok(result);
     }
@@ -50,6 +60,19 @@ public sealed class StudioKnowledgeRagController(IStudioKnowledgeDocumentService
         [FromBody] AttachStudioDocumentsRequest request,
         CancellationToken ct)
         => Ok(await documentService.AttachFromLibraryAsync(projectId, GetUserId(), request, ct));
+
+    /// <summary>SCRUM-443: gợi ý tài liệu KB khớp JD chưa gắn.</summary>
+    [HttpPost("suggestions")]
+    public async Task<IActionResult> SuggestAttach(Guid projectId, CancellationToken ct)
+        => Ok(await documentService.SuggestAttachAsync(projectId, GetUserId(), ct));
+
+    /// <summary>SCRUM-444: preview retrieve 1 doc với JD project.</summary>
+    [HttpPost("retrieve-preview")]
+    public async Task<IActionResult> RetrievePreview(
+        Guid projectId,
+        [FromBody] StudioRetrievePreviewRequest request,
+        CancellationToken ct)
+        => Ok(await documentService.RetrievePreviewAsync(projectId, GetUserId(), request, ct));
 
     [HttpPatch("{documentId:guid}/selection")]
     public async Task<IActionResult> SetSelection(Guid projectId, Guid documentId, [FromBody] SetSelectionBody body, CancellationToken ct)

@@ -75,7 +75,8 @@ public class KnowledgeDocumentInternalService : IKnowledgeDocumentInternalServic
             UploadedBy = document.UploadedBy,
             ErrorMessage = document.ErrorMessage,
             CreatedAt = document.CreatedAt,
-            UpdatedAt = document.UpdatedAt
+            UpdatedAt = document.UpdatedAt,
+            DocumentType = KnowledgeDocumentType.FromSection(document.Section)
         };
     }
 }

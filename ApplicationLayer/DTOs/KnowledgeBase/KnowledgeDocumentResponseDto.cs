@@ -12,4 +12,13 @@ public class KnowledgeDocumentResponseDto
     public string? ErrorMessage { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
+
+    /// <summary>SCRUM-442: Policy | InternalStack | Rubric | RolePack | Unclassified.</summary>
+    public string DocumentType { get; set; } = "Unclassified";
+
+    /// <summary>SCRUM-444: số project Studio đang gắn (active).</summary>
+    public int StudioProjectCount { get; set; }
+
+    /// <summary>SCRUM-444: số lần cite theo sourceFile ≈ FileName (ước lượng).</summary>
+    public int CitationCount { get; set; }
 }

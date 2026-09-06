@@ -74,7 +74,11 @@ public class KnowledgeIngestJob : IKnowledgeIngestJob
                 Scope = document.Scope,
                 OwnerId = document.OwnerId,
                 FileName = document.FileName,
-                SourceTitle = document.SourceTitle
+                SourceTitle = document.SourceTitle,
+                // SCRUM-442: đưa loại tài liệu vào chunk metadata
+                Section = document.Section,
+                SourceUrl = document.SourceUrl,
+                Year = document.Year
             });
         }
         catch (Exception ex)

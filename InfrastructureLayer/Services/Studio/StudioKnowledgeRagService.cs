@@ -21,7 +21,8 @@ namespace InfrastructureLayer.Services.Studio;
 public sealed class StudioKnowledgeRagService(
     AppDbContext dbContext,
     IInterviewProjectService projectService,
-    IKnowledgeDocumentService knowledgeDocumentService) : IStudioKnowledgeDocumentService
+    IKnowledgeDocumentService knowledgeDocumentService,
+    IRagService ragService) : IStudioKnowledgeDocumentService
 {
     /// <summary>Prefix StoragePath khi gắn từ KB — Delete chỉ unlink, không xóa knowledge_documents.</summary>
     private const string LibraryLinkPrefix = "library:";
@@ -34,7 +35,9 @@ public sealed class StudioKnowledgeRagService(
         var kbDto = new KnowledgeDocumentUploadDto
         {
             Scope = KnowledgeDocumentScope.Hr,
-            OwnerId = userId
+            OwnerId = userId,
+            // SCRUM-442: bắt buộc loại khi upload từ Studio
+            DocumentType = request.DocumentType
         };
 
         // Gọi đúng service upload cũ: blob + QUEUED + Hangfire ingest
@@ -95,7 +98,7 @@ public sealed class StudioKnowledgeRagService(
             await dbContext.SaveChangesAsync(ct);
         }
 
-        return Map(row, uploaded.Status, uploaded.ChunkCount, uploaded.ErrorMessage);
+        return Map(row, uploaded.Status, uploaded.ChunkCount, uploaded.ErrorMessage, KnowledgeDocumentScope.Hr, uploaded.DocumentType);
     }
 
     private static string NormalizeFileType(string? contentType, string fileName)
@@ -132,11 +135,15 @@ public sealed class StudioKnowledgeRagService(
             int? chunkCount = null;
             string? error = doc.ProcessingError;
 
+            string? scope = KnowledgeDocumentScope.Hr;
+            string documentType = KnowledgeDocumentType.Unclassified;
             if (doc.KnowledgeDocumentId is Guid kid && kbMap.TryGetValue(kid, out var kb))
             {
                 ragStatus = kb.Status;
                 chunkCount = kb.ChunkCount;
                 error = kb.ErrorMessage ?? error;
+                scope = string.IsNullOrWhiteSpace(kb.Scope) ? KnowledgeDocumentScope.Hr : kb.Scope;
+                documentType = KnowledgeDocumentType.FromSection(kb.Section);
                 var mapped = MapRagStatus(kb.Status);
                 if (doc.ProcessingStatus != mapped || doc.ProcessingError != error)
                 {
@@ -146,7 +153,7 @@ public sealed class StudioKnowledgeRagService(
                 }
             }
 
-            result.Add(Map(doc, ragStatus, chunkCount, error));
+            result.Add(Map(doc, ragStatus, chunkCount, error, scope, documentType));
         }
 
         await dbContext.SaveChangesAsync(ct);
@@ -179,7 +186,9 @@ public sealed class StudioKnowledgeRagService(
                 kb.Status,
                 kb.ChunkCount,
                 kb.CreatedAt,
-                attachedSet.Contains(kb.Id)))
+                attachedSet.Contains(kb.Id),
+                string.IsNullOrWhiteSpace(kb.Scope) ? KnowledgeDocumentScope.Hr : kb.Scope,
+                KnowledgeDocumentType.FromSection(kb.Section)))
             .ToList();
     }
 
@@ -251,7 +260,9 @@ public sealed class StudioKnowledgeRagService(
                 dbContext.StudioKnowledgeDocuments.Add(row);
             }
 
-            result.Add(Map(row, kb.Status, kb.ChunkCount, kb.ErrorMessage));
+            result.Add(Map(row, kb.Status, kb.ChunkCount, kb.ErrorMessage,
+                string.IsNullOrWhiteSpace(kb.Scope) ? KnowledgeDocumentScope.Hr : kb.Scope,
+                KnowledgeDocumentType.FromSection(kb.Section)));
         }
 
         await dbContext.SaveChangesAsync(ct);
@@ -279,7 +290,22 @@ public sealed class StudioKnowledgeRagService(
         row.IsSelected = isSelected;
         row.UpdatedAt = DateTime.UtcNow;
         await dbContext.SaveChangesAsync(ct);
-        return Map(row, null, null, row.ProcessingError);
+        var scope = KnowledgeDocumentScope.Hr;
+        var documentType = KnowledgeDocumentType.Unclassified;
+        if (row.KnowledgeDocumentId is Guid selKid)
+        {
+            var kbRow = await dbContext.KnowledgeDocuments.AsNoTracking()
+                .Where(x => x.Id == selKid)
+                .Select(x => new { x.Scope, x.Section })
+                .FirstOrDefaultAsync(ct);
+            if (kbRow is not null)
+            {
+                if (!string.IsNullOrWhiteSpace(kbRow.Scope))
+                    scope = kbRow.Scope;
+                documentType = KnowledgeDocumentType.FromSection(kbRow.Section);
+            }
+        }
+        return Map(row, null, null, row.ProcessingError, scope, documentType);
     }
 
     public async Task DeleteAsync(Guid projectId, Guid documentId, Guid userId, CancellationToken ct)
@@ -323,7 +349,117 @@ public sealed class StudioKnowledgeRagService(
         row.ProcessingError = re.ErrorMessage;
         row.UpdatedAt = DateTime.UtcNow;
         await dbContext.SaveChangesAsync(ct);
-        return Map(row, re.Status, re.ChunkCount, re.ErrorMessage);
+        var kbMeta = await dbContext.KnowledgeDocuments.AsNoTracking()
+            .Where(x => x.Id == kid)
+            .Select(x => new { x.Scope, x.Section })
+            .FirstOrDefaultAsync(ct);
+        return Map(row, re.Status, re.ChunkCount, re.ErrorMessage,
+            string.IsNullOrWhiteSpace(kbMeta?.Scope) ? KnowledgeDocumentScope.Hr : kbMeta!.Scope,
+            KnowledgeDocumentType.FromSection(kbMeta?.Section));
+    }
+
+    /// <summary>SCRUM-443: gợi ý gắn — retrieve với toàn bộ KB COMPLETED chưa gắn.</summary>
+    public async Task<IReadOnlyList<StudioKnowledgeSuggestionDto>> SuggestAttachAsync(
+        Guid projectId, Guid userId, CancellationToken ct)
+    {
+        await projectService.EnsureProjectAccessAsync(projectId, userId, requireEdit: false, ct);
+
+        var jd = await dbContext.StudioJobDescriptions.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.ProjectId == projectId && x.IsActive, ct);
+        if (jd is null || string.IsNullOrWhiteSpace(jd.Content))
+            return [];
+
+        var attachedIds = await dbContext.StudioKnowledgeDocuments.AsNoTracking()
+            .Where(x => x.ProjectId == projectId && x.IsActive && x.KnowledgeDocumentId != null)
+            .Select(x => x.KnowledgeDocumentId!.Value)
+            .ToListAsync(ct);
+        var attachedSet = attachedIds.ToHashSet();
+
+        var candidates = await dbContext.KnowledgeDocuments.AsNoTracking()
+            .Where(x => x.IsActive
+                        && x.Scope == KnowledgeDocumentScope.Hr
+                        && x.OwnerId == userId
+                        && x.Status == KnowledgeDocumentStatus.Completed
+                        && !attachedSet.Contains(x.Id))
+            .OrderByDescending(x => x.CreatedAt)
+            .Take(50)
+            .ToListAsync(ct);
+
+        if (candidates.Count == 0)
+            return [];
+
+        var candidateIds = candidates.Select(c => c.Id).ToList();
+        var retrieve = await ragService.RetrieveAsync(new ApplicationLayer.DTOs.Rag.RagRetrieveRequest
+        {
+            OwnerId = userId,
+            JobDescription = jd.Content,
+            DocumentIds = candidateIds,
+            TopKHr = Math.Min(30, Math.Max(10, candidateIds.Count * 2))
+        }, ct);
+
+        if (!retrieve.Success || retrieve.HrChunks.Count == 0)
+            return [];
+
+        var byDoc = retrieve.HrChunks
+            .GroupBy(c => c.DocumentId)
+            .Select(g =>
+            {
+                var kb = candidates.FirstOrDefault(c => c.Id == g.Key);
+                var best = g.OrderByDescending(x => x.Score).First();
+                return new StudioKnowledgeSuggestionDto(
+                    g.Key,
+                    kb?.FileName ?? best.FileName ?? g.Key.ToString(),
+                    KnowledgeDocumentType.FromSection(kb?.Section ?? best.Section),
+                    g.Max(x => x.Score),
+                    g.Count(),
+                    best.Content);
+            })
+            .OrderByDescending(s => s.MaxScore)
+            .Take(8)
+            .ToList();
+
+        return byDoc;
+    }
+
+    /// <summary>SCRUM-444: preview retrieve 1 tài liệu với JD hiện tại.</summary>
+    public async Task<StudioRetrievePreviewDto> RetrievePreviewAsync(
+        Guid projectId, Guid userId, StudioRetrievePreviewRequest request, CancellationToken ct)
+    {
+        await projectService.EnsureProjectAccessAsync(projectId, userId, requireEdit: false, ct);
+
+        var kb = await dbContext.KnowledgeDocuments.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == request.KnowledgeDocumentId
+                                      && x.IsActive
+                                      && x.Scope == KnowledgeDocumentScope.Hr
+                                      && x.OwnerId == userId, ct)
+            ?? throw new StudioBusinessException("DOCUMENT_NOT_FOUND", StatusCodes.Status404NotFound,
+                "Tài liệu không tồn tại trong Knowledge Base của bạn.");
+
+        var jd = await dbContext.StudioJobDescriptions.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.ProjectId == projectId && x.IsActive, ct)
+            ?? throw new StudioBusinessException("JD_REQUIRED", StatusCodes.Status422UnprocessableEntity,
+                "Cần Job Description để xem preview retrieve.");
+
+        if (string.IsNullOrWhiteSpace(jd.Content))
+            throw new StudioBusinessException("JD_EMPTY", StatusCodes.Status422UnprocessableEntity, "Job Description đang trống.");
+
+        var retrieve = await ragService.RetrieveAsync(new ApplicationLayer.DTOs.Rag.RagRetrieveRequest
+        {
+            OwnerId = userId,
+            JobDescription = jd.Content,
+            DocumentIds = [kb.Id],
+            TopKHr = 5
+        }, ct);
+
+        if (!retrieve.Success)
+            throw new StudioBusinessException("RETRIEVE_FAILED", StatusCodes.Status502BadGateway,
+                retrieve.Error ?? "Retrieve thất bại.");
+
+        var chunks = retrieve.HrChunks
+            .Select(c => new StudioRetrievePreviewChunkDto(c.ChunkIndex, c.Content, c.Score, c.FileName ?? kb.FileName))
+            .ToList();
+
+        return new StudioRetrievePreviewDto(kb.Id, chunks);
     }
 
     private static bool IsLibraryLink(string? storagePath)
@@ -345,7 +481,13 @@ public sealed class StudioKnowledgeRagService(
         };
     }
 
-    private static StudioDocumentDto Map(StudioKnowledgeDocument x, string? ragStatus, int? chunkCount, string? error)
+    private static StudioDocumentDto Map(
+        StudioKnowledgeDocument x,
+        string? ragStatus,
+        int? chunkCount,
+        string? error,
+        string scope = KnowledgeDocumentScope.Hr,
+        string documentType = KnowledgeDocumentType.Unclassified)
         => new(
             x.Id,
             x.FileName,
@@ -358,5 +500,7 @@ public sealed class StudioKnowledgeRagService(
             ragStatus,
             chunkCount,
             error,
-            IsLibraryLink(x.StoragePath));
+            IsLibraryLink(x.StoragePath),
+            string.IsNullOrWhiteSpace(scope) ? KnowledgeDocumentScope.Hr : scope,
+            string.IsNullOrWhiteSpace(documentType) ? KnowledgeDocumentType.Unclassified : documentType);
 }

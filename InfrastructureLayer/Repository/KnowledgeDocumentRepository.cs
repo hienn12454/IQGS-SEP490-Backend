@@ -95,4 +95,83 @@ public class KnowledgeDocumentRepository : IKnowledgeDocumentRepository
                 && d.UpdatedAt != null
                 && d.UpdatedAt < updatedBeforeUtc)
             .ToListAsync();
+
+    public Task<KnowledgeDocument?> FindByContentHashAsync(string contentHash, string scope, Guid? ownerId)
+    {
+        var q = _context.KnowledgeDocuments.AsQueryable()
+            .Where(d => d.IsActive
+                        && d.ContentHash == contentHash
+                        && d.Scope == scope);
+
+        if (ownerId.HasValue)
+            q = q.Where(d => d.OwnerId == ownerId);
+        else
+            q = q.Where(d => d.OwnerId == null);
+
+        return q.OrderByDescending(d => d.CreatedAt).FirstOrDefaultAsync();
+    }
+
+    public async Task<IReadOnlyList<(Guid Id, int ChunkIndex, string Content)>> GetChunksPreviewAsync(Guid documentId, int take)
+    {
+        take = Math.Clamp(take, 1, 50);
+        var rows = await _context.KnowledgeChunks.AsNoTracking()
+            .Where(c => c.DocumentId == documentId)
+            .OrderBy(c => c.ChunkIndex)
+            .Take(take)
+            .Select(c => new { c.Id, c.ChunkIndex, c.Content })
+            .ToListAsync();
+
+        return rows.Select(c => (c.Id, c.ChunkIndex, c.Content ?? string.Empty)).ToList();
+    }
+
+    public async Task<IReadOnlyDictionary<Guid, int>> CountStudioProjectsByDocumentIdsAsync(IReadOnlyList<Guid> documentIds)
+    {
+        if (documentIds.Count == 0)
+            return new Dictionary<Guid, int>();
+
+        // Load rồi group in-memory — tránh EF không dịch Distinct().Count() trong GroupBy (Npgsql).
+        var rows = await _context.StudioKnowledgeDocuments.AsNoTracking()
+            .Where(x => x.IsActive && x.KnowledgeDocumentId != null && documentIds.Contains(x.KnowledgeDocumentId.Value))
+            .Select(x => new { DocumentId = x.KnowledgeDocumentId!.Value, x.ProjectId })
+            .ToListAsync();
+
+        return rows
+            .GroupBy(x => x.DocumentId)
+            .ToDictionary(g => g.Key, g => g.Select(x => x.ProjectId).Distinct().Count());
+    }
+
+    public async Task<IReadOnlyDictionary<string, int>> CountCitationsByFileNamesAsync(Guid ownerId, IReadOnlyList<string> fileNames)
+    {
+        // Ước lượng: load TagsJson câu hỏi thuộc project của owner, đếm sourceFile khớp tên.
+        var names = fileNames.Where(n => !string.IsNullOrWhiteSpace(n)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        if (names.Count == 0)
+            return new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+        var projectIds = await _context.InterviewProjects.AsNoTracking()
+            .Where(p => p.OwnerId == ownerId && p.IsActive)
+            .Select(p => p.Id)
+            .ToListAsync();
+
+        if (projectIds.Count == 0)
+            return names.ToDictionary(n => n, _ => 0, StringComparer.OrdinalIgnoreCase);
+
+        var tagsList = await _context.InterviewQuestions.AsNoTracking()
+            .Where(q => q.IsActive && projectIds.Contains(q.ProjectId) && q.TagsJson != null && q.TagsJson != "" && q.TagsJson != "[]")
+            .Select(q => q.TagsJson!)
+            .Take(2000)
+            .ToListAsync();
+
+        var counts = names.ToDictionary(n => n, _ => 0, StringComparer.OrdinalIgnoreCase);
+        foreach (var tags in tagsList)
+        {
+            foreach (var name in names)
+            {
+                // Khớp nhanh sourceFile / source_file trong JSON citations
+                if (tags.Contains(name, StringComparison.OrdinalIgnoreCase))
+                    counts[name]++;
+            }
+        }
+
+        return counts;
+    }
 }

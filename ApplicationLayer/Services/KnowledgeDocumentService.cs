@@ -67,6 +67,22 @@ public class KnowledgeDocumentService : IKnowledgeDocumentService
             fileStream.Position = 0;
         }
 
+        // SCRUM-442: chặn upload trùng nội dung cùng owner/scope
+        if (!string.IsNullOrWhiteSpace(contentHash))
+        {
+            var dup = await _repository.FindByContentHashAsync(contentHash, dto.Scope, dto.OwnerId);
+            if (dup is not null)
+            {
+                throw new ConflictException(
+                    $"Tài liệu trùng nội dung với file đã có: '{dup.FileName}' (id={dup.Id}).",
+                    errorCode: "DOCUMENT_DUPLICATE_HASH");
+            }
+        }
+
+        // SCRUM-442: HR bắt buộc loại; Admin tùy chọn → Unclassified
+        var requireHrType = string.Equals(dto.Scope, KnowledgeDocumentScope.Hr, StringComparison.OrdinalIgnoreCase);
+        var documentType = KnowledgeDocumentType.NormalizeForStorage(dto.DocumentType, requireHrType);
+
         try
         {
             await _blobStorage.UploadAsync(fileStream, contentType, blobPath, ct);
@@ -93,7 +109,7 @@ public class KnowledgeDocumentService : IKnowledgeDocumentService
             ContentHash = contentHash,
             SourceTitle = Path.GetFileName(fileName),
             SourceUrl = null,
-            Section = null,
+            Section = documentType,
             Year = null,
             Status = KnowledgeDocumentStatus.Queued,
             UploadedBy = uploadedBy
@@ -162,9 +178,12 @@ public class KnowledgeDocumentService : IKnowledgeDocumentService
         };
 
         var result = await _repository.GetPagedAsync(query);
+        var dtos = result.Items.Select(KnowledgeDocumentInternalService.MapToDto).ToList();
+        await EnrichUsageStatsAsync(dtos, ownerId);
+
         return new PagedResultDto<KnowledgeDocumentResponseDto>
         {
-            Items = result.Items.Select(KnowledgeDocumentInternalService.MapToDto).ToList(),
+            Items = dtos,
             TotalCount = result.TotalCount,
             Page = result.Page,
             PageSize = result.PageSize
@@ -174,7 +193,9 @@ public class KnowledgeDocumentService : IKnowledgeDocumentService
     public async Task<KnowledgeDocumentResponseDto> GetByIdAsync(Guid id, Guid? ownerIdFilter = null)
     {
         var document = await GetDocumentWithOwnership(id, ownerIdFilter);
-        return KnowledgeDocumentInternalService.MapToDto(document);
+        var dto = KnowledgeDocumentInternalService.MapToDto(document);
+        await EnrichUsageStatsAsync([dto], ownerIdFilter ?? document.OwnerId);
+        return dto;
     }
 
     public async Task<KnowledgeDocumentResponseDto> ReingestAsync(Guid id, Guid? ownerIdFilter = null)
@@ -211,6 +232,89 @@ public class KnowledgeDocumentService : IKnowledgeDocumentService
         }
 
         await _repository.DeleteHardAsync(document);
+    }
+
+    public async Task<KnowledgeDocumentResponseDto> UpdateDocumentTypeAsync(
+        Guid id,
+        string documentType,
+        Guid? ownerIdFilter = null,
+        bool requireHrType = true)
+    {
+        var document = await GetDocumentWithOwnership(id, ownerIdFilter);
+        document.Section = KnowledgeDocumentType.NormalizeForStorage(documentType, requireHrType);
+        await _repository.UpdateAsync(document);
+        return KnowledgeDocumentInternalService.MapToDto(document);
+    }
+
+    public async Task<IReadOnlyList<KnowledgeChunkPreviewDto>> GetChunksAsync(
+        Guid id,
+        Guid? ownerIdFilter = null,
+        int take = 20)
+    {
+        await GetDocumentWithOwnership(id, ownerIdFilter);
+        var rows = await _repository.GetChunksPreviewAsync(id, take);
+        return rows.Select(r => new KnowledgeChunkPreviewDto
+        {
+            ChunkId = r.Id,
+            ChunkIndex = r.ChunkIndex,
+            // Cắt ở biên từ/câu — tránh preview cụt giữa chữ như paragraph vỡ.
+            Content = TruncateForPreview(r.Content, 1200)
+        }).ToList();
+    }
+
+    private static string TruncateForPreview(string? content, int maxLen)
+    {
+        if (string.IsNullOrEmpty(content) || content.Length <= maxLen)
+            return content ?? string.Empty;
+
+        var slice = content.AsSpan(0, maxLen);
+        var cut = maxLen;
+        for (var i = slice.Length - 1; i >= Math.Max(0, slice.Length - 120); i--)
+        {
+            var ch = slice[i];
+            if (ch is '.' or '!' or '?' or '\n' || char.IsWhiteSpace(ch))
+            {
+                cut = i + 1;
+                break;
+            }
+        }
+
+        return content[..cut].TrimEnd() + "…";
+    }
+
+    private async Task EnrichUsageStatsAsync(List<KnowledgeDocumentResponseDto> dtos, Guid? ownerId)
+    {
+        if (dtos.Count == 0)
+            return;
+
+        // Stats chỉ là phụ — không được làm hỏng cả GET list (FE sẽ hiện list trống).
+        try
+        {
+            var ids = dtos.Select(d => d.DocumentId).ToList();
+            var projectCounts = await _repository.CountStudioProjectsByDocumentIdsAsync(ids);
+            IReadOnlyDictionary<string, int> citeCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            if (ownerId.HasValue)
+            {
+                citeCounts = await _repository.CountCitationsByFileNamesAsync(
+                    ownerId.Value,
+                    dtos.Select(d => d.FileName).ToList());
+            }
+
+            foreach (var dto in dtos)
+            {
+                dto.StudioProjectCount = projectCounts.TryGetValue(dto.DocumentId, out var pc) ? pc : 0;
+                dto.CitationCount = citeCounts.TryGetValue(dto.FileName, out var cc) ? cc : 0;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "EnrichUsageStats thất bại — vẫn trả list tài liệu (stats = 0).");
+            foreach (var dto in dtos)
+            {
+                dto.StudioProjectCount = 0;
+                dto.CitationCount = 0;
+            }
+        }
     }
 
     private async Task<KnowledgeDocument> GetDocumentWithOwnership(Guid id, Guid? ownerIdFilter)
