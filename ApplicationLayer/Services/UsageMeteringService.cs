@@ -173,7 +173,10 @@ public class UsageMeteringService : IUsageMeteringService
         {
             UsageType.HrAskAi => limits.AskAiPerMonth,
             UsageType.HrPlanRegenerate => limits.PlanRegeneratePerDraft,
+            UsageType.HrQuestionRegen => Math.Max(0, limits.QuestionRegenPerPlan),
             UsageType.CandidatePersonalSet => limits.PersonalSetPerMonth,
+            UsageType.HrGenerateSet when string.Equals(scopeKey, HrGenerateWindow.ScopeKey, StringComparison.Ordinal)
+                => HrGenerateWindow.ResolveMax(limits),
             _ => 0
         };
 
@@ -213,8 +216,51 @@ public class UsageMeteringService : IUsageMeteringService
     public async Task MarkGenerateSuccessAsync(Guid userId)
     {
         var sub = await GetOrThrowSubscriptionAsync(userId);
-        sub.LastSuccessfulGenerateAt = DateTime.UtcNow;
-        await _subscriptionRepo.UpdateAsync(sub);
+        var limits = SubscriptionLimitsHelper.Deserialize(sub.LimitsSnapshotJson);
+        var utcNow = DateTime.UtcNow;
+
+        // Thống kê tổng kỳ (admin GenerateSetUsed) — ScopeKey rỗng
         await IncrementAsync(userId, UsageType.HrGenerateSet);
+
+        if (limits.GenerateUnlimited)
+        {
+            sub.LastSuccessfulGenerateAt = utcNow;
+            await _subscriptionRepo.UpdateAsync(sub);
+            return;
+        }
+
+        // Cửa sổ 4 lần / 24h: lần 1–3 xóa Last để FE cũ không khóa; lần 4 mới ghi timestamp
+        var max = HrGenerateWindow.ResolveMax(limits);
+        var hours = Math.Max(1, limits.GenerateCooldownHours);
+        var counter = await _usageRepo.GetAsync(
+            sub.Id, sub.CurrentPeriodStart, UsageType.HrGenerateSet, HrGenerateWindow.ScopeKey);
+
+        var (nextUsed, nextLast) = HrGenerateWindow.NextMark(
+            counter?.UsedCount ?? 0,
+            sub.LastSuccessfulGenerateAt,
+            hours,
+            max,
+            utcNow);
+
+        if (counter is null)
+        {
+            await _usageRepo.AddAsync(new UsageCounter
+            {
+                SubscriptionId = sub.Id,
+                PeriodStart = sub.CurrentPeriodStart,
+                UsageType = UsageType.HrGenerateSet,
+                ScopeKey = HrGenerateWindow.ScopeKey,
+                UsedCount = nextUsed,
+                ExtraFromPack = 0
+            });
+        }
+        else
+        {
+            counter.UsedCount = nextUsed;
+            await _usageRepo.UpdateAsync(counter);
+        }
+
+        sub.LastSuccessfulGenerateAt = nextLast;
+        await _subscriptionRepo.UpdateAsync(sub);
     }
 }

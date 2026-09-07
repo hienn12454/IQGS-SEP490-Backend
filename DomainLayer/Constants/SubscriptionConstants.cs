@@ -34,6 +34,8 @@ public static class UsageType
 {
     public const string HrGenerateSet = "HrGenerateSet";
     public const string HrPlanRegenerate = "HrPlanRegenerate";
+    /// <summary>Regen từng câu trong Studio — đếm theo planId (ScopeKey).</summary>
+    public const string HrQuestionRegen = "HrQuestionRegen";
     public const string HrAskAi = "HrAskAi";
     public const string HrExport = "HrExport";
     public const string CandidateFeedback = "CandidateFeedback";
@@ -46,6 +48,7 @@ public static class SubscriptionErrorCodes
     public const string QuotaExceeded = "QUOTA_EXCEEDED";
     public const string CooldownActive = "COOLDOWN_ACTIVE";
     public const string PlanRegenerateLimit = "PLAN_REGENERATE_LIMIT";
+    public const string QuestionRegenLimit = "QUESTION_REGEN_LIMIT";
     public const string FeatureRequiresPremium = "FEATURE_REQUIRES_PREMIUM";
 }
 

@@ -173,6 +173,10 @@ public class AppDbContext : DbContext
             entity.Property(p => p.LinkedInUrl).HasMaxLength(500);
             entity.Property(p => p.GithubUrl).HasMaxLength(500);
             entity.Property(p => p.IsCompanyVerified).IsRequired().HasDefaultValue(false);
+            // SCRUM-424: prefs hiển thị list recommendation
+            entity.Property(p => p.RecDefaultSortBy).IsRequired().HasMaxLength(16).HasDefaultValue("score");
+            entity.Property(p => p.RecDefaultSortDir).IsRequired().HasMaxLength(8).HasDefaultValue("desc");
+            entity.Property(p => p.RecHideDismissed).IsRequired().HasDefaultValue(false);
 
             entity.HasOne(p => p.User)
                 .WithOne()
@@ -243,6 +247,8 @@ public class AppDbContext : DbContext
         {
             entity.ToTable("tbl_knowledge_chunks");
             entity.HasKey(c => c.Id);
+            // Bắt buộc map "id" — thiếu thì EF query "Id" → 500, FE hiện "Chưa có chunk".
+            entity.Property(c => c.Id).HasColumnName("id");
             entity.Property(c => c.DocumentId).HasColumnName("document_id");
             entity.Property(c => c.OwnerId).HasColumnName("owner_id");
             entity.Property(c => c.Scope).HasColumnName("scope").IsRequired().HasMaxLength(20);
@@ -272,6 +278,8 @@ public class AppDbContext : DbContext
             entity.Property(qs => qs.Kind).IsRequired().HasMaxLength(20).HasDefaultValue(QuestionSetKind.Marketplace);
             entity.Property(qs => qs.Title).HasMaxLength(500);
             entity.Property(qs => qs.JobDescription).IsRequired();
+            entity.Property(qs => qs.JdSourceType).IsRequired().HasMaxLength(20).HasDefaultValue("PastedText");
+            entity.Property(qs => qs.JdOriginalFileName).HasMaxLength(260);
             entity.Property(qs => qs.HrNote).HasMaxLength(2000);
             entity.Property(qs => qs.PlanJson).IsRequired().HasColumnType("jsonb");
 
@@ -301,6 +309,10 @@ public class AppDbContext : DbContext
             entity.HasIndex(qs => qs.SourceProjectId)
                   .IsUnique()
                   .HasFilter("\"SourceProjectId\" IS NOT NULL");
+
+            // SCRUM-424: intake recommendation theo từng bộ
+            entity.Property(qs => qs.AutoRecommendEnabled).IsRequired().HasDefaultValue(true);
+            entity.Property(qs => qs.RecommendationMinScore).IsRequired().HasDefaultValue(70.0);
 
             // SCRUM-404: pin Marketplace — mặc định false/null; index hỗ trợ sort featured
             entity.Property(qs => qs.IsPinned).IsRequired().HasDefaultValue(false);
@@ -614,9 +626,9 @@ public class AppDbContext : DbContext
             // JSON cố định (camelCase) khớp SubscriptionPlanLimits — không gọi helper lúc design-time
             // Teaser Freemium: Free làm full bài (freeVisiblePercent=100), AI chi tiết chỉ Premium (canDetailedAiFeedback).
             const string hrFreeLimits =
-                "{\"generateCooldownHours\":24,\"generateUnlimited\":false,\"planRegeneratePerDraft\":5,\"canExport\":false,\"askAiPerMonth\":0,\"canPublish\":true,\"freeVisiblePercent\":100,\"canPersistHrRecommendation\":false,\"feedbackOnlyOnVisible\":false,\"canDetailedAiFeedback\":true,\"freeTeaserFeedbackCount\":0}";
+                "{\"generateCooldownHours\":24,\"generatePerWindow\":1,\"generateUnlimited\":false,\"planRegeneratePerDraft\":5,\"questionRegenPerPlan\":2,\"canExport\":false,\"askAiPerMonth\":0,\"canPublish\":true,\"freeVisiblePercent\":100,\"canPersistHrRecommendation\":false,\"feedbackOnlyOnVisible\":false,\"canDetailedAiFeedback\":true,\"freeTeaserFeedbackCount\":0}";
             const string hrPremiumLimits =
-                "{\"generateCooldownHours\":0,\"generateUnlimited\":true,\"planRegeneratePerDraft\":5,\"canExport\":true,\"askAiPerMonth\":1000,\"canPublish\":true,\"freeVisiblePercent\":100,\"canPersistHrRecommendation\":false,\"feedbackOnlyOnVisible\":false,\"canDetailedAiFeedback\":true,\"freeTeaserFeedbackCount\":0}";
+                "{\"generateCooldownHours\":0,\"generateUnlimited\":true,\"planRegeneratePerDraft\":5,\"questionRegenPerPlan\":0,\"canExport\":true,\"askAiPerMonth\":1000,\"canPublish\":true,\"freeVisiblePercent\":100,\"canPersistHrRecommendation\":false,\"feedbackOnlyOnVisible\":false,\"canDetailedAiFeedback\":true,\"freeTeaserFeedbackCount\":0}";
             const string candidateFreeLimits =
                 "{\"generateCooldownHours\":0,\"generateUnlimited\":false,\"planRegeneratePerDraft\":0,\"canExport\":false,\"askAiPerMonth\":0,\"canPublish\":false,\"freeVisiblePercent\":100,\"canPersistHrRecommendation\":false,\"feedbackOnlyOnVisible\":false,\"canDetailedAiFeedback\":false,\"freeTeaserFeedbackCount\":1,\"canGeneratePersonalSet\":false,\"personalSetPerMonth\":0}";
             const string candidatePremiumLimits =

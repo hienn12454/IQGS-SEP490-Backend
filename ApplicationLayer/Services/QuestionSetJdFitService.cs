@@ -4,7 +4,6 @@ using ApplicationLayer.DTOs.Rag;
 using ApplicationLayer.Helpers;
 using ApplicationLayer.Interfaces.Repositories;
 using ApplicationLayer.Interfaces.Services;
-using DomainLayer.Constants;
 using DomainLayer.Entities;
 using DomainLayer.Exceptions;
 
@@ -85,7 +84,7 @@ public class QuestionSetJdFitService : IQuestionSetJdFitService
         if (questions.Count == 0)
             throw new BadRequestException("Bộ câu hỏi chưa có câu hỏi để đánh giá.");
 
-        await _subscriptionGate.CheckAskAiAsync(ownerId);
+        await _subscriptionGate.CheckGenerateSetAsync(ownerId);
 
         object? planObj = null;
         if (!string.IsNullOrWhiteSpace(questionSet.PlanJson) && questionSet.PlanJson.Trim() != "{}")
@@ -151,7 +150,7 @@ public class QuestionSetJdFitService : IQuestionSetJdFitService
             await _reviewRepository.UpdateAsync(existing);
         }
 
-        await _usageMetering.IncrementAsync(ownerId, UsageType.HrAskAi);
+        await _usageMetering.MarkGenerateSuccessAsync(ownerId);
 
         return new JdFitReviewResponse
         {

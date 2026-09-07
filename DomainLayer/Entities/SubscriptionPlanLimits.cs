@@ -6,14 +6,26 @@ namespace DomainLayer.Entities;
 /// </summary>
 public class SubscriptionPlanLimits
 {
-    /// <summary>Free HR: số giờ cooldown giữa 2 lần tạo bộ (mặc định 24).</summary>
+    /// <summary>Free HR: số giờ cooldown sau khi hết lượt trong cửa sổ (mặc định 24).</summary>
     public int GenerateCooldownHours { get; set; } = 24;
+
+    /// <summary>
+    /// Free HR: số lần hoàn thành tạo bộ (sinh câu hỏi thành công hoặc JD-fit) trong 1 cửa sổ cooldown.
+    /// 0 = fallback 1. Premium không dùng vì GenerateUnlimited.
+    /// </summary>
+    public int GeneratePerWindow { get; set; } = 1;
 
     /// <summary>Premium HR: không giới hạn số lần tạo bộ.</summary>
     public bool GenerateUnlimited { get; set; }
 
     /// <summary>Số lần tạo lại plan tối đa trong 1 draft/progress (cả Free & Premium).</summary>
     public int PlanRegeneratePerDraft { get; set; } = 5;
+
+    /// <summary>
+    /// Free HR: số lần regen từng câu tối đa trên 1 plan đã sinh câu.
+    /// 0 = không giới hạn (Premium). Free mặc định 2.
+    /// </summary>
+    public int QuestionRegenPerPlan { get; set; } = 2;
 
     public bool CanExport { get; set; }
 
@@ -54,8 +66,10 @@ public class SubscriptionPlanLimits
     public static SubscriptionPlanLimits HrFree() => new()
     {
         GenerateCooldownHours = 24,
+        GeneratePerWindow = 1,
         GenerateUnlimited = false,
         PlanRegeneratePerDraft = 5,
+        QuestionRegenPerPlan = 2,
         CanExport = false,
         AskAiPerMonth = 0,
         CanPublish = true,
@@ -71,6 +85,7 @@ public class SubscriptionPlanLimits
         GenerateCooldownHours = 0,
         GenerateUnlimited = true,
         PlanRegeneratePerDraft = 5,
+        QuestionRegenPerPlan = 0,
         CanExport = true,
         AskAiPerMonth = 1000,
         CanPublish = true,

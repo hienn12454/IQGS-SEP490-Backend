@@ -43,6 +43,9 @@ public class MySubscriptionDto
     public int AskAiUsed { get; set; }
     public int AskAiLimit { get; set; }
     public int GenerateSetUsed { get; set; }
+    /// <summary>Số lần generate trong cửa sổ cooldown hiện tại (HR Free 4/24h).</summary>
+    public int GenerateWindowUsed { get; set; }
+    public int GenerateWindowLimit { get; set; }
     public SubscriptionEntitlementsDto Entitlements { get; set; } = new();
 }
 

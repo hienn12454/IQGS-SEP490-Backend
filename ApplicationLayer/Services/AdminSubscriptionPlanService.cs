@@ -670,6 +670,7 @@ public class AdminSubscriptionPlanService : IAdminSubscriptionPlanService
         var limits = SubscriptionLimitsHelper.Deserialize(sub.LimitsSnapshotJson);
         var askAi = await _metering.GetUsageAsync(sub.UserId, UsageType.HrAskAi);
         var generate = await _metering.GetUsageAsync(sub.UserId, UsageType.HrGenerateSet);
+        var generateWindow = await _metering.GetUsageAsync(sub.UserId, UsageType.HrGenerateSet, HrGenerateWindow.ScopeKey);
 
         return new MySubscriptionDto
         {
@@ -687,6 +688,8 @@ public class AdminSubscriptionPlanService : IAdminSubscriptionPlanService
             AskAiUsed = askAi.UsedCount,
             AskAiLimit = askAi.EffectiveLimit,
             GenerateSetUsed = generate.UsedCount,
+            GenerateWindowUsed = generateWindow.UsedCount,
+            GenerateWindowLimit = HrGenerateWindow.ResolveMax(limits),
             Entitlements = new SubscriptionEntitlementsDto
             {
                 CanExport = limits.CanExport,
