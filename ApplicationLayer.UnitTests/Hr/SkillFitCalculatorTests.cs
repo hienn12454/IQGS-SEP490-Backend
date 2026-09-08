@@ -72,3 +72,18 @@ public sealed class RecommendationP1RulesTests
             RecommendationP1Rules.EnsureInviteSchedule(null, null, "ONLINE", null, null));
     }
 }
+
+public sealed class RecommendationIntakeScoreTests
+{
+    [Theory]
+    [InlineData(70, 70)]
+    [InlineData(80, 80)]
+    [InlineData(50, 50)]
+    [InlineData(95, 95)]
+    [InlineData(40, 70)]
+    [InlineData(100, 70)]
+    public void ResolveIntakeMinScore_ClampsOrPasses(double input, double expected)
+    {
+        Assert.Equal(expected, ApplicationLayer.Services.RecommendationService.ResolveIntakeMinScore(input));
+    }
+}

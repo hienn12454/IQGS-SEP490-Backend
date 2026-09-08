@@ -272,7 +272,7 @@ public class CandidatePersonalSetService : ICandidatePersonalSetService
                 Rationale = q.Rationale,
                 SampleAnswer = q.SampleAnswer,
                 AnswerMethod = string.IsNullOrWhiteSpace(q.AnswerMethod) ? "Text" : q.AnswerMethod,
-                EvaluationCriteriaJson = JsonSerializer.Serialize(q.EvaluationCriteria ?? new List<string>(), JsonOpts),
+                EvaluationCriteriaJson = JsonSerializer.Serialize(q.EvaluationCriteria ?? new List<object>(), JsonOpts),
                 CitationsJson = JsonSerializer.Serialize(q.Citations ?? new List<object>(), JsonOpts)
             }).ToList();
 

@@ -299,6 +299,9 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
         try
         {
             var criteria = ParseCriteriaList(rubric.EvaluationCriteriaJson);
+            var rubricDoc = RubricNormalizer.NormalizeFromJson(rubric.EvaluationCriteriaJson);
+            if (RubricNormalizer.IsPublishReady(rubricDoc) || rubricDoc.Criteria.Count > 0)
+                criteria = RubricNormalizer.FlattenForEvaluate(rubricDoc);
             var ragResult = await _ragService.EvaluateAnswerAsync(new EvaluateAnswerRequest
             {
                 Question = rubric.Question,

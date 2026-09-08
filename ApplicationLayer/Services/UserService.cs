@@ -171,7 +171,11 @@ public class UserService : IUserService
                 LinkedInUrl = dto.LinkedInUrl,
                 GithubUrl = dto.GithubUrl,
                 Bio = dto.Bio,
-                InviteMessageTemplate = dto.InviteMessageTemplate
+                InviteMessageTemplate = dto.InviteMessageTemplate,
+                RecDefaultMinScore = dto.RecDefaultMinScore,
+                RecDefaultSortBy = NormalizeRecSortBy(dto.RecDefaultSortBy),
+                RecDefaultSortDir = NormalizeRecSortDir(dto.RecDefaultSortDir),
+                RecHideDismissed = dto.RecHideDismissed ?? false
             });
         }
         else
@@ -183,6 +187,17 @@ public class UserService : IUserService
             profile.GithubUrl = dto.GithubUrl;
             profile.Bio = dto.Bio;
             profile.InviteMessageTemplate = dto.InviteMessageTemplate;
+            // SCRUM-424: chỉ cập nhật view prefs khi FE gửi sortBy/sortDir/hide (avatar/oauth không gửi → giữ nguyên)
+            if (dto.RecDefaultSortBy != null || dto.RecDefaultSortDir != null || dto.RecHideDismissed.HasValue)
+            {
+                profile.RecDefaultMinScore = dto.RecDefaultMinScore;
+                if (dto.RecDefaultSortBy != null)
+                    profile.RecDefaultSortBy = NormalizeRecSortBy(dto.RecDefaultSortBy);
+                if (dto.RecDefaultSortDir != null)
+                    profile.RecDefaultSortDir = NormalizeRecSortDir(dto.RecDefaultSortDir);
+                if (dto.RecHideDismissed.HasValue)
+                    profile.RecHideDismissed = dto.RecHideDismissed.Value;
+            }
             await _hrProfileRepo.UpdateAsync(profile);
         }
 
@@ -334,7 +349,11 @@ public class UserService : IUserService
                     GithubUrl = hr.GithubUrl,
                     Bio = hr.Bio,
                     IsCompanyVerified = hr.IsCompanyVerified,
-                    InviteMessageTemplate = hr.InviteMessageTemplate
+                    InviteMessageTemplate = hr.InviteMessageTemplate,
+                    RecDefaultMinScore = hr.RecDefaultMinScore,
+                    RecDefaultSortBy = hr.RecDefaultSortBy,
+                    RecDefaultSortDir = hr.RecDefaultSortDir,
+                    RecHideDismissed = hr.RecHideDismissed
                 };
             }
         }
@@ -380,6 +399,19 @@ public class UserService : IUserService
     private static bool IsGoogleAccountLinked(User user) =>
         !string.IsNullOrWhiteSpace(user.GoogleId)
         || string.Equals(user.Provider, AuthProvider.Google, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>SCRUM-424: chuẩn hóa sort prefs list recommendation.</summary>
+    private static string NormalizeRecSortBy(string? value)
+    {
+        var v = value?.Trim().ToLowerInvariant();
+        return v is "score" or "date" ? v : "score";
+    }
+
+    private static string NormalizeRecSortDir(string? value)
+    {
+        var v = value?.Trim().ToLowerInvariant();
+        return v is "asc" or "desc" ? v : "desc";
+    }
 
     /// <summary>
     /// Local user đã gắn GithubId cũng được tính là đã liên kết, không chỉ user đăng ký
