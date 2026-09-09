@@ -384,6 +384,7 @@ public class Program
         builder.Services.AddScoped<IHrTalentService, HrTalentService>();
         builder.Services.AddScoped<ICandidateInvitationService, CandidateInvitationService>();
         builder.Services.AddScoped<ICandidateOfferService, CandidateOfferService>();
+        builder.Services.AddScoped<IHrAcceptanceNotifier, HrAcceptanceNotifier>();
         builder.Services.AddScoped<IPlatformSettingsService, PlatformSettingsService>();
         builder.Services.AddScoped<IUsageMeteringService, UsageMeteringService>();
         builder.Services.AddScoped<ISubscriptionGateService, SubscriptionGateService>();
@@ -402,7 +403,7 @@ public class Program
         builder.Services.AddScoped<IQuestionAiAssistService, QuestionAiAssistService>();
         builder.Services.AddScoped<IInterviewProjectService, InterviewProjectService>();
         builder.Services.AddScoped<IJobDescriptionService, JobDescriptionService>();
-        builder.Services.AddScoped<IJobDescriptionAnalyzer, MockJobDescriptionAnalyzer>();
+        builder.Services.AddScoped<IJobDescriptionAnalyzer, RagJobDescriptionAnalyzer>();
         builder.Services.AddScoped<IStudioJobDescriptionUploadService, StudioJobDescriptionUploadService>();
         builder.Services.AddScoped<IStudioKnowledgeDocumentService, StudioKnowledgeRagService>();
         builder.Services.AddScoped<IInterviewPlanService, InterviewPlanService>();
