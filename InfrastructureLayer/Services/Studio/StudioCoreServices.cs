@@ -226,6 +226,10 @@ public sealed class InterviewProjectService(
             };
         }).ToList();
 
+        // HrNote = mô tả public (project.Description); không ghi marker STUDIO_SAVE — link project đã có SourceProjectId
+        var publicNote = MarketplaceDescriptionHelper.ResolveForStudioSave(
+            project.Description, existing?.HrNote);
+
         if (existing is null)
         {
             var set = new DomainLayer.Entities.QuestionSet
@@ -240,7 +244,7 @@ public sealed class InterviewProjectService(
                 JobDescription = jdContent,
                 JdSourceType = jdSourceType,
                 JdOriginalFileName = jdFileName,
-                HrNote = $"STUDIO_SAVE; project={projectId}",
+                HrNote = publicNote,
                 PlanJson = planJson,
                 GeneratedAt = latestRun?.CompletedAt ?? DateTime.UtcNow
             };
@@ -258,7 +262,7 @@ public sealed class InterviewProjectService(
         existing.JobDescription = jdContent;
         existing.JdSourceType = jdSourceType;
         existing.JdOriginalFileName = jdFileName;
-        existing.HrNote = $"STUDIO_SAVE; project={projectId}";
+        existing.HrNote = publicNote;
         existing.PlanJson = planJson;
         existing.SourcePlanId = plan?.Id;
         existing.SourceRunId = latestRun?.Id;

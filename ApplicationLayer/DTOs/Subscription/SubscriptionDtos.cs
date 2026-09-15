@@ -13,8 +13,11 @@ public class SubscriptionPlanDto
     public bool IsActive { get; set; }
     public SubscriptionPlanLimits Limits { get; set; } = new();
 
-    /// <summary>Admin đổi limit: chỉ áp dụng từ kỳ sau cho subscriber hiện có.</summary>
-    public bool AppliesToExistingSubscribersFromNextPeriod { get; set; } = true;
+    /// <summary>
+    /// false = limit đã/sẽ áp dụng ngay cho subscriber Active (Admin Save sync snapshot).
+    /// Giữ field để FE không break; không còn nghĩa “chỉ kỳ sau”.
+    /// </summary>
+    public bool AppliesToExistingSubscribersFromNextPeriod { get; set; }
 }
 
 public class SubscriptionEntitlementsDto

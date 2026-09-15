@@ -2,7 +2,8 @@ namespace DomainLayer.Entities;
 
 /// <summary>
 /// Subscription gắn User. Kỳ anniversary: CurrentPeriodStart → CurrentPeriodEnd.
-/// LimitsSnapshotJson = limit hiệu lực trong kỳ đang chạy.
+/// LimitsSnapshotJson = limit hiệu lực (gate/usage đọc field này).
+/// Admin đổi Plan.LimitsJson → sync ngay vào snapshot các subscription Active cùng PlanId.
 /// </summary>
 public class Subscription : BaseEntity
 {
@@ -17,7 +18,7 @@ public class Subscription : BaseEntity
     public DateTime CurrentPeriodStart { get; set; }
     public DateTime CurrentPeriodEnd { get; set; }
 
-    /// <summary>JSON limits khóa cho kỳ hiện tại — gate đọc field này.</summary>
+    /// <summary>JSON limits hiệu lực — gate đọc field này. Admin update plan limits sync Active mid-period.</summary>
     public string LimitsSnapshotJson { get; set; } = "{}";
 
     /// <summary>Lần Free HR tạo bộ thành công gần nhất — dùng cooldown 24h.</summary>

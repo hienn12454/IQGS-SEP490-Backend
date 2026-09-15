@@ -1,4 +1,5 @@
 using ApplicationLayer.Interfaces.Repositories;
+using DomainLayer.Constants;
 using DomainLayer.Entities;
 using InfrastructureLayer.Database;
 using Microsoft.EntityFrameworkCore;
@@ -102,6 +103,27 @@ public class SubscriptionRepository : ISubscriptionRepository
                 var first = g.First();
                 return (first.Code, first.CurrentPeriodEnd);
             });
+    }
+
+    public async Task<int> SyncLimitsSnapshotForActiveByPlanIdAsync(Guid planId, string limitsJson)
+    {
+        var utcNow = DateTime.UtcNow;
+        var subs = await _db.Subscriptions
+            .Where(s => s.PlanId == planId
+                        && s.IsActive
+                        && s.Status == SubscriptionStatus.Active)
+            .ToListAsync();
+
+        foreach (var sub in subs)
+        {
+            sub.LimitsSnapshotJson = limitsJson;
+            sub.UpdatedAt = utcNow;
+        }
+
+        if (subs.Count > 0)
+            await _db.SaveChangesAsync();
+
+        return subs.Count;
     }
 }
 

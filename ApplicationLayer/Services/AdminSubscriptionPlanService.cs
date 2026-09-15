@@ -110,13 +110,19 @@ public class AdminSubscriptionPlanService : IAdminSubscriptionPlanService
         }
         if (dto.Currency != null) plan.Currency = dto.Currency.Trim().ToUpperInvariant();
         if (dto.IsActive.HasValue) plan.IsActive = dto.IsActive.Value;
-        // Chỉ cập nhật template — subscriber giữ LimitsSnapshot đến PeriodEnd
-        if (dto.Limits != null)
-            plan.LimitsJson = SubscriptionLimitsHelper.Serialize(dto.Limits);
+
+        var limitsChanged = dto.Limits != null;
+        if (limitsChanged)
+            plan.LimitsJson = SubscriptionLimitsHelper.Serialize(dto.Limits!);
 
         await _planRepo.UpdateAsync(plan);
+
+        // Limits mới → sync ngay snapshot Active (không reset UsageCounter)
+        if (limitsChanged)
+            await _subscriptionRepo.SyncLimitsSnapshotForActiveByPlanIdAsync(plan.Id, plan.LimitsJson);
+
         var result = Map(plan);
-        result.AppliesToExistingSubscribersFromNextPeriod = true;
+        result.AppliesToExistingSubscribersFromNextPeriod = false;
         return result;
     }
 
@@ -426,7 +432,8 @@ public class AdminSubscriptionPlanService : IAdminSubscriptionPlanService
         Currency = p.Currency,
         IsActive = p.IsActive,
         Limits = SubscriptionLimitsHelper.Deserialize(p.LimitsJson),
-        AppliesToExistingSubscribersFromNextPeriod = true
+        // Admin đổi limits → sync Active ngay (UpdateAsync); list cũng báo false
+        AppliesToExistingSubscribersFromNextPeriod = false
     };
 
     private static string NormalizeAudience(string audience)

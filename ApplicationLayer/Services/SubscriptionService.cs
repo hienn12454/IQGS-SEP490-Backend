@@ -498,7 +498,7 @@ public class SubscriptionService : ISubscriptionService
         Currency = p.Currency,
         IsActive = p.IsActive,
         Limits = SubscriptionLimitsHelper.Deserialize(p.LimitsJson),
-        AppliesToExistingSubscribersFromNextPeriod = true
+        AppliesToExistingSubscribersFromNextPeriod = false
     };
 
     private static string NormalizeAudience(string audience)

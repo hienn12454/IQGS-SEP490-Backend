@@ -24,6 +24,12 @@ public interface ISubscriptionRepository
     /// <summary>Map UserId → (PlanCode, CurrentPeriodEnd) cho batch admin list.</summary>
     Task<Dictionary<Guid, (string PlanCode, DateTime CurrentPeriodEnd)>> GetPlanSummariesByUserIdsAsync(
         IReadOnlyCollection<Guid> userIds);
+
+    /// <summary>
+    /// Copy LimitsJson của plan sang LimitsSnapshotJson mọi subscription Active cùng PlanId.
+    /// Không đụng UsageCounter. Trả về số row cập nhật.
+    /// </summary>
+    Task<int> SyncLimitsSnapshotForActiveByPlanIdAsync(Guid planId, string limitsJson);
 }
 
 public interface IUsageCounterRepository

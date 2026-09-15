@@ -2,7 +2,7 @@ namespace DomainLayer.Entities;
 
 /// <summary>
 /// Schema JSON cho Plan.LimitsJson và Subscription.LimitsSnapshotJson.
-/// Gate đọc snapshot kỳ hiện tại — không đọc live Plan khi user đang active.
+/// Gate/usage đọc snapshot — Admin đổi Plan.LimitsJson sync ngay vào Active snapshot cùng PlanId.
 /// </summary>
 public class SubscriptionPlanLimits
 {
