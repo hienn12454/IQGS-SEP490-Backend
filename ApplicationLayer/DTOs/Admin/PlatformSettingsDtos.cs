@@ -11,6 +11,12 @@ public class PlatformSettingsDto
 
     /// <summary>SCRUM-404: ngưỡng lượt practice để badge Trending.</summary>
     public int MinAttemptsForTrending { get; set; }
+
+    /// <summary>SCRUM-446: bật/tắt chống gian lận toàn hệ thống.</summary>
+    public bool AntiCheatEnabled { get; set; }
+
+    /// <summary>SCRUM-446: số lần rời tab tối đa trước khi tự nộp.</summary>
+    public int AntiCheatMaxTabLeaves { get; set; }
 }
 
 public class UpdatePlatformSettingsDto
@@ -26,4 +32,11 @@ public class UpdatePlatformSettingsDto
     /// <summary>SCRUM-404: ngưỡng AttemptCount cho badge Trending.</summary>
     [Range(1, 10000, ErrorMessage = "Ngưỡng Trending phải từ 1 đến 10000.")]
     public int MinAttemptsForTrending { get; set; }
+
+    /// <summary>SCRUM-446: bật/tắt chống gian lận — áp dụng cho phiên practice mới.</summary>
+    public bool AntiCheatEnabled { get; set; }
+
+    /// <summary>SCRUM-446: số lần rời tab tối đa (1–20).</summary>
+    [Range(1, 20, ErrorMessage = "Số lần rời tab tối đa phải từ 1 đến 20.")]
+    public int AntiCheatMaxTabLeaves { get; set; }
 }

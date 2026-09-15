@@ -17,4 +17,10 @@ public class PlatformSettings : BaseEntity
 
     /// <summary>SCRUM-404: Ngưỡng AttemptCount để hiện badge Trending trên card Candidate. Mặc định 10.</summary>
     public int MinAttemptsForTrending { get; set; } = 10;
+
+    /// <summary>SCRUM-446: Bật chống gian lận toàn hệ thống (snapshot vào phiên practice lúc start). Mặc định tắt.</summary>
+    public bool AntiCheatEnabled { get; set; } = false;
+
+    /// <summary>SCRUM-446: Số lần rời tab tối đa trước khi tự nộp bài. Mặc định 3.</summary>
+    public int AntiCheatMaxTabLeaves { get; set; } = 3;
 }

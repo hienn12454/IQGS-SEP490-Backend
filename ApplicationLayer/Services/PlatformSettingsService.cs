@@ -25,6 +25,8 @@ public class PlatformSettingsService : IPlatformSettingsService
         settings.MinQuestionsToPublish = dto.MinQuestionsToPublish;
         settings.MaxPinnedSets = dto.MaxPinnedSets;
         settings.MinAttemptsForTrending = dto.MinAttemptsForTrending;
+        settings.AntiCheatEnabled = dto.AntiCheatEnabled;
+        settings.AntiCheatMaxTabLeaves = dto.AntiCheatMaxTabLeaves;
         await _repository.UpdateAsync(settings);
 
         return Map(settings);
@@ -34,6 +36,8 @@ public class PlatformSettingsService : IPlatformSettingsService
     {
         MinQuestionsToPublish = settings.MinQuestionsToPublish,
         MaxPinnedSets = settings.MaxPinnedSets,
-        MinAttemptsForTrending = settings.MinAttemptsForTrending
+        MinAttemptsForTrending = settings.MinAttemptsForTrending,
+        AntiCheatEnabled = settings.AntiCheatEnabled,
+        AntiCheatMaxTabLeaves = settings.AntiCheatMaxTabLeaves
     };
 }
