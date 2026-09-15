@@ -24,6 +24,18 @@ public class AppDbContext : DbContext
     public DbSet<CandidatePersonalSetJob> CandidatePersonalSetJobs { get; set; }
     public DbSet<CandidateSkillPlan> CandidateSkillPlans { get; set; }
     public DbSet<CandidateSkillPlanItem> CandidateSkillPlanItems { get; set; }
+    public DbSet<CompetencyFramework> CompetencyFrameworks { get; set; }
+    public DbSet<CompetencyFrameworkSkill> CompetencyFrameworkSkills { get; set; }
+    public DbSet<CompetencyRoleAlias> CompetencyRoleAliases { get; set; }
+    public DbSet<CompetencyRoleFamily> CompetencyRoleFamilies { get; set; }
+    public DbSet<CompetencyRoleFamilyAlias> CompetencyRoleFamilyAliases { get; set; }
+    public DbSet<CompetencyScoringPolicy> CompetencyScoringPolicies { get; set; }
+    public DbSet<CompetencyLevelRule> CompetencyLevelRules { get; set; }
+    public DbSet<CandidateAssessment> CandidateAssessments { get; set; }
+    public DbSet<CandidateAssessmentSkillResult> CandidateAssessmentSkillResults { get; set; }
+    public DbSet<CandidateRoadmap> CandidateRoadmaps { get; set; }
+    public DbSet<CandidateRoadmapItem> CandidateRoadmapItems { get; set; }
+    public DbSet<RoadmapNode> RoadmapNodes { get; set; }
     public DbSet<QuestionSetBookmark> QuestionSetBookmarks { get; set; }
     public DbSet<HrQuestionSetBookmark> HrQuestionSetBookmarks { get; set; }
     public DbSet<QuestionSetFeedback> QuestionSetFeedbacks { get; set; }
@@ -203,6 +215,11 @@ public class AppDbContext : DbContext
             entity.Property(p => p.GithubUrl).HasMaxLength(500);
             entity.Property(p => p.Address).HasMaxLength(500);
             entity.Property(p => p.TimeZoneId).HasMaxLength(100);
+            entity.Property(p => p.SuggestedRole).HasMaxLength(200);
+            entity.Property(p => p.SelfAssessedLevel).HasMaxLength(30);
+            entity.Property(p => p.TargetLevel).HasMaxLength(30);
+            entity.Property(p => p.InterviewGoal).HasMaxLength(500);
+            entity.Property(p => p.CoachContextConfirmed).IsRequired().HasDefaultValue(false);
 
             entity.Property(p => p.AllowRecruiterRecommendation).IsRequired().HasDefaultValue(true);
             entity.Property(p => p.AutoSyncProfileFromCv).IsRequired().HasDefaultValue(true);
@@ -234,12 +251,15 @@ public class AppDbContext : DbContext
             entity.Property(d => d.ChunkCount).HasColumnName("chunk_count");
             entity.Property(d => d.UploadedBy).HasColumnName("uploaded_by");
             entity.Property(d => d.ErrorMessage).HasColumnName("error_message").HasMaxLength(2000);
+            entity.Property(d => d.AdminNote).HasColumnName("admin_note").HasMaxLength(2000);
+            entity.Property(d => d.Folder).HasColumnName("folder").HasMaxLength(64);
             entity.Property(d => d.CreatedAt).HasColumnName("created_at");
             entity.Property(d => d.UpdatedAt).HasColumnName("updated_at");
             entity.Property(d => d.IsActive).HasColumnName("is_active");
             entity.HasIndex(d => d.Scope).HasDatabaseName("ix_knowledge_documents_scope");
             entity.HasIndex(d => d.OwnerId).HasDatabaseName("ix_knowledge_documents_owner_id");
             entity.HasIndex(d => d.Status).HasDatabaseName("ix_knowledge_documents_status");
+            entity.HasIndex(d => new { d.Scope, d.Folder }).HasDatabaseName("ix_knowledge_documents_scope_folder");
         });
 
         // ── KnowledgeChunk (pgvector — RAG ghi trực tiếp, snake_case) ─
@@ -340,10 +360,221 @@ public class AppDbContext : DbContext
                   .HasForeignKey(j => j.QuestionSetId)
                   .OnDelete(DeleteBehavior.SetNull);
 
+            // AssessmentId lưu tham chiếu lỏng — tránh FK vòng với CandidateAssessment.PersonalSetJobId
+            entity.Ignore(j => j.Assessment);
+
             entity.HasIndex(j => j.CandidateUserId);
             entity.HasIndex(j => j.Status);
             entity.HasIndex(j => j.QuestionSetId);
             entity.HasIndex(j => j.Purpose);
+            entity.HasIndex(j => j.AssessmentId);
+        });
+
+        modelBuilder.Entity<CompetencyFramework>(entity =>
+        {
+            entity.ToTable("tbl_competency_frameworks");
+            entity.HasKey(f => f.Id);
+            entity.Property(f => f.RoleKey).IsRequired().HasMaxLength(100);
+            entity.Property(f => f.DisplayRole).IsRequired().HasMaxLength(200);
+            entity.Property(f => f.TargetLevel).IsRequired().HasMaxLength(30);
+            entity.Property(f => f.Status).IsRequired().HasMaxLength(20);
+            entity.Property(f => f.Description).HasMaxLength(1000);
+            entity.Property(f => f.Technology).HasMaxLength(200);
+            entity.Property(f => f.StackJson).IsRequired().HasColumnType("jsonb");
+            entity.Property(f => f.Provenance).IsRequired().HasMaxLength(20);
+            entity.Property(f => f.SourceRef).HasMaxLength(300);
+            entity.Property(f => f.SourceVersion).HasMaxLength(50);
+            entity.Property(f => f.RoleFamilyKey).HasMaxLength(80);
+            entity.HasIndex(f => new { f.RoleKey, f.TargetLevel }).IsUnique();
+        });
+
+        modelBuilder.Entity<CompetencyRoleFamily>(entity =>
+        {
+            entity.ToTable("tbl_competency_role_families");
+            entity.HasKey(f => f.Id);
+            entity.Property(f => f.FamilyKey).IsRequired().HasMaxLength(80);
+            entity.Property(f => f.DisplayName).IsRequired().HasMaxLength(200);
+            entity.Property(f => f.Status).IsRequired().HasMaxLength(20);
+            entity.Property(f => f.Description).HasMaxLength(1000);
+            entity.HasIndex(f => f.FamilyKey).IsUnique();
+            entity.HasMany(f => f.Aliases)
+                  .WithOne()
+                  .HasForeignKey(a => a.FamilyKey)
+                  .HasPrincipalKey(f => f.FamilyKey)
+                  .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<CompetencyRoleFamilyAlias>(entity =>
+        {
+            entity.ToTable("tbl_competency_role_family_aliases");
+            entity.HasKey(a => a.Id);
+            entity.Property(a => a.FamilyKey).IsRequired().HasMaxLength(80);
+            entity.Property(a => a.Alias).IsRequired().HasMaxLength(200);
+            entity.Property(a => a.MatchKind).IsRequired().HasMaxLength(20);
+            entity.HasIndex(a => a.Alias).IsUnique();
+            entity.HasIndex(a => a.FamilyKey);
+        });
+
+        modelBuilder.Entity<CompetencyRoleAlias>(entity =>
+        {
+            entity.ToTable("tbl_competency_role_aliases");
+            entity.HasKey(a => a.Id);
+            entity.Property(a => a.RoleKey).IsRequired().HasMaxLength(100);
+            entity.Property(a => a.Alias).IsRequired().HasMaxLength(200);
+            entity.Property(a => a.MatchKind).IsRequired().HasMaxLength(20);
+            // Alias phải unique toàn hệ thống: cùng một chuỗi không được trỏ 2 role khác nhau.
+            entity.HasIndex(a => a.Alias).IsUnique();
+            entity.HasIndex(a => a.RoleKey);
+        });
+
+        modelBuilder.Entity<CompetencyFrameworkSkill>(entity =>
+        {
+            entity.ToTable("tbl_competency_framework_skills");
+            entity.HasKey(s => s.Id);
+            entity.Property(s => s.Skill).IsRequired().HasMaxLength(200);
+            entity.Property(s => s.RequiredDifficulty).IsRequired().HasMaxLength(20);
+            entity.Property(s => s.TopicsJson).IsRequired().HasColumnType("jsonb");
+            entity.HasOne(s => s.Framework)
+                  .WithMany(f => f.Skills)
+                  .HasForeignKey(s => s.FrameworkId)
+                  .OnDelete(DeleteBehavior.Cascade);
+            entity.HasIndex(s => new { s.FrameworkId, s.Skill }).IsUnique();
+        });
+
+        modelBuilder.Entity<CompetencyScoringPolicy>(entity =>
+        {
+            entity.ToTable("tbl_competency_scoring_policies");
+            entity.HasKey(p => p.Id);
+            entity.Property(p => p.TargetScoreByLevelJson).HasColumnType("jsonb");
+        });
+
+        modelBuilder.Entity<CompetencyLevelRule>(entity =>
+        {
+            entity.ToTable("tbl_competency_level_rules");
+            entity.HasKey(r => r.Id);
+            entity.Property(r => r.Level).IsRequired().HasMaxLength(30);
+            // Luật level là global: unique theo Level, không có cột role/framework.
+            entity.HasIndex(r => r.Level).IsUnique();
+        });
+
+        modelBuilder.Entity<CandidateAssessment>(entity =>
+        {
+            entity.ToTable("tbl_candidate_assessments");
+            entity.HasKey(a => a.Id);
+            entity.Property(a => a.Kind).IsRequired().HasMaxLength(30);
+            entity.Property(a => a.Status).IsRequired().HasMaxLength(30);
+            entity.Property(a => a.ReadinessStatus).HasMaxLength(30);
+            entity.Property(a => a.ContextSnapshotJson).IsRequired().HasColumnType("jsonb");
+            entity.Property(a => a.ScopeSkillsJson).HasColumnType("jsonb");
+            entity.Property(a => a.ExplanationJson).HasColumnType("jsonb");
+            entity.Property(a => a.ResolutionMode).IsRequired().HasMaxLength(20);
+            entity.Property(a => a.RoleFamilyKey).HasMaxLength(80);
+            entity.Property(a => a.BlueprintJson).HasColumnType("jsonb");
+            entity.HasOne(a => a.Framework)
+                  .WithMany()
+                  .HasForeignKey(a => a.FrameworkId)
+                  .IsRequired(false)
+                  .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(a => a.PreviousAssessment)
+                  .WithMany()
+                  .HasForeignKey(a => a.PreviousAssessmentId)
+                  .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(a => a.QuestionSet)
+                  .WithMany()
+                  .HasForeignKey(a => a.QuestionSetId)
+                  .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(a => a.PracticeSession)
+                  .WithMany()
+                  .HasForeignKey(a => a.PracticeSessionId)
+                  .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(a => a.PersonalSetJob)
+                  .WithMany()
+                  .HasForeignKey(a => a.PersonalSetJobId)
+                  .OnDelete(DeleteBehavior.SetNull);
+            entity.HasIndex(a => a.CandidateUserId);
+            entity.HasIndex(a => a.FrameworkId);
+        });
+
+        modelBuilder.Entity<CandidateAssessmentSkillResult>(entity =>
+        {
+            entity.ToTable("tbl_candidate_assessment_skill_results");
+            entity.HasKey(r => r.Id);
+            entity.Property(r => r.Skill).IsRequired().HasMaxLength(200);
+            entity.Property(r => r.DemonstratedDifficulty).HasMaxLength(20);
+            entity.Property(r => r.EvidenceJson).IsRequired().HasColumnType("jsonb");
+            entity.HasOne(r => r.Assessment)
+                  .WithMany(a => a.SkillResults)
+                  .HasForeignKey(r => r.AssessmentId)
+                  .OnDelete(DeleteBehavior.Cascade);
+            entity.HasIndex(r => new { r.AssessmentId, r.Skill }).IsUnique();
+        });
+
+        modelBuilder.Entity<CandidateRoadmap>(entity =>
+        {
+            entity.ToTable("tbl_candidate_roadmaps");
+            entity.HasKey(r => r.Id);
+            entity.Property(r => r.Skill).IsRequired().HasMaxLength(200);
+            entity.Property(r => r.Priority).IsRequired().HasMaxLength(20);
+            entity.Property(r => r.Kind).IsRequired().HasMaxLength(20);
+            entity.Property(r => r.Status).IsRequired().HasMaxLength(30);
+            entity.Property(r => r.ExplanationJson).HasColumnType("jsonb");
+            entity.HasOne(r => r.SourceAssessment)
+                  .WithMany()
+                  .HasForeignKey(r => r.SourceAssessmentId)
+                  .OnDelete(DeleteBehavior.SetNull);
+            entity.Property(r => r.SourceMode).IsRequired().HasMaxLength(20);
+            entity.HasOne(r => r.Framework)
+                  .WithMany()
+                  .HasForeignKey(r => r.FrameworkId)
+                  .IsRequired(false)
+                  .OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(r => r.CandidateUserId);
+        });
+
+        modelBuilder.Entity<CandidateRoadmapItem>(entity =>
+        {
+            entity.ToTable("tbl_candidate_roadmap_items");
+            entity.HasKey(i => i.Id);
+            entity.Property(i => i.Topic).IsRequired().HasMaxLength(300);
+            entity.Property(i => i.Subtopic).HasMaxLength(300);
+            entity.Property(i => i.Status).IsRequired().HasMaxLength(30);
+            entity.Property(i => i.SourceUrl).HasMaxLength(1000);
+            entity.Property(i => i.SourceTitle).HasMaxLength(500);
+            entity.HasOne(i => i.Roadmap)
+                  .WithMany(r => r.Items)
+                  .HasForeignKey(i => i.RoadmapId)
+                  .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(i => i.RoadmapNode)
+                  .WithMany()
+                  .HasForeignKey(i => i.RoadmapNodeId)
+                  .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(i => i.DrillSession)
+                  .WithMany()
+                  .HasForeignKey(i => i.DrillSessionId)
+                  .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(i => i.DrillQuestionSet)
+                  .WithMany()
+                  .HasForeignKey(i => i.DrillQuestionSetId)
+                  .OnDelete(DeleteBehavior.SetNull);
+            entity.HasIndex(i => i.RoadmapId);
+        });
+
+        modelBuilder.Entity<RoadmapNode>(entity =>
+        {
+            entity.ToTable("tbl_roadmap_nodes");
+            entity.HasKey(n => n.Id);
+            entity.Property(n => n.RoleKey).IsRequired().HasMaxLength(100);
+            entity.Property(n => n.Technology).HasMaxLength(200);
+            entity.Property(n => n.Level).IsRequired().HasMaxLength(30);
+            entity.Property(n => n.Skill).IsRequired().HasMaxLength(200);
+            entity.Property(n => n.Topic).IsRequired().HasMaxLength(300);
+            entity.Property(n => n.Subtopic).HasMaxLength(300);
+            entity.Property(n => n.PrerequisitesJson).IsRequired().HasColumnType("jsonb");
+            entity.Property(n => n.NextTopicsJson).IsRequired().HasColumnType("jsonb");
+            entity.Property(n => n.SourceTitle).HasMaxLength(500);
+            entity.Property(n => n.SourceUrl).HasMaxLength(1000);
+            entity.Property(n => n.SourceVersion).HasMaxLength(50);
+            entity.HasIndex(n => new { n.RoleKey, n.Level, n.Skill, n.Topic }).IsUnique();
         });
 
         modelBuilder.Entity<CandidateSkillPlan>(entity =>
@@ -351,6 +582,12 @@ public class AppDbContext : DbContext
             entity.ToTable("tbl_candidate_skill_plans");
             entity.HasKey(p => p.Id);
             entity.Property(p => p.Status).IsRequired().HasMaxLength(20);
+            entity.Property(p => p.ReadinessStatus).HasMaxLength(30);
+            entity.Property(p => p.AchievedLevel).HasMaxLength(30);
+            entity.Property(p => p.ResolutionMode).HasMaxLength(20);
+            entity.Property(p => p.RoleFamilyKey).HasMaxLength(80);
+            entity.Property(p => p.ActiveBlueprintJson).HasColumnType("jsonb");
+            entity.Property(p => p.TargetLevel).HasMaxLength(30);
             entity.HasIndex(p => p.CandidateUserId).IsUnique();
             entity.HasOne(p => p.SourceDiagnosticSet)
                   .WithMany()
@@ -364,6 +601,9 @@ public class AppDbContext : DbContext
             entity.HasKey(i => i.Id);
             entity.Property(i => i.Skill).IsRequired().HasMaxLength(200);
             entity.Property(i => i.Status).IsRequired().HasMaxLength(20);
+            entity.Property(i => i.DemonstratedDifficulty).HasMaxLength(20);
+            entity.Property(i => i.UpdatedFromKind).HasMaxLength(30);
+            entity.Property(i => i.SourceMode).HasMaxLength(20);
             entity.HasOne(i => i.Plan)
                   .WithMany(p => p.Items)
                   .HasForeignKey(i => i.PlanId)
@@ -474,6 +714,10 @@ public class AppDbContext : DbContext
             entity.Property(s => s.AiInsightVi).HasMaxLength(2000);
             entity.Property(s => s.AiInsightEn).HasMaxLength(2000);
             entity.Property(s => s.SkillsToImproveJson);
+            // SCRUM-446: snapshot anti-cheat + đếm rời tab
+            entity.Property(s => s.AntiCheatEnabled).IsRequired().HasDefaultValue(false);
+            entity.Property(s => s.AntiCheatMaxTabLeaves).IsRequired().HasDefaultValue(3);
+            entity.Property(s => s.TabLeaveCount).IsRequired().HasDefaultValue(0);
 
             entity.HasOne(s => s.QuestionSet)
                   .WithMany()
@@ -596,6 +840,9 @@ public class AppDbContext : DbContext
             // SCRUM-404: quy tắc hiển thị Marketplace
             entity.Property(p => p.MaxPinnedSets).IsRequired().HasDefaultValue(5);
             entity.Property(p => p.MinAttemptsForTrending).IsRequired().HasDefaultValue(10);
+            // SCRUM-446: anti-cheat toàn hệ thống
+            entity.Property(p => p.AntiCheatEnabled).IsRequired().HasDefaultValue(false);
+            entity.Property(p => p.AntiCheatMaxTabLeaves).IsRequired().HasDefaultValue(3);
 
             // Seed đúng 1 dòng cố định — repository luôn đọc/ghi dòng này, không tự tạo mới.
             entity.HasData(new DomainLayer.Entities.PlatformSettings
@@ -604,6 +851,8 @@ public class AppDbContext : DbContext
                 MinQuestionsToPublish = 10,
                 MaxPinnedSets = 5,
                 MinAttemptsForTrending = 10,
+                AntiCheatEnabled = false,
+                AntiCheatMaxTabLeaves = 3,
                 CreatedAt = new DateTime(2026, 7, 21, 0, 0, 0, DateTimeKind.Utc),
                 IsActive = true
             });

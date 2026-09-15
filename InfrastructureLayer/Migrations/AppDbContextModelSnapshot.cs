@@ -863,6 +863,11 @@ namespace InfrastructureLayer.Migrations
                         .HasColumnType("character varying(500)")
                         .HasColumnName("file_name");
 
+                    b.Property<string>("Folder")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("folder");
+
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean")
                         .HasColumnName("is_active");
@@ -918,6 +923,9 @@ namespace InfrastructureLayer.Migrations
                     b.HasIndex("Scope")
                         .HasDatabaseName("ix_knowledge_documents_scope");
 
+                    b.HasIndex("Scope", "Folder")
+                        .HasDatabaseName("ix_knowledge_documents_scope_folder");
+
                     b.HasIndex("Status")
                         .HasDatabaseName("ix_knowledge_documents_status");
 
@@ -929,6 +937,16 @@ namespace InfrastructureLayer.Migrations
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
+
+                    b.Property<bool>("AntiCheatEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
+                    b.Property<int>("AntiCheatMaxTabLeaves")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(3);
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
@@ -962,6 +980,8 @@ namespace InfrastructureLayer.Migrations
                         new
                         {
                             Id = new Guid("00000000-0000-0000-0000-000000000001"),
+                            AntiCheatEnabled = false,
+                            AntiCheatMaxTabLeaves = 3,
                             CreatedAt = new DateTime(2026, 7, 21, 0, 0, 0, 0, DateTimeKind.Utc),
                             IsActive = true,
                             MaxPinnedSets = 5,
@@ -984,6 +1004,16 @@ namespace InfrastructureLayer.Migrations
                         .HasMaxLength(2000)
                         .HasColumnType("character varying(2000)");
 
+                    b.Property<bool>("AntiCheatEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
+                    b.Property<int>("AntiCheatMaxTabLeaves")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(3);
+
                     b.Property<Guid>("CandidateUserId")
                         .HasColumnType("uuid");
 
@@ -995,6 +1025,9 @@ namespace InfrastructureLayer.Migrations
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
+
+                    b.Property<DateTime?>("LastTabLeaveAt")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<double?>("OverallScore")
                         .HasColumnType("double precision");
@@ -1012,6 +1045,11 @@ namespace InfrastructureLayer.Migrations
                         .IsRequired()
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)");
+
+                    b.Property<int>("TabLeaveCount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0);
 
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
