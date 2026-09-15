@@ -20,12 +20,14 @@ public sealed class CvCoachPromptBuilderTests
     }
 
     [Fact]
-    public void DiagnosticHrNote_RequiresTenQuestionsAndRamp()
+    public void BlueprintNote_UsesBlueprintCountAndForbidsExtraSkills()
     {
-        var note = CvCoachPromptBuilder.DiagnosticHrNote(new[] { "C#" });
-        Assert.Contains("10", note);
-        Assert.Contains("easy", note, StringComparison.OrdinalIgnoreCase);
+        var note = CvCoachPromptBuilder.BlueprintNote(new[] { "C#" }, 9);
+        Assert.Contains("ĐÚNG 9 câu", note);
+        Assert.Contains("recommendedQuestionOutline", note);
         Assert.Contains("C#", note);
+        // Không được quay lại luật "tối thiểu 10 câu" vì blueprint framework có thể ít hơn.
+        Assert.DoesNotContain("tối thiểu 10", note);
     }
 
     [Fact]
