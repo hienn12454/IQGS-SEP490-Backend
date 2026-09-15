@@ -264,7 +264,7 @@ public class PublishedQuestionSetRow
     /// <summary>Giới hạn thời gian làm bài HR đặt (phút) — null = không giới hạn.</summary>
     public int? TimeLimitMinutes { get; set; }
 
-    /// <summary>Mô tả bộ câu hỏi hiển thị trên card — lấy từ question_sets.HrNote.</summary>
+    /// <summary>Mô tả bộ câu hỏi hiển thị trên card — lấy từ question_sets.HrNote sau khi lọc marker nội bộ (STUDIO_SAVE / STUDIO_MIRROR).</summary>
     public string? Description { get; set; }
 
     /// <summary>

@@ -1,4 +1,5 @@
 using ApplicationLayer.DTOs.QuestionSet;
+using ApplicationLayer.Helpers;
 using ApplicationLayer.Interfaces.Repositories;
 using DomainLayer.Constants;
 using DomainLayer.Entities;
@@ -61,7 +62,12 @@ public class CandidateMarketplaceRepository : ICandidateMarketplaceRepository
                 .ToList(),
             TotalQuestions = x.QuestionSet.Questions.Count(q => q.IsActive),
             TimeLimitMinutes = x.QuestionSet.TimeLimitMinutes,
-            Description = x.QuestionSet.HrNote,
+            // Ẩn marker STUDIO_SAVE / STUDIO_MIRROR — không lộ ra card Marketplace
+            Description = x.QuestionSet.HrNote != null
+                && (EF.Functions.ILike(x.QuestionSet.HrNote, MarketplaceDescriptionHelper.StudioSavePrefix + "%")
+                    || EF.Functions.ILike(x.QuestionSet.HrNote, MarketplaceDescriptionHelper.StudioMirrorPrefix + "%"))
+                ? null
+                : x.QuestionSet.HrNote,
             Rating = _context.PracticeSessions
                 .Where(ps => ps.QuestionSetId == x.QuestionSet.Id && ps.IsActive)
                 .Average(ps => ps.OverallScore),
@@ -106,7 +112,10 @@ public class CandidateMarketplaceRepository : ICandidateMarketplaceRepository
             var term = $"%{keyword.Trim()}%";
             query = query.Where(x =>
                 EF.Functions.ILike(x.QuestionSet.Title ?? "", term) ||
-                EF.Functions.ILike(x.QuestionSet.HrNote ?? "", term));
+                (x.QuestionSet.HrNote != null
+                    && !EF.Functions.ILike(x.QuestionSet.HrNote, MarketplaceDescriptionHelper.StudioSavePrefix + "%")
+                    && !EF.Functions.ILike(x.QuestionSet.HrNote, MarketplaceDescriptionHelper.StudioMirrorPrefix + "%")
+                    && EF.Functions.ILike(x.QuestionSet.HrNote, term)));
         }
 
         if (companyId.HasValue)
@@ -125,7 +134,10 @@ public class CandidateMarketplaceRepository : ICandidateMarketplaceRepository
             var term = $"%{targetRole.Trim()}%";
             query = query.Where(x =>
                 EF.Functions.ILike(x.QuestionSet.Title ?? "", term) ||
-                EF.Functions.ILike(x.QuestionSet.HrNote ?? "", term));
+                (x.QuestionSet.HrNote != null
+                    && !EF.Functions.ILike(x.QuestionSet.HrNote, MarketplaceDescriptionHelper.StudioSavePrefix + "%")
+                    && !EF.Functions.ILike(x.QuestionSet.HrNote, MarketplaceDescriptionHelper.StudioMirrorPrefix + "%")
+                    && EF.Functions.ILike(x.QuestionSet.HrNote, term)));
         }
 
         if (requireOverlapSkills is { Count: > 0 })
@@ -191,7 +203,11 @@ public class CandidateMarketplaceRepository : ICandidateMarketplaceRepository
                     .FirstOrDefault() ?? "medium",
                 SkillsJson = "[]",
                 TimeLimitMinutes = x.QuestionSet.TimeLimitMinutes,
-                Description = x.QuestionSet.HrNote,
+                Description = x.QuestionSet.HrNote != null
+                    && (EF.Functions.ILike(x.QuestionSet.HrNote, MarketplaceDescriptionHelper.StudioSavePrefix + "%")
+                        || EF.Functions.ILike(x.QuestionSet.HrNote, MarketplaceDescriptionHelper.StudioMirrorPrefix + "%"))
+                    ? null
+                    : x.QuestionSet.HrNote,
                 Rating = _context.PracticeSessions
                     .Where(ps => ps.QuestionSetId == x.QuestionSet.Id && ps.IsActive)
                     .Average(ps => ps.OverallScore),
@@ -255,7 +271,7 @@ public class CandidateMarketplaceRepository : ICandidateMarketplaceRepository
             CompanyName = "Bộ của tôi",
             Difficulty = difficulty,
             TimeLimitMinutes = set.TimeLimitMinutes,
-            Description = set.HrNote,
+            Description = MarketplaceDescriptionHelper.ToPublic(set.HrNote),
             AttemptCount = await _context.PracticeSessions.CountAsync(ps => ps.QuestionSetId == id && ps.IsActive),
             Rating = await _context.PracticeSessions
                 .Where(ps => ps.QuestionSetId == id && ps.IsActive)
@@ -290,7 +306,7 @@ public class CandidateMarketplaceRepository : ICandidateMarketplaceRepository
                 QuestionSkills = skills,
                 TotalQuestions = total,
                 TimeLimitMinutes = qs.TimeLimitMinutes,
-                Description = qs.HrNote,
+                Description = MarketplaceDescriptionHelper.ToPublic(qs.HrNote),
                 PublishedAt = qs.PublishedAt ?? qs.CreatedAt
             });
         }

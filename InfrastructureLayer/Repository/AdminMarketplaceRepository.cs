@@ -1,5 +1,6 @@
 using ApplicationLayer.DTOs.Admin;
 using ApplicationLayer.DTOs.QuestionSet;
+using ApplicationLayer.Helpers;
 using ApplicationLayer.Interfaces.Repositories;
 using DomainLayer.Constants;
 using DomainLayer.Entities;
@@ -48,7 +49,11 @@ public class AdminMarketplaceRepository : IAdminMarketplaceRepository
         {
             Id = x.QuestionSet.Id,
             Title = x.QuestionSet.Title,
-            Description = x.QuestionSet.HrNote,
+            Description = x.QuestionSet.HrNote != null
+                && (EF.Functions.ILike(x.QuestionSet.HrNote, MarketplaceDescriptionHelper.StudioSavePrefix + "%")
+                    || EF.Functions.ILike(x.QuestionSet.HrNote, MarketplaceDescriptionHelper.StudioMirrorPrefix + "%"))
+                ? null
+                : x.QuestionSet.HrNote,
             HrUserId = x.HrUser.Id,
             HrName = x.HrUser.FullName,
             HrEmail = x.HrUser.Email,
@@ -116,7 +121,10 @@ public class AdminMarketplaceRepository : IAdminMarketplaceRepository
             var term = $"%{keyword.Trim()}%";
             query = query.Where(x =>
                 EF.Functions.ILike(x.QuestionSet.Title ?? "", term) ||
-                EF.Functions.ILike(x.QuestionSet.HrNote ?? "", term) ||
+                (x.QuestionSet.HrNote != null
+                    && !EF.Functions.ILike(x.QuestionSet.HrNote, MarketplaceDescriptionHelper.StudioSavePrefix + "%")
+                    && !EF.Functions.ILike(x.QuestionSet.HrNote, MarketplaceDescriptionHelper.StudioMirrorPrefix + "%")
+                    && EF.Functions.ILike(x.QuestionSet.HrNote, term)) ||
                 EF.Functions.ILike(x.HrUser.FullName, term) ||
                 EF.Functions.ILike(x.HrUser.Email, term) ||
                 EF.Functions.ILike(x.Company.Name, term));

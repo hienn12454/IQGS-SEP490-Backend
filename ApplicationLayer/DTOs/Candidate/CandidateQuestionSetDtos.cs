@@ -6,7 +6,7 @@ public class CandidateQuestionSetListQueryDto
     public int Page { get; set; } = 1;
     public int PageSize { get; set; } = 20;
 
-    /// <summary>Tìm theo title hoặc ghi chú HR (question_sets.Title, HrNote).</summary>
+    /// <summary>Tìm theo title hoặc ghi chú HR công khai (Title, HrNote — bỏ qua marker STUDIO_SAVE / STUDIO_MIRROR).</summary>
     public string? Keyword { get; set; }
 
     /// <summary>Chỉ lấy bộ thuộc công ty này.</summary>
@@ -37,7 +37,7 @@ public class CandidateQuestionSetListItemDto
     public string CompanyName { get; set; } = string.Empty;
     public string? CompanyLogo { get; set; }
 
-    /// <summary>Mô tả bộ câu hỏi (question_sets.HrNote) — null nếu HR không nhập.</summary>
+    /// <summary>Mô tả bộ câu hỏi (question_sets.HrNote sau khi lọc marker STUDIO_SAVE / STUDIO_MIRROR) — null nếu HR không nhập hoặc chỉ còn marker.</summary>
     public string? Description { get; set; }
 
     public string Difficulty { get; set; } = string.Empty;
@@ -82,7 +82,7 @@ public class CandidateQuestionSetDetailDto
     public string CompanyName { get; set; } = string.Empty;
     public string? CompanyLogo { get; set; }
 
-    /// <summary>Mô tả bộ câu hỏi (question_sets.HrNote) — null nếu HR không nhập.</summary>
+    /// <summary>Mô tả bộ câu hỏi (question_sets.HrNote sau khi lọc marker STUDIO_SAVE / STUDIO_MIRROR) — null nếu HR không nhập hoặc chỉ còn marker.</summary>
     public string? Description { get; set; }
 
     public string Difficulty { get; set; } = string.Empty;

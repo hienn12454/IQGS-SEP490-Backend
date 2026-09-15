@@ -152,6 +152,10 @@ public class ParseCvResult
     public string? GithubUrl { get; set; }
     public string? LinkedInUrl { get; set; }
 
+    /// <summary>SCRUM-447: role gợi ý từ CV — không phải level.</summary>
+    public string? SuggestedRole { get; set; }
+    public double? YearsOfExperienceHint { get; set; }
+
     public List<string> Warnings { get; set; } = new();
     public string? Error { get; set; }
     public string? Detail { get; set; }
@@ -275,6 +279,8 @@ public class GenerateQuestionsFromPlanRequest
     public string? Audience { get; set; }
     public string? CvContext { get; set; }
     public string? CandidateNote { get; set; }
+    /// <summary>SCRUM-447: filter SYSTEM retrieve theo documentIds (Tech/Roadmap curated).</summary>
+    public List<Guid>? DocumentIds { get; set; }
 }
 
 public class RagGeneratedQuestionDto
@@ -319,6 +325,8 @@ public class EvaluateAnswerRequest
     public string? JdContext { get; set; }
     public string? Skill { get; set; }
     public string? QuestionType { get; set; }
+    /// <summary>SCRUM-447: marketplace (default) | coach — coach bắt buộc correctness/relevance/clarity.</summary>
+    public string? ScoringMode { get; set; }
 }
 
 public class EvaluateAnswerResult
@@ -467,5 +475,140 @@ public class RagRetrieveResult
     public List<RagRetrievedChunkDto> SystemChunks { get; set; } = new();
     public List<RagRetrievedChunkDto> HrChunks { get; set; } = new();
     public double? ProcessingTimeMs { get; set; }
+    public string? Error { get; set; }
+}
+
+/// <summary>SCRUM-455: gửi node curated + gap để LLM reorder/giải thích. Score/target do Backend giữ.</summary>
+public class RagRoadmapRecommendRequest
+{
+    public string TargetRole { get; set; } = string.Empty;
+    public string TargetLevel { get; set; } = string.Empty;
+    public List<RagRoadmapWeakSkillDto> WeakSkills { get; set; } = new();
+    public List<RagRoadmapNodeDto> CandidateNodes { get; set; } = new();
+}
+
+public class RagRoadmapWeakSkillDto
+{
+    public string Skill { get; set; } = string.Empty;
+    public double CurrentScore { get; set; }
+    public double TargetScore { get; set; }
+    public double Gap { get; set; }
+}
+
+public class RagRoadmapNodeDto
+{
+    public string Topic { get; set; } = string.Empty;
+    public string? Subtopic { get; set; }
+    public string Skill { get; set; } = string.Empty;
+    public double Importance { get; set; }
+    public List<string> Prerequisites { get; set; } = new();
+    public List<string> NextTopics { get; set; } = new();
+    public string? SourceTitle { get; set; }
+    public string? SourceUrl { get; set; }
+}
+
+public class RagRoadmapRecommendResult
+{
+    public bool Success { get; set; }
+    public List<RagRoadmapTopicPickDto> Topics { get; set; } = new();
+    public string? Explanation { get; set; }
+    public string? Error { get; set; }
+}
+
+public class RagRoadmapTopicPickDto
+{
+    public string Topic { get; set; } = string.Empty;
+    public string? Reason { get; set; }
+}
+
+/// <summary>SCRUM-457: retrieve Tech KB cho Adaptive competency blueprint.</summary>
+public class RagCompetencyContextRequest
+{
+    public string TargetRole { get; set; } = string.Empty;
+    public string TargetLevel { get; set; } = string.Empty;
+    public string? RoleFamilyKey { get; set; }
+    public List<string> Skills { get; set; } = new();
+}
+
+public class RagCompetencyChunkDto
+{
+    public string? SourceTitle { get; set; }
+    public string? SourceUrl { get; set; }
+    public Guid? DocumentId { get; set; }
+    public string? Section { get; set; }
+    public string? DocumentType { get; set; }
+    public string Content { get; set; } = string.Empty;
+    public double Score { get; set; }
+}
+
+public class RagCompetencyContextResult
+{
+    public bool Success { get; set; }
+    public List<RagCompetencyChunkDto> Chunks { get; set; } = new();
+    public string? Error { get; set; }
+}
+
+public class RagAdaptiveBlueprintRequest
+{
+    public string TargetRole { get; set; } = string.Empty;
+    public string TargetLevel { get; set; } = string.Empty;
+    public string? RoleFamilyKey { get; set; }
+    public List<string> CvSkills { get; set; } = new();
+    public List<RagCompetencyChunkDto> Chunks { get; set; } = new();
+}
+
+public class RagAdaptiveCompetencyDto
+{
+    public string SkillKey { get; set; } = string.Empty;
+    public string SkillName { get; set; } = string.Empty;
+    public string Category { get; set; } = "ROLE_CORE";
+    public double Weight { get; set; }
+    public List<string> Topics { get; set; } = new();
+    public List<RagAdaptiveCitationDto> Citations { get; set; } = new();
+}
+
+public class RagAdaptiveCitationDto
+{
+    public string? SourceTitle { get; set; }
+    public string? SourceUrl { get; set; }
+    public string? Section { get; set; }
+    public Guid? DocumentId { get; set; }
+    public string? Excerpt { get; set; }
+}
+
+public class RagAdaptiveBlueprintResult
+{
+    public bool Success { get; set; }
+    public List<RagAdaptiveCompetencyDto> Competencies { get; set; } = new();
+    public string? Error { get; set; }
+}
+
+public class RagAdaptiveRoadmapRequest
+{
+    public string TargetRole { get; set; } = string.Empty;
+    public string TargetLevel { get; set; } = string.Empty;
+    public string Skill { get; set; } = string.Empty;
+    public double CurrentScore { get; set; }
+    public double TargetScore { get; set; }
+    public double Gap { get; set; }
+    public List<string> BlueprintTopics { get; set; } = new();
+    public List<RagCompetencyChunkDto> Chunks { get; set; } = new();
+}
+
+public class RagAdaptiveRoadmapTopicDto
+{
+    public string Topic { get; set; } = string.Empty;
+    public string? Subtopic { get; set; }
+    public string? SourceTitle { get; set; }
+    public string? SourceUrl { get; set; }
+    public string? Section { get; set; }
+    public Guid? DocumentId { get; set; }
+}
+
+public class RagAdaptiveRoadmapResult
+{
+    public bool Success { get; set; }
+    public List<RagAdaptiveRoadmapTopicDto> Topics { get; set; } = new();
+    public string? Explanation { get; set; }
     public string? Error { get; set; }
 }

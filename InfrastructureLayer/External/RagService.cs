@@ -582,6 +582,95 @@ public class RagService : IRagService
                ?? new RagRetrieveResult { Success = false, Error = "Empty retrieve response" };
     }
 
+    public async Task<RagRoadmapRecommendResult> RecommendRoadmapAsync(
+        RagRoadmapRecommendRequest request, CancellationToken ct = default)
+    {
+        try
+        {
+            var response = await _httpClient.PostAsJsonAsync(
+                "/internal/rag/candidate/roadmap-recommendation", request, JsonOptions, ct);
+            if (!response.IsSuccessStatusCode)
+                return new RagRoadmapRecommendResult { Success = false, Error = $"HTTP {(int)response.StatusCode}" };
+
+            return await response.Content.ReadFromJsonAsync<RagRoadmapRecommendResult>(JsonOptions, ct)
+                   ?? new RagRoadmapRecommendResult { Success = false, Error = "Empty roadmap recommendation" };
+        }
+        catch (HttpRequestException)
+        {
+            return new RagRoadmapRecommendResult { Success = false, Error = "RAG unavailable" };
+        }
+        catch (TaskCanceledException)
+        {
+            return new RagRoadmapRecommendResult { Success = false, Error = "RAG timeout" };
+        }
+    }
+
+    public async Task<RagCompetencyContextResult> RetrieveCompetencyContextAsync(
+        RagCompetencyContextRequest request, CancellationToken ct = default)
+    {
+        try
+        {
+            var response = await _httpClient.PostAsJsonAsync(
+                "/internal/rag/candidate/retrieve-competency-context", request, JsonOptions, ct);
+            if (!response.IsSuccessStatusCode)
+                return new RagCompetencyContextResult { Success = false, Error = $"HTTP {(int)response.StatusCode}" };
+            return await response.Content.ReadFromJsonAsync<RagCompetencyContextResult>(JsonOptions, ct)
+                   ?? new RagCompetencyContextResult { Success = false, Error = "Empty competency context" };
+        }
+        catch (HttpRequestException)
+        {
+            return new RagCompetencyContextResult { Success = false, Error = "RAG unavailable" };
+        }
+        catch (TaskCanceledException)
+        {
+            return new RagCompetencyContextResult { Success = false, Error = "RAG timeout" };
+        }
+    }
+
+    public async Task<RagAdaptiveBlueprintResult> GenerateAdaptiveCompetencyBlueprintAsync(
+        RagAdaptiveBlueprintRequest request, CancellationToken ct = default)
+    {
+        try
+        {
+            var response = await _httpClient.PostAsJsonAsync(
+                "/internal/rag/candidate/generate-adaptive-competency-blueprint", request, JsonOptions, ct);
+            if (!response.IsSuccessStatusCode)
+                return new RagAdaptiveBlueprintResult { Success = false, Error = $"HTTP {(int)response.StatusCode}" };
+            return await response.Content.ReadFromJsonAsync<RagAdaptiveBlueprintResult>(JsonOptions, ct)
+                   ?? new RagAdaptiveBlueprintResult { Success = false, Error = "Empty adaptive blueprint" };
+        }
+        catch (HttpRequestException)
+        {
+            return new RagAdaptiveBlueprintResult { Success = false, Error = "RAG unavailable" };
+        }
+        catch (TaskCanceledException)
+        {
+            return new RagAdaptiveBlueprintResult { Success = false, Error = "RAG timeout" };
+        }
+    }
+
+    public async Task<RagAdaptiveRoadmapResult> GenerateAdaptiveRoadmapAsync(
+        RagAdaptiveRoadmapRequest request, CancellationToken ct = default)
+    {
+        try
+        {
+            var response = await _httpClient.PostAsJsonAsync(
+                "/internal/rag/candidate/generate-adaptive-roadmap", request, JsonOptions, ct);
+            if (!response.IsSuccessStatusCode)
+                return new RagAdaptiveRoadmapResult { Success = false, Error = $"HTTP {(int)response.StatusCode}" };
+            return await response.Content.ReadFromJsonAsync<RagAdaptiveRoadmapResult>(JsonOptions, ct)
+                   ?? new RagAdaptiveRoadmapResult { Success = false, Error = "Empty adaptive roadmap" };
+        }
+        catch (HttpRequestException)
+        {
+            return new RagAdaptiveRoadmapResult { Success = false, Error = "RAG unavailable" };
+        }
+        catch (TaskCanceledException)
+        {
+            return new RagAdaptiveRoadmapResult { Success = false, Error = "RAG timeout" };
+        }
+    }
+
     private const string CheckConnection = "Kết nối tới RAG";
     private const string CheckConfig = "Cấu hình RAG";
     private const string CheckDatabase = "Cơ sở dữ liệu vector";

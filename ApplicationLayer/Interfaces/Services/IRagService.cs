@@ -33,4 +33,17 @@ public interface IRagService
 
     /// <summary>SCRUM-443/444: retrieve SYSTEM + HR (HR chỉ khi DocumentIds non-empty).</summary>
     Task<RagRetrieveResult> RetrieveAsync(RagRetrieveRequest request, CancellationToken ct = default);
+
+    /// <summary>SCRUM-455: LLM chỉ reorder/giải thích topic trong tập node Backend đã retrieve — không đổi score.</summary>
+    Task<RagRoadmapRecommendResult> RecommendRoadmapAsync(RagRoadmapRecommendRequest request, CancellationToken ct = default);
+
+    /// <summary>SCRUM-457: SYSTEM Tech KB cho Adaptive competency.</summary>
+    Task<RagCompetencyContextResult> RetrieveCompetencyContextAsync(
+        RagCompetencyContextRequest request, CancellationToken ct = default);
+
+    Task<RagAdaptiveBlueprintResult> GenerateAdaptiveCompetencyBlueprintAsync(
+        RagAdaptiveBlueprintRequest request, CancellationToken ct = default);
+
+    Task<RagAdaptiveRoadmapResult> GenerateAdaptiveRoadmapAsync(
+        RagAdaptiveRoadmapRequest request, CancellationToken ct = default);
 }

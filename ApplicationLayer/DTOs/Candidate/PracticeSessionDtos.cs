@@ -25,6 +25,15 @@ public class PracticeSessionResponseDto
     /// <summary>Hạn chót nộp bài (StartedAt + TimeLimitMinutes) — FE dùng để đếm ngược; null nếu không giới hạn. Quá mốc này hệ thống tự nộp bài.</summary>
     public DateTime? ExpiresAt { get; set; }
 
+    /// <summary>SCRUM-446: snapshot anti-cheat lúc start phiên.</summary>
+    public bool AntiCheatEnabled { get; set; }
+
+    /// <summary>SCRUM-446: ngưỡng rời tab tối đa (snapshot).</summary>
+    public int AntiCheatMaxTabLeaves { get; set; }
+
+    /// <summary>SCRUM-446: số lần đã rời tab.</summary>
+    public int TabLeaveCount { get; set; }
+
     public List<PracticeSessionQuestionDto> Questions { get; set; } = new();
 }
 
@@ -174,4 +183,25 @@ public class PracticeSessionRow
     public double? Score { get; set; }
     public DateTime? StartedAt { get; set; }
     public DateTime? CompletedAt { get; set; }
+}
+
+/// <summary>SCRUM-446: sự kiện integrity từ FE (hiện chỉ TAB_HIDDEN).</summary>
+public class PracticeIntegrityEventDto
+{
+    /// <summary>TAB_HIDDEN — candidate rời tab / ẩn trang.</summary>
+    public string EventType { get; set; } = "TAB_HIDDEN";
+}
+
+/// <summary>SCRUM-446: phản hồi sau khi ghi nhận vi phạm (hoặc bỏ qua do debounce / anti-cheat tắt).</summary>
+public class PracticeIntegrityEventResponseDto
+{
+    public Guid SessionId { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public bool AntiCheatEnabled { get; set; }
+    public int AntiCheatMaxTabLeaves { get; set; }
+    public int TabLeaveCount { get; set; }
+    /// <summary>True nếu vừa tự nộp vì đủ số lần rời tab.</summary>
+    public bool AutoSubmitted { get; set; }
+    /// <summary>True nếu event bị bỏ qua do debounce / snapshot off / session không IN_PROGRESS.</summary>
+    public bool Ignored { get; set; }
 }
