@@ -4,7 +4,7 @@ public class CandidatePersonalSetJob : BaseEntity
 {
     public Guid CandidateUserId { get; set; }
     public string Status { get; set; } = Constants.CandidatePersonalSetJobStatus.Queued;
-    /// <summary>JdGap (mặc định, luồng JD) | CvDiagnostic | CvDrill.</summary>
+    /// <summary>JdGap | CvDiagnostic | CvDrill | CvReassessment.</summary>
     public string Purpose { get; set; } = Constants.CandidatePersonalSetPurpose.JdGap;
     public string JobDescription { get; set; } = string.Empty;
     public string CvSkillsJson { get; set; } = "[]";
@@ -16,5 +16,10 @@ public class CandidatePersonalSetJob : BaseEntity
     public Guid? QuestionSetId { get; set; }
     public string? ErrorMessage { get; set; }
 
+    /// <summary>SCRUM-447: gắn job sinh đề với assessment competency.</summary>
+    public Guid? AssessmentId { get; set; }
+    public Guid? RoadmapItemId { get; set; }
+
     public QuestionSet? QuestionSet { get; set; }
+    public CandidateAssessment? Assessment { get; set; }
 }

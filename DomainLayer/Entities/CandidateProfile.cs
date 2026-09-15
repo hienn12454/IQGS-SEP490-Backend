@@ -12,6 +12,18 @@ public class CandidateProfile : BaseEntity
     public string? TargetRole { get; set; }             // Vị trí hướng tới: Backend Dev, Frontend Dev...
     public string? SeniorityLevel { get; set; }         // Intern | Fresher | Junior | Middle | Senior
     public string[] TechStack { get; set; } = Array.Empty<string>();
+
+    /// <summary>SCRUM-447: Role gợi ý từ CV parse — không phải level kết luận.</summary>
+    public string? SuggestedRole { get; set; }
+    /// <summary>Self-assessed level (context) — không dùng làm demonstrated competency.</summary>
+    public string? SelfAssessedLevel { get; set; }
+    /// <summary>Target level Candidate muốn đạt (Fresher/Junior/Middle/Senior).</summary>
+    public string? TargetLevel { get; set; }
+    public double? YearsOfExperience { get; set; }
+    public string? InterviewGoal { get; set; }
+    /// <summary>Candidate đã confirm context Coach trước diagnostic.</summary>
+    public bool CoachContextConfirmed { get; set; }
+    public DateTime? CoachContextConfirmedAt { get; set; }
     public string? PhoneNumber { get; set; }
     public string? LinkedInUrl { get; set; }
     public string? GithubUrl { get; set; }
