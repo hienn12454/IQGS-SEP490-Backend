@@ -5,6 +5,7 @@ using ApplicationLayer.Helpers;
 using ApplicationLayer.Interfaces.Jobs;
 using ApplicationLayer.Interfaces.Repositories;
 using ApplicationLayer.Interfaces.Services;
+using ApplicationLayer.Services.Coach;
 using DomainLayer.Constants;
 using DomainLayer.Entities;
 using DomainLayer.Exceptions;
@@ -29,6 +30,9 @@ public class CandidatePersonalSetService : ICandidatePersonalSetService
     private readonly IUsageMeteringService _metering;
     private readonly IJobScheduler _scheduler;
     private readonly ICandidateSkillPlanRepository _skillPlans;
+    private readonly ICandidateAssessmentRepository _assessments;
+    private readonly IKnowledgeDocumentRepository _knowledgeDocs;
+    private readonly ICoachCompetencyService _coach;
 
     public CandidatePersonalSetService(
         ICandidateProfileRepository profiles,
@@ -40,7 +44,10 @@ public class CandidatePersonalSetService : ICandidatePersonalSetService
         ISubscriptionGateService gate,
         IUsageMeteringService metering,
         IJobScheduler scheduler,
-        ICandidateSkillPlanRepository skillPlans)
+        ICandidateSkillPlanRepository skillPlans,
+        ICandidateAssessmentRepository assessments,
+        IKnowledgeDocumentRepository knowledgeDocs,
+        ICoachCompetencyService coach)
     {
         _profiles = profiles;
         _jobs = jobs;
@@ -52,6 +59,9 @@ public class CandidatePersonalSetService : ICandidatePersonalSetService
         _metering = metering;
         _scheduler = scheduler;
         _skillPlans = skillPlans;
+        _assessments = assessments;
+        _knowledgeDocs = knowledgeDocs;
+        _coach = coach;
     }
 
     public async Task<CandidatePersonalSetJobDto> CreateFromTextAsync(
@@ -125,17 +135,28 @@ public class CandidatePersonalSetService : ICandidatePersonalSetService
         var jobs = await _jobs.ListByCandidateAsync(candidateUserId);
         var pending = jobs.FirstOrDefault(j =>
             (j.Purpose == CandidatePersonalSetPurpose.CvDiagnostic
-             || j.Purpose == CandidatePersonalSetPurpose.CvDrill)
+             || j.Purpose == CandidatePersonalSetPurpose.CvDrill
+             || j.Purpose == CandidatePersonalSetPurpose.CvReassessment)
             && (j.Status == CandidatePersonalSetJobStatus.Queued
                 || j.Status == CandidatePersonalSetJobStatus.Generating));
-        if (pending is null) return null;
-        var tracked = await _jobs.GetByIdAsync(pending.Id);
-        if (tracked is null) return null;
-        await FailIfStuckGeneratingAsync(tracked);
-        if (tracked.Status is not CandidatePersonalSetJobStatus.Queued
-            and not CandidatePersonalSetJobStatus.Generating)
-            return null;
-        return MapJob(tracked);
+        if (pending is not null)
+        {
+            var tracked = await _jobs.GetByIdAsync(pending.Id);
+            if (tracked is null) return null;
+            await FailIfStuckGeneratingAsync(tracked);
+            if (tracked.Status is CandidatePersonalSetJobStatus.Queued
+                or CandidatePersonalSetJobStatus.Generating)
+                return MapJob(tracked);
+        }
+
+        // Job COMPLETED không còn "pending" — vẫn trả về để FE không rơi về màn "Bắt đầu kiểm tra" sau khi đã sinh đề.
+        var done = jobs.FirstOrDefault(j =>
+            (j.Purpose == CandidatePersonalSetPurpose.CvDiagnostic
+             || j.Purpose == CandidatePersonalSetPurpose.CvDrill
+             || j.Purpose == CandidatePersonalSetPurpose.CvReassessment)
+            && j.Status == CandidatePersonalSetJobStatus.Completed
+            && j.QuestionSetId is Guid);
+        return done is null ? null : MapJob(done);
     }
 
     public async Task<IReadOnlyList<CandidatePersonalSetListItemDto>> ListMineAsync(Guid candidateUserId)
@@ -173,7 +194,8 @@ public class CandidatePersonalSetService : ICandidatePersonalSetService
             var focusSkills = DeserializeStringList(job.FocusSkillsJson);
             var (count, skills, planNote, questionNote, titleFallback) = ResolveGenerationHints(job, cvSkills, focusSkills);
             var isCoach = job.Purpose == CandidatePersonalSetPurpose.CvDiagnostic
-                || job.Purpose == CandidatePersonalSetPurpose.CvDrill;
+                || job.Purpose == CandidatePersonalSetPurpose.CvDrill
+                || job.Purpose == CandidatePersonalSetPurpose.CvReassessment;
 
             List<RagGeneratedQuestionDto> generated;
             string planJson;
@@ -183,25 +205,61 @@ public class CandidatePersonalSetService : ICandidatePersonalSetService
                 using var ragCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
                 // Model cloud lớn (vd. gemma 31b) dễ > 90s cho 4–6 câu; cắt quá sớm → job kẹt GENERATING rồi watchdog báo quá hạn.
                 ragCts.CancelAfter(TimeSpan.FromMinutes(5));
-                var syntheticPlan = BuildCoachPlan(skills, count, titleFallback, questionNote ?? planNote);
-                var planObj = JsonSerializer.SerializeToElement(syntheticPlan, JsonOpts);
-                planJson = planObj.GetRawText();
-                job.PlanJson = planJson;
+
+                object syntheticPlan;
+                if (!string.IsNullOrWhiteSpace(job.PlanJson))
+                {
+                    try
+                    {
+                        syntheticPlan = JsonSerializer.Deserialize<JsonElement>(job.PlanJson);
+                        planJson = job.PlanJson;
+                    }
+                    catch (JsonException)
+                    {
+                        syntheticPlan = BuildCoachPlan(skills, count, titleFallback, questionNote ?? planNote);
+                        planJson = JsonSerializer.Serialize(syntheticPlan, JsonOpts);
+                        job.PlanJson = planJson;
+                    }
+                }
+                else
+                {
+                    syntheticPlan = BuildCoachPlan(skills, count, titleFallback, questionNote ?? planNote);
+                    planJson = JsonSerializer.Serialize(syntheticPlan, JsonOpts);
+                    job.PlanJson = planJson;
+                }
                 job.GapSkillsJson = "[]";
+
+                // Note phải bám blueprint: số câu + skill lấy từ PlanJson, không ép cứng "tối thiểu 10 câu".
+                var blueprintSlots = BlueprintComplianceValidator.ParseSlots(planJson);
+                var blueprintSkills = BlueprintComplianceValidator.ReadSkills(planJson);
+                if (blueprintSkills.Count == 0) blueprintSkills = skills.ToList();
+                var blueprintTotal = BlueprintComplianceValidator.ReadTotalQuestions(
+                    planJson, blueprintSlots.Count > 0 ? blueprintSlots.Count : count);
+                var coachNote = CvCoachPromptBuilder.BlueprintNote(blueprintSkills, blueprintTotal);
+
+                // Diagnostic/Drill/Reassessment: retrieve chỉ SYSTEM Tech (InternalStack), không lẫn Roadmap
+                var techDocs = await _knowledgeDocs.ListSystemDocumentIdsByTypeAsync(
+                    KnowledgeDocumentType.InternalStack);
 
                 var qFast = await _rag.GenerateCandidateQuestionsFromPlanAsync(new GenerateQuestionsFromPlanRequest
                 {
                     OwnerId = job.CandidateUserId,
                     JobDescription = job.JobDescription,
                     ApprovedPlan = syntheticPlan,
-                    HrNote = questionNote ?? planNote,
+                    HrNote = coachNote,
                     Audience = "coach",
                     CvContext = job.JobDescription,
-                    CandidateNote = questionNote ?? planNote
+                    CandidateNote = coachNote,
+                    DocumentIds = techDocs.Count > 0 ? techDocs.ToList() : null
                 }, ragCts.Token);
                 if (!qFast.Success || qFast.Questions.Count == 0)
                     throw new ServerFailureException(qFast.Error ?? "RAG không sinh được câu hỏi.");
-                generated = qFast.Questions;
+
+                // Skill/difficulty là input của công thức competency → phải khớp blueprint, nếu lệch thì fail job.
+                var compliance = BlueprintComplianceValidator.Validate(blueprintSlots, qFast.Questions);
+                if (!compliance.Ok)
+                    throw new ServerFailureException(compliance.Error ?? "Bộ câu hỏi không khớp blueprint năng lực.");
+                generated = compliance.Questions;
             }
             else
             {
@@ -280,6 +338,25 @@ public class CandidatePersonalSetService : ICandidatePersonalSetService
             job.QuestionSetId = set.Id;
             job.Status = CandidatePersonalSetJobStatus.Completed;
             await _jobs.UpdateAsync(job);
+
+            // SCRUM-447: gắn assessment → ReadyToPractice khi sinh xong
+            if (job.AssessmentId is Guid assessmentId)
+            {
+                try
+                {
+                    var assessment = await _assessments.GetByIdAsync(assessmentId);
+                    if (assessment is not null)
+                    {
+                        assessment.QuestionSetId = set.Id;
+                        assessment.Status = CandidateAssessmentStatus.ReadyToPractice;
+                        await _assessments.UpdateAsync(assessment);
+                    }
+                }
+                catch
+                {
+                    // Không fail job nếu cập nhật assessment lỗi
+                }
+            }
         }
         catch (Exception ex)
         {
@@ -291,6 +368,14 @@ public class CandidatePersonalSetService : ICandidatePersonalSetService
                     : ex.Message;
                 job.ErrorMessage = msg.Length > 4000 ? msg[..4000] : msg;
                 await _jobs.UpdateAsync(job);
+                try
+                {
+                    await _coach.MarkGenerationFailedAsync(job.Id);
+                }
+                catch
+                {
+                    // Không nuốt lỗi sinh đề — chỉ best-effort reset assessment/item
+                }
             }
             if (ex is not OperationCanceledException)
                 throw;
@@ -309,6 +394,14 @@ public class CandidatePersonalSetService : ICandidatePersonalSetService
         job.Status = CandidatePersonalSetJobStatus.Failed;
         job.ErrorMessage = "Sinh câu hỏi quá hạn (RAG/Hangfire không trả kết quả). Hãy thử lại.";
         await _jobs.UpdateAsync(job);
+        try
+        {
+            await _coach.MarkGenerationFailedAsync(job.Id);
+        }
+        catch
+        {
+            // best-effort
+        }
     }
 
     private async Task<CandidateProfile> RequireProfileWithCvSkillsAsync(Guid candidateUserId)
@@ -333,7 +426,8 @@ public class CandidatePersonalSetService : ICandidatePersonalSetService
     {
         _ = numberOfQuestions;
         var isCoach = purpose == CandidatePersonalSetPurpose.CvDiagnostic
-            || purpose == CandidatePersonalSetPurpose.CvDrill;
+            || purpose == CandidatePersonalSetPurpose.CvDrill
+            || purpose == CandidatePersonalSetPurpose.CvReassessment;
         if (isCoach)
             await _gate.CheckCoachGenerationAsync(candidateUserId);
         else
@@ -358,21 +452,18 @@ public class CandidatePersonalSetService : ICandidatePersonalSetService
         if (!isCoach)
             await _metering.IncrementAsync(candidateUserId, UsageType.CandidatePersonalSet);
 
-        if (isCoach)
-        {
-            await ExecuteGenerationAsync(job.Id, ct);
-            var updated = await _jobs.GetByIdAsync(job.Id) ?? job;
-            return MapJob(updated);
-        }
-
+        // SCRUM-447: Coach cũng chạy Hangfire — không block HTTP vài phút
         _scheduler.EnqueueCandidatePersonalSet(job.Id);
         return MapJob(job);
     }
 
     private static object BuildCoachPlan(
-        IReadOnlyList<string> skills, int count, string title, string? note)
+        IReadOnlyList<string> skills, int count, string title, string? note,
+        string? experienceLevel = null)
     {
         count = Math.Max(count, 10);
+        // SCRUM-447: không hardcode junior — lấy từ framework/context nếu có
+        var level = string.IsNullOrWhiteSpace(experienceLevel) ? "mid" : experienceLevel.Trim().ToLowerInvariant();
         var diffs = new[]
         {
             new { difficulty = "easy", count = CountForBand(count, 0) },
@@ -404,7 +495,7 @@ public class CandidatePersonalSetService : ICandidatePersonalSetService
             roleTitle = string.IsNullOrWhiteSpace(title) ? "CV knowledge check" : title,
             summary = "Bộ đánh giá kiến thức tăng dần độ khó, chỉ bám skill trên CV.",
             difficulty = "medium",
-            experienceLevel = "junior",
+            experienceLevel = level,
             totalQuestions = count,
             skills,
             questionTypeDistribution = types,
@@ -442,9 +533,11 @@ public class CandidatePersonalSetService : ICandidatePersonalSetService
     {
         if (job.Purpose == CandidatePersonalSetPurpose.CvDiagnostic)
         {
+            // Fallback khi job không có blueprint: số câu thực tế vẫn được lấy lại từ PlanJson ở ExecuteGenerationAsync.
             var capped = cvSkills.Take(10).ToList();
-            return (10, capped, CvCoachPromptBuilder.DiagnosticHrNote(capped),
-                CvCoachPromptBuilder.DiagnosticHrNote(capped), "CV check");
+            var fallbackCount = Math.Max(6, capped.Count * 3);
+            return (fallbackCount, capped, CvCoachPromptBuilder.BlueprintNote(capped, fallbackCount),
+                CvCoachPromptBuilder.BlueprintNote(capped, fallbackCount), "CV check");
         }
 
         if (job.Purpose == CandidatePersonalSetPurpose.CvDrill)
@@ -453,6 +546,15 @@ public class CandidatePersonalSetService : ICandidatePersonalSetService
             var drillSkills = focusSkills.Count > 0 ? focusSkills : cvSkills.Take(1).ToList();
             return (4, drillSkills, CvCoachPromptBuilder.DrillHrNote(skill),
                 CvCoachPromptBuilder.DrillHrNote(skill), $"Drill — {skill}");
+        }
+
+        if (job.Purpose == CandidatePersonalSetPurpose.CvReassessment)
+        {
+            var capped = (focusSkills.Count > 0 ? focusSkills : cvSkills.Take(3)).ToList();
+            return (Math.Max(6, capped.Count * 2), capped,
+                "Re-assessment: câu hỏi mới, cùng skill, không lặp đề cũ.",
+                "Re-assessment: câu hỏi mới, cùng skill, không lặp đề cũ.",
+                "Re-assessment");
         }
 
         var gapNote = BuildGapNote(cvSkills, job.JobDescription);

@@ -92,8 +92,21 @@ public class CandidateCvService : ICandidateCvService
 
         profile.TechStack = parseResult.Skills.ToArray();
         profile.CvEvaluationJson = JsonSerializer.Serialize(
-            new { skills = parseResult.Skills, summary = parseResult.Summary }, JsonOptions);
+            new
+            {
+                skills = parseResult.Skills,
+                summary = parseResult.Summary,
+                suggestedRole = parseResult.SuggestedRole,
+                yearsOfExperienceHint = parseResult.YearsOfExperienceHint
+            }, JsonOptions);
         profile.CvParsedAt = DateTime.UtcNow;
+        if (!string.IsNullOrWhiteSpace(parseResult.SuggestedRole))
+            profile.SuggestedRole = parseResult.SuggestedRole.Trim();
+        if (parseResult.YearsOfExperienceHint is double years)
+            profile.YearsOfExperience ??= years;
+        // Upload CV mới → cần confirm lại context Coach
+        profile.CoachContextConfirmed = false;
+        profile.CoachContextConfirmedAt = null;
 
         var syncedFields = await ApplyCvProfileSyncAsync(profile, parseResult, userId);
         await _candidateProfileRepository.UpdateAsync(profile);

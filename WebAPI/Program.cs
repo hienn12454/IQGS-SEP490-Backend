@@ -2,6 +2,7 @@ using ApplicationLayer.Interfaces.Jobs;
 using ApplicationLayer.Interfaces.Repositories;
 using ApplicationLayer.Interfaces.Services;
 using ApplicationLayer.Services;
+using ApplicationLayer.Services.Coach;
 using ApplicationLayer.Services.Gamification;
 using ApplicationLayer.Services.Gamification.AchievementRules;
 using ApplicationLayer.Studio.Interfaces;
@@ -314,6 +315,11 @@ public class Program
         builder.Services.AddScoped<ICandidateMarketplaceRepository, CandidateMarketplaceRepository>();
         builder.Services.AddScoped<ICandidatePersonalSetJobRepository, CandidatePersonalSetJobRepository>();
         builder.Services.AddScoped<ICandidateSkillPlanRepository, CandidateSkillPlanRepository>();
+        builder.Services.AddScoped<ICompetencyFrameworkRepository, CompetencyFrameworkRepository>();
+        builder.Services.AddScoped<ICompetencyLevelRuleRepository, CompetencyLevelRuleRepository>();
+        builder.Services.AddScoped<ICandidateAssessmentRepository, CandidateAssessmentRepository>();
+        builder.Services.AddScoped<ICandidateRoadmapRepository, CandidateRoadmapRepository>();
+        builder.Services.AddScoped<IRoadmapNodeRepository, RoadmapNodeRepository>();
         builder.Services.AddScoped<IAdminMarketplaceRepository, AdminMarketplaceRepository>();
         builder.Services.AddScoped<ICandidateRecommendationRepository, CandidateRecommendationRepository>();
         builder.Services.AddScoped<ICandidateInvitationRepository, CandidateInvitationRepository>();
@@ -359,6 +365,18 @@ public class Program
         builder.Services.AddScoped<ICandidateQuestionSetService, CandidateQuestionSetService>();
         builder.Services.AddScoped<ICandidatePersonalSetService, CandidatePersonalSetService>();
         builder.Services.AddScoped<ICandidateSkillPlanService, CandidateSkillPlanService>();
+        builder.Services.AddScoped<ICoachCompetencyService, CoachCompetencyService>();
+        // SCRUM-453: framework là data — resolver + importer dùng chung cho mọi role/technology.
+        builder.Services.AddScoped<ICompetencyFrameworkResolver, CompetencyFrameworkResolver>();
+        builder.Services.AddScoped<ICompetencyResolver, CompetencyResolver>();
+        builder.Services.AddScoped<IAdaptiveBlueprintBuilder, AdaptiveBlueprintBuilder>();
+        builder.Services.AddScoped<ICompetencyRoleFamilyRepository, CompetencyRoleFamilyRepository>();
+        builder.Services.AddScoped<ICompetencyRoleFamilyAdminService, CompetencyRoleFamilyAdminService>();
+        builder.Services.AddScoped<ICompetencyFrameworkImportService, CompetencyFrameworkImportService>();
+        builder.Services.AddScoped<ICompetencyProfileService, CompetencyProfileService>();
+        builder.Services.AddScoped<IRoadmapRecommendationService, RoadmapRecommendationService>();
+        builder.Services.AddScoped<IRoadmapNodeImportService, RoadmapNodeImportService>();
+        builder.Services.AddScoped<ICompetencyPolicyAdminService, CompetencyPolicyAdminService>();
         builder.Services.AddScoped<ICandidateBookmarkService, CandidateBookmarkService>();
         builder.Services.AddScoped<ICandidatePracticeSessionService, CandidatePracticeSessionService>();
         builder.Services.AddScoped<IQuestionSetFeedbackService, QuestionSetFeedbackService>();

@@ -34,8 +34,12 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
     private readonly IBlobStorageService _blobStorage;
     private readonly IGamificationService _gamificationService;
     private readonly ICandidatePersonalSetJobRepository _personalSetJobs;
-    private readonly ICandidateSkillPlanService _skillPlanService;
+    private readonly ICoachCompetencyService _coachCompetency;
+    private readonly IPlatformSettingsRepository _platformSettingsRepository;
     private readonly ILogger<CandidatePracticeSessionService> _logger;
+
+    /// <summary>SCRUM-446: debounce giữa 2 lần ghi nhận rời tab (tránh spam visibilitychange).</summary>
+    private static readonly TimeSpan TabLeaveDebounce = TimeSpan.FromSeconds(2);
 
     public CandidatePracticeSessionService(
         IPracticeSessionRepository sessionRepository,
@@ -49,7 +53,8 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
         IBlobStorageService blobStorage,
         IGamificationService gamificationService,
         ICandidatePersonalSetJobRepository personalSetJobs,
-        ICandidateSkillPlanService skillPlanService,
+        ICoachCompetencyService coachCompetency,
+        IPlatformSettingsRepository platformSettingsRepository,
         ILogger<CandidatePracticeSessionService> logger)
     {
         _sessionRepository = sessionRepository;
@@ -63,7 +68,8 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
         _blobStorage = blobStorage;
         _gamificationService = gamificationService;
         _personalSetJobs = personalSetJobs;
-        _skillPlanService = skillPlanService;
+        _coachCompetency = coachCompetency;
+        _platformSettingsRepository = platformSettingsRepository;
         _logger = logger;
     }
 
@@ -82,12 +88,18 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
             // Phiên dở dang đã hết giờ và vừa được tự động nộp — bắt đầu phiên mới bên dưới.
         }
 
+        // SCRUM-446: snapshot luật anti-cheat lúc start — đổi setting Admin không ảnh hưởng phiên đang chạy.
+        var platformSettings = await _platformSettingsRepository.GetAsync();
+
         var session = new PracticeSession
         {
             CandidateUserId = candidateUserId,
             QuestionSetId = questionSetId,
             Status = PracticeSessionStatus.InProgress,
-            StartedAt = DateTime.UtcNow
+            StartedAt = DateTime.UtcNow,
+            AntiCheatEnabled = platformSettings.AntiCheatEnabled,
+            AntiCheatMaxTabLeaves = PracticeAntiCheatRules.ClampMaxTabLeaves(platformSettings.AntiCheatMaxTabLeaves),
+            TabLeaveCount = 0
         };
         await _sessionRepository.AddAsync(session);
 
@@ -217,10 +229,79 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
         if (session.Status != PracticeSessionStatus.InProgress)
             throw new BadRequestException("Chỉ có thể huỷ phiên đang ở trạng thái IN_PROGRESS.");
 
+        // SCRUM-446: anti-cheat ON → không cho “Save & Exit / abandon rồi làm tiếp” như luyện tập thoải mái.
+        if (session.AntiCheatEnabled)
+            throw new BadRequestException("Phiên đang bật chống gian lận — không thể huỷ giữa chừng. Hãy nộp bài hoặc tiếp tục làm.");
+
         session.Status = PracticeSessionStatus.Abandoned;
         await _sessionRepository.UpdateAsync(session);
 
         return await BuildSessionResponseAsync(session);
+    }
+
+    /// <summary>
+    /// SCRUM-446: FE báo rời tab. Chỉ đếm khi snapshot AntiCheatEnabled;
+    /// debounce 2s; đủ AntiCheatMaxTabLeaves → tự Complete như hết giờ.
+    /// </summary>
+    public async Task<PracticeIntegrityEventResponseDto> ReportIntegrityEventAsync(
+        Guid sessionId, Guid candidateUserId, PracticeIntegrityEventDto dto)
+    {
+        var session = await GetOwnedSessionAsync(sessionId, candidateUserId);
+        var eventType = (dto.EventType ?? "TAB_HIDDEN").Trim().ToUpperInvariant();
+
+        if (eventType != "TAB_HIDDEN")
+            throw new BadRequestException("eventType không hợp lệ. Hiện hỗ trợ: TAB_HIDDEN.");
+
+        // Hết giờ trước → nộp theo timer, không tính thêm tab leave.
+        _ = await AutoSubmitIfExpiredAsync(session, await _sessionRepository.GetTimeLimitMinutesAsync(session.QuestionSetId));
+
+        var now = DateTime.UtcNow;
+        if (!PracticeAntiCheatRules.ShouldCountTabLeave(
+                session.AntiCheatEnabled, session.Status, session.LastTabLeaveAt, now, TabLeaveDebounce))
+        {
+            return new PracticeIntegrityEventResponseDto
+            {
+                SessionId = session.Id,
+                Status = session.Status,
+                AntiCheatEnabled = session.AntiCheatEnabled,
+                AntiCheatMaxTabLeaves = session.AntiCheatMaxTabLeaves,
+                TabLeaveCount = session.TabLeaveCount,
+                AutoSubmitted = session.Status == PracticeSessionStatus.Completed,
+                Ignored = true
+            };
+        }
+
+        session.TabLeaveCount += 1;
+        session.LastTabLeaveAt = now;
+        session.UpdatedAt = now;
+
+        var shouldAutoSubmit = PracticeAntiCheatRules.ShouldAutoSubmit(
+            session.TabLeaveCount, session.AntiCheatMaxTabLeaves);
+
+        if (shouldAutoSubmit)
+        {
+            session.Status = PracticeSessionStatus.Completed;
+            session.CompletedAt = now;
+            await FinalizeCompletedSessionAsync(session);
+            _logger.LogInformation(
+                "SCRUM-446: session {SessionId} tự nộp vì rời tab {Count}/{Max}.",
+                session.Id, session.TabLeaveCount, session.AntiCheatMaxTabLeaves);
+        }
+        else
+        {
+            await _sessionRepository.UpdateAsync(session);
+        }
+
+        return new PracticeIntegrityEventResponseDto
+        {
+            SessionId = session.Id,
+            Status = session.Status,
+            AntiCheatEnabled = session.AntiCheatEnabled,
+            AntiCheatMaxTabLeaves = session.AntiCheatMaxTabLeaves,
+            TabLeaveCount = session.TabLeaveCount,
+            AutoSubmitted = shouldAutoSubmit,
+            Ignored = false
+        };
     }
 
     public async Task<PracticeSessionFeedbackDto> GetFeedbackAsync(Guid sessionId, Guid candidateUserId)
@@ -286,7 +367,10 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
         List<string> Improvements,
         string? Suggestion,
         Dictionary<string, double>? DimensionScores,
-        string? ErrorMessage)> EvaluateAndPersistAsync(CandidateAnswer answer, Guid questionId)
+        string? ErrorMessage)> EvaluateAndPersistAsync(
+        CandidateAnswer answer,
+        Guid questionId,
+        string? scoringMode = null)
     {
         var rubric = await _marketplaceRepository.GetQuestionEvaluationRubricAsync(questionId);
         if (rubric is null)
@@ -309,10 +393,11 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
                 CandidateAnswer = answer.AnswerText,
                 SampleAnswer = rubric.SampleAnswer,
                 Skill = rubric.Skill,
-                QuestionType = rubric.QuestionType
+                QuestionType = rubric.QuestionType,
+                ScoringMode = scoringMode
             });
 
-            if (!ragResult.Success || ragResult.Score is null)
+            if (!ragResult.Success)
             {
                 var err = ragResult.Error ?? ragResult.Detail ?? "RAG evaluate thất bại.";
                 await UpsertFeedbackAsync(answer.Id, AiFeedbackEvaluationStatus.Failed, null, [], [], null, null, err);
@@ -321,10 +406,25 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
 
             var strengths = ragResult.Strengths ?? [];
             var improvements = ragResult.Improvements ?? [];
-            // AI trả điểm thô nhiều chữ số thập phân (vd 51.0739292829) — làm tròn về hàng đơn vị trước khi lưu/trả về,
-            // candidate chỉ cần xem điểm nguyên. Áp dụng luôn cho từng dimension score trong breakdown.
-            var roundedScore = RoundScore(ragResult.Score);
             var roundedDimensionScores = RoundDimensionScores(ragResult.DimensionScores);
+
+            // Coach: overall score UI = trung bình dimensions nếu LLM không trả score
+            double? rawScore = ragResult.Score;
+            if (rawScore is null
+                && string.Equals(scoringMode, "coach", StringComparison.OrdinalIgnoreCase)
+                && roundedDimensionScores is { Count: > 0 })
+            {
+                rawScore = roundedDimensionScores.Values.Average();
+            }
+
+            if (rawScore is null)
+            {
+                var err = "RAG evaluate không trả về score.";
+                await UpsertFeedbackAsync(answer.Id, AiFeedbackEvaluationStatus.Failed, null, [], [], null, null, err);
+                return (AiFeedbackEvaluationStatus.Failed, null, [], [], null, null, err);
+            }
+
+            var roundedScore = RoundScore(rawScore);
 
             await UpsertFeedbackAsync(
                 answer.Id,
@@ -464,7 +564,6 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
             await TryGenerateAiInsightAsync(session);
             await _sessionRepository.UpdateAsync(session);
             await TryGenerateRecommendationAsync(session);
-            await TryUpsertCoachPlanAsync(session);
         }
         else
         {
@@ -473,6 +572,9 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
             await _sessionRepository.UpdateAsync(session);
             // Free không sinh insight đầy đủ / không persist recommendation HR
         }
+
+        // Coach diagnostic/reassessment/drill phải ghi competency + roadmap kể cả khi teaser gate tắt detailed feedback.
+        await TryUpsertCoachPlanAsync(session);
 
         var setReward = await TryAwardQuestionSetCompletionXpAsync(session);
         if (setReward is not null)
@@ -485,18 +587,95 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
     {
         try
         {
-            var job = await _personalSetJobs.GetByQuestionSetIdAsync(session.QuestionSetId);
-            if (job is null || job.CandidateUserId != session.CandidateUserId)
-                return;
-            if (job.Purpose != CandidatePersonalSetPurpose.CvDiagnostic
-                && job.Purpose != CandidatePersonalSetPurpose.CvDrill)
-                return;
-            await _skillPlanService.UpsertFromSessionAsync(session, job);
+            var job = await _personalSetJobs.GetByQuestionSetIdIncludingInactiveAsync(session.QuestionSetId);
+            var isCoachDiagnostic = job is not null
+                && job.CandidateUserId == session.CandidateUserId
+                && (string.Equals(job.Purpose, CandidatePersonalSetPurpose.CvDiagnostic, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(job.Purpose, CandidatePersonalSetPurpose.CvReassessment, StringComparison.OrdinalIgnoreCase));
+
+            var scoreResult = await _coachCompetency.ScoreAssessmentFromSessionAsync(session);
+            if (isCoachDiagnostic)
+            {
+                if (scoreResult.Scored)
+                {
+                    _logger.LogInformation(
+                        "Coach scoring OK session {SessionId} assessment {AssessmentId} roadmapUpdated={RoadmapUpdated}",
+                        session.Id, scoreResult.AssessmentId, scoreResult.RoadmapUpdated);
+                    if (!scoreResult.RoadmapUpdated)
+                    {
+                        _logger.LogError(
+                            "Assessment {AssessmentId} đã Scored nhưng dựng roadmap thất bại (session {SessionId}).",
+                            scoreResult.AssessmentId, session.Id);
+                    }
+                }
+                else
+                {
+                    _logger.LogError(
+                        "Coach diagnostic session {SessionId} / set {SetId} không Scored: {Reason}",
+                        session.Id, session.QuestionSetId, scoreResult.SkipReason);
+                }
+            }
+
+            await _coachCompetency.HandleDrillSessionCompletedAsync(session);
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Không cập nhật skill plan sau session {SessionId}", session.Id);
+            _logger.LogError(ex, "Không cập nhật Coach competency sau session {SessionId}", session.Id);
         }
+    }
+
+    /// <summary>
+    /// Chấm lại diagnostic gần nhất từ session COMPLETED — dùng khi Complete nuốt lỗi scoring
+    /// hoặc Candidate mở Báo cáo/Lộ trình trước khi persist xong.
+    /// </summary>
+    public async Task RescoreLatestCoachDiagnosticAsync(Guid candidateUserId)
+    {
+        var jobs = await _personalSetJobs.ListByCandidateAsync(candidateUserId);
+        var diagnosticJobs = jobs
+            .Where(j =>
+                j.QuestionSetId is Guid
+                && j.CandidateUserId == candidateUserId
+                && (string.Equals(j.Purpose, CandidatePersonalSetPurpose.CvDiagnostic, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(j.Purpose, CandidatePersonalSetPurpose.CvReassessment, StringComparison.OrdinalIgnoreCase)))
+            .ToList();
+
+        Exception? lastError = null;
+        string? lastSkip = null;
+        foreach (var job in diagnosticJobs)
+        {
+            var setId = job.QuestionSetId!.Value;
+            var session = await _sessionRepository.GetBestCompletedSessionOnSetAsync(candidateUserId, setId);
+            if (session is null) continue;
+            try
+            {
+                var result = await _coachCompetency.ScoreAssessmentFromSessionAsync(session);
+                if (result.Scored)
+                {
+                    _logger.LogInformation(
+                        "Rescore Coach OK user {UserId} assessment {AssessmentId} roadmapUpdated={RoadmapUpdated}",
+                        candidateUserId, result.AssessmentId, result.RoadmapUpdated);
+                    return;
+                }
+
+                lastSkip = result.SkipReason;
+                _logger.LogWarning(
+                    "Rescore Coach skip session {SessionId}: {Reason} — thử job tiếp theo",
+                    session.Id, result.SkipReason);
+            }
+            catch (Exception ex)
+            {
+                lastError = ex;
+                _logger.LogError(ex, "Rescore Coach thất bại cho session {SessionId} / set {SetId}", session.Id, setId);
+            }
+        }
+
+        if (lastError is not null)
+            throw lastError;
+
+        throw new BadRequestException(
+            lastSkip is not null
+                ? $"Không chấm lại được bài Coach: {lastSkip}. Hãy hoàn thành lại bài chẩn đoán."
+                : "Không tìm thấy phiên luyện tập đã hoàn thành cho bài chẩn đoán Coach để chấm lại.");
     }
 
     /// <summary>
@@ -565,7 +744,18 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
             }
             else
             {
-                var (evalStatus, evalScore, _, _, _, _, _) = await EvaluateAndPersistAsync(answer, answer.QuestionSetQuestionId);
+                // SCRUM-447: Coach assessment dùng dimension scoring; marketplace giữ score LLM
+                string? scoringMode = null;
+                var coachJob = await _personalSetJobs.GetByQuestionSetIdAsync(session.QuestionSetId);
+                if (coachJob is not null
+                    && coachJob.Purpose is CandidatePersonalSetPurpose.CvDiagnostic
+                        or CandidatePersonalSetPurpose.CvReassessment)
+                {
+                    scoringMode = "coach";
+                }
+
+                var (evalStatus, evalScore, _, _, _, _, _) =
+                    await EvaluateAndPersistAsync(answer, answer.QuestionSetQuestionId, scoringMode);
                 await _usageMetering.IncrementAsync(session.CandidateUserId, UsageType.CandidateFeedback);
 
                 if (evalStatus != AiFeedbackEvaluationStatus.Succeeded)
@@ -843,6 +1033,9 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
             ExpiresAt = session.Status == PracticeSessionStatus.InProgress
                 ? ComputeExpiresAt(session.StartedAt, timeLimitMinutes)
                 : null,
+            AntiCheatEnabled = session.AntiCheatEnabled,
+            AntiCheatMaxTabLeaves = session.AntiCheatMaxTabLeaves,
+            TabLeaveCount = session.TabLeaveCount,
             Questions = questionDtos
         };
     }

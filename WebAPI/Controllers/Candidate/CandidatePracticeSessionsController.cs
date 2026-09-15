@@ -108,5 +108,15 @@ public class CandidatePracticeSessionsController : ControllerBase
         var result = await _service.AbandonAsync(id, User.GetUserId());
         return SuccessResp.Ok(result);
     }
+
+    /// <summary>SCRUM-446: ghi nhận sự kiện anti-cheat (TAB_HIDDEN). Đủ số lần rời tab thì tự nộp bài.</summary>
+    /// <param name="id">Id phiên luyện tập.</param>
+    /// <param name="dto">eventType = TAB_HIDDEN.</param>
+    [HttpPost("{id:guid}/integrity-events")]
+    public async Task<IActionResult> ReportIntegrityEvent(Guid id, [FromBody] PracticeIntegrityEventDto dto)
+    {
+        var result = await _service.ReportIntegrityEventAsync(id, User.GetUserId(), dto);
+        return SuccessResp.Ok(result);
+    }
 }
 
