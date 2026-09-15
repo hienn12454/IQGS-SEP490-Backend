@@ -20,8 +20,13 @@ public static class CvCoachPromptBuilder
             "Do not invent job requirements outside this skill list.";
     }
 
-    public static string DiagnosticHrNote(IReadOnlyList<string> skills)
-        => "Bộ kiểm tra kiến thức CV: tối thiểu 10 câu, độ khó tăng dần (easy → medium → hard). "
+    /// <summary>
+    /// Note gửi RAG cho đề coach. Số câu phải bám đúng blueprint của Backend
+    /// (trước đây ghi cứng "tối thiểu 10 câu" nên xung đột với blueprint framework).
+    /// </summary>
+    public static string BlueprintNote(IReadOnlyList<string> skills, int totalQuestions)
+        => $"Sinh ĐÚNG {totalQuestions} câu, mỗi dòng recommendedQuestionOutline tương ứng 1 câu và phải giữ nguyên "
+           + "skill, topic, difficulty của dòng đó. Không gộp, không thêm, không bớt câu. "
            + "Chỉ hỏi các skill sau, không bịa JD hay yêu cầu ngoài list: "
            + string.Join(", ", skills) + ".";
 

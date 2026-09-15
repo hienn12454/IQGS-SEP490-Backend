@@ -26,8 +26,21 @@ public class CandidateSkillPlanService : ICandidateSkillPlanService
         return plan is null ? null : Map(plan);
     }
 
+    /// <summary>
+    /// Legacy upsert — SCRUM-447: chỉ Diagnostic/Reassessment được ghi competency projection.
+    /// Drill không được gọi đường này (CoachCompetencyService.HandleDrillSessionCompletedAsync).
+    /// Ưu tiên CoachCompetencyService.SyncSkillPlanProjectionAsync (target theo framework).
+    /// </summary>
     public async Task UpsertFromSessionAsync(PracticeSession session, CandidatePersonalSetJob job)
     {
+        // Drill không overwrite competency / skill plan official
+        if (job.Purpose == CandidatePersonalSetPurpose.CvDrill)
+            return;
+
+        if (job.Purpose is not (CandidatePersonalSetPurpose.CvDiagnostic
+            or CandidatePersonalSetPurpose.CvReassessment))
+            return;
+
         var scores = await _feedbacks.GetSkillAveragesBySessionAsync(session.Id);
         var scoreByNorm = scores
             .Where(s => !string.IsNullOrWhiteSpace(s.Skill))
@@ -44,26 +57,13 @@ public class CandidateSkillPlanService : ICandidateSkillPlanService
         };
 
         if (job.Purpose == CandidatePersonalSetPurpose.CvDiagnostic)
-        {
             plan.SourceDiagnosticSetId = session.QuestionSetId;
-            var cvSkills = DeserializeSkills(job.CvSkillsJson);
-            foreach (var raw in cvSkills)
-            {
-                UpsertItem(plan, raw, scoreByNorm, session.Id, createIfMissing: true);
-            }
-        }
-        else if (job.Purpose == CandidatePersonalSetPurpose.CvDrill)
-        {
-            var focus = DeserializeSkills(job.FocusSkillsJson);
-            var skill = focus.FirstOrDefault();
-            if (string.IsNullOrWhiteSpace(skill))
-                return;
-            UpsertItem(plan, skill, scoreByNorm, session.Id, createIfMissing: false);
-        }
-        else
-        {
-            return;
-        }
+
+        var cvSkills = DeserializeSkills(job.CvSkillsJson);
+        var focus = DeserializeSkills(job.FocusSkillsJson);
+        var skills = cvSkills.Count > 0 ? cvSkills : focus;
+        foreach (var raw in skills)
+            UpsertItem(plan, raw, scoreByNorm, session.Id, createIfMissing: true);
 
         if (isNew)
             await _plans.AddAsync(plan);
