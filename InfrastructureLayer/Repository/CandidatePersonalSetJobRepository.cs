@@ -35,6 +35,13 @@ public class CandidatePersonalSetJobRepository : ICandidatePersonalSetJobReposit
             .OrderByDescending(j => j.CreatedAt)
             .FirstOrDefaultAsync();
 
+    public Task<CandidatePersonalSetJob?> GetByQuestionSetIdIncludingInactiveAsync(Guid questionSetId)
+        => _db.CandidatePersonalSetJobs.AsNoTracking()
+            .Where(j => j.QuestionSetId == questionSetId)
+            .OrderByDescending(j => j.IsActive)
+            .ThenByDescending(j => j.CreatedAt)
+            .FirstOrDefaultAsync();
+
     public async Task<IReadOnlyList<CandidatePersonalSetJob>> ListByCandidateAsync(Guid candidateUserId)
         => await _db.CandidatePersonalSetJobs
             .AsNoTracking()
