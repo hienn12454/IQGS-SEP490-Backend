@@ -19,4 +19,11 @@ public interface ICandidatePracticeSessionService
     Task<PagedResultDto<PracticeSessionListItemDto>> ListAsync(Guid candidateUserId, PracticeSessionListQueryDto query);
     Task<PracticeSessionStatsDto> GetStatsAsync(Guid candidateUserId, PracticeSessionStatsQueryDto query);
     Task<IReadOnlyList<CandidateSkillStatDto>> GetSkillStatsAsync(Guid candidateUserId);
+
+    /// <summary>SCRUM-446: ghi nhận sự kiện integrity (TAB_HIDDEN); đủ ngưỡng thì tự nộp bài.</summary>
+    Task<PracticeIntegrityEventResponseDto> ReportIntegrityEventAsync(
+        Guid sessionId, Guid candidateUserId, PracticeIntegrityEventDto dto);
+
+    /// <summary>Chấm lại bài chẩn đoán Coach gần nhất từ session đã nộp.</summary>
+    Task RescoreLatestCoachDiagnosticAsync(Guid candidateUserId);
 }
