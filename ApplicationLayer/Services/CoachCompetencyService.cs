@@ -127,6 +127,7 @@ public class CoachCompetencyService : ICoachCompetencyService
 
         ValidateLevel(dto.SelfAssessedLevel, nameof(dto.SelfAssessedLevel));
         ValidateLevel(dto.TargetLevel, nameof(dto.TargetLevel));
+        ValidateLevelOrder(dto.SelfAssessedLevel, dto.TargetLevel);
 
         if (!string.IsNullOrWhiteSpace(dto.TargetRole))
             profile.TargetRole = dto.TargetRole.Trim();
@@ -136,32 +137,32 @@ public class CoachCompetencyService : ICoachCompetencyService
             profile.TargetLevel = dto.TargetLevel.Trim();
         if (dto.YearsOfExperience is not null)
             profile.YearsOfExperience = dto.YearsOfExperience;
-        if (dto.InterviewGoal is not null)
-            profile.InterviewGoal = string.IsNullOrWhiteSpace(dto.InterviewGoal) ? null : dto.InterviewGoal.Trim();
-
-        if (dto.Skills is { Count: > 0 })
-        {
-            var cleaned = dto.Skills
-                .Select(s => s.Trim())
-                .Where(s => s.Length > 0)
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .Take(20)
-                .ToList();
-            profile.TechStack = cleaned.ToArray();
-            var (_, summary) = ParseCvJson(profile.CvEvaluationJson);
-            profile.CvEvaluationJson = JsonSerializer.Serialize(new
-            {
-                skills = cleaned,
-                summary,
-                suggestedRole = profile.SuggestedRole,
-                yearsOfExperienceHint = profile.YearsOfExperience
-            }, JsonOpts);
-        }
+        // SCRUM-458: không ghi InterviewGoal / Skills từ Confirm Goal.
+        // Skill đánh giá lấy từ CV (UnionCvSkills) + framework/KB lúc StartDiagnostic.
 
         profile.CoachContextConfirmed = true;
         profile.CoachContextConfirmedAt = DateTime.UtcNow;
         profile.UpdatedAt = DateTime.UtcNow;
         await _profiles.UpdateAsync(profile);
+        return await GetContextAsync(candidateUserId);
+    }
+
+    /// <summary>SCRUM-459: soft-reset vòng Coach — về Confirm Goal, giữ CV/Target Role/Level.</summary>
+    public async Task<CoachContextDto> ResetCoachRunAsync(Guid candidateUserId)
+    {
+        var profile = await _profiles.GetByUserIdAsync(candidateUserId)
+            ?? throw new BadRequestException("Chưa có hồ sơ ứng viên.");
+
+        await FailPendingCoachJobsAsync(candidateUserId, "Đã reset bởi Chạy Coach mới.");
+        await AbandonIncompleteAssessmentsAsync(candidateUserId);
+        await SupersedeScoredAssessmentsAsync(candidateUserId);
+        await ArchiveAllRoadmapsAsync(candidateUserId);
+
+        profile.CoachContextConfirmed = false;
+        profile.CoachContextConfirmedAt = null;
+        profile.UpdatedAt = DateTime.UtcNow;
+        await _profiles.UpdateAsync(profile);
+
         return await GetContextAsync(candidateUserId);
     }
 
@@ -191,9 +192,10 @@ public class CoachCompetencyService : ICoachCompetencyService
             competencyBlueprint = await _adaptiveBlueprints.BuildAsync(resolution, skills, policy, ct);
         }
 
-        // Chạy lại: huỷ job treo, abandon assessment chưa xong, archive roadmap thế hệ trước
+        // Chạy lại: huỷ job treo, abandon assessment chưa xong, supersede báo cáo cũ, archive roadmap thế hệ trước
         await FailPendingCoachJobsAsync(candidateUserId, "Đã thay thế bởi diagnostic mới.");
         await AbandonIncompleteAssessmentsAsync(candidateUserId);
+        await SupersedeScoredAssessmentsAsync(candidateUserId);
         await ArchiveAllRoadmapsAsync(candidateUserId);
 
         var diagnosticPlan = DiagnosticBlueprintBuilder.BuildDiagnostic(competencyBlueprint);
@@ -435,8 +437,10 @@ public class CoachCompetencyService : ICoachCompetencyService
     public async Task<IReadOnlyList<CoachAssessmentDto>> GetHistoryAsync(Guid candidateUserId)
     {
         var list = await _assessments.ListByCandidateAsync(candidateUserId);
+        // SCRUM-459: lịch sử gồm Scored hiện tại + Superseded (vòng cũ).
         var scored = list
-            .Where(a => a.Status == CandidateAssessmentStatus.Scored)
+            .Where(a => a.Status is CandidateAssessmentStatus.Scored
+                or CandidateAssessmentStatus.Superseded)
             .OrderByDescending(a => a.UpdatedAt ?? a.CreatedAt)
             .ToList();
         var result = new List<CoachAssessmentDto>(scored.Count);
@@ -457,7 +461,11 @@ public class CoachCompetencyService : ICoachCompetencyService
     public async Task<IReadOnlyList<CoachRoadmapDto>> ListRoadmapsAsync(Guid candidateUserId)
     {
         var rows = await _roadmaps.ListByCandidateAsync(candidateUserId);
-        return rows.Select(MapRoadmap).ToList();
+        var assessments = await _assessments.ListByCandidateAsync(candidateUserId);
+        var result = new List<CoachRoadmapDto>(rows.Count);
+        foreach (var row in rows)
+            result.Add(await MapRoadmapHydratedAsync(row, assessments));
+        return result;
     }
 
     public async Task<CoachRoadmapDto> StartRoadmapAsync(Guid candidateUserId, Guid roadmapId)
@@ -474,7 +482,7 @@ public class CoachCompetencyService : ICoachCompetencyService
                 first.Status = CandidateRoadmapItemStatus.InProgress;
         }
         await _roadmaps.UpdateAsync(roadmap);
-        return MapRoadmap(roadmap);
+        return await MapRoadmapHydratedAsync(roadmap, await _assessments.ListByCandidateAsync(candidateUserId));
     }
 
     public async Task<CoachRoadmapDto> GetRoadmapAsync(Guid candidateUserId, Guid roadmapId)
@@ -483,7 +491,7 @@ public class CoachCompetencyService : ICoachCompetencyService
             ?? throw new NotFoundException("Không tìm thấy roadmap.");
         if (roadmap.CandidateUserId != candidateUserId)
             throw new ForbiddenException("Không được truy cập roadmap của ứng viên khác.");
-        return MapRoadmap(roadmap);
+        return await MapRoadmapHydratedAsync(roadmap, await _assessments.ListByCandidateAsync(candidateUserId));
     }
 
     public async Task<CoachScoreResult> ScoreAssessmentFromSessionAsync(PracticeSession session)
@@ -778,6 +786,23 @@ public class CoachCompetencyService : ICoachCompetencyService
         await ApplyGenerationSideEffectsAsync(job, abandonAssessment: false);
     }
 
+    public async Task AttachQuestionSetToRoadmapItemAsync(
+        Guid candidateUserId, Guid roadmapItemId, Guid questionSetId)
+    {
+        var roadmaps = await _roadmaps.ListByCandidateAsync(candidateUserId);
+        var roadmap = roadmaps.FirstOrDefault(r => r.Items.Any(i => i.Id == roadmapItemId));
+        var item = roadmap?.Items.FirstOrDefault(i => i.Id == roadmapItemId);
+        if (roadmap is null || item is null) return;
+
+        item.DrillQuestionSetId = questionSetId;
+        // Giữ InProgress nếu đang chờ làm bài; không đổi Completed.
+        if (item.Status is CandidateRoadmapItemStatus.Pending
+            or CandidateRoadmapItemStatus.ReadyForReassessment)
+            item.Status = CandidateRoadmapItemStatus.InProgress;
+
+        await _roadmaps.UpdateAsync(roadmap);
+    }
+
     /// <summary>
     /// abandonAssessment=true → Abandoned (user cancel / diagnostic mới).
     /// abandonAssessment=false → Failed (RAG lỗi).
@@ -875,15 +900,20 @@ public class CoachCompetencyService : ICoachCompetencyService
         }
     }
 
-    private async Task ArchiveAllRoadmapsAsync(Guid candidateUserId)
+    /// <summary>SCRUM-459: đánh dấu assessment đã Scored thành Superseded để GetLatestReport trả null.</summary>
+    private async Task SupersedeScoredAssessmentsAsync(Guid candidateUserId)
     {
-        var all = await _roadmaps.ListAllByCandidateAsync(candidateUserId);
-        foreach (var r in all.Where(x => x.IsActive))
+        var list = await _assessments.ListByCandidateAsync(candidateUserId);
+        foreach (var a in list.Where(x => x.Status == CandidateAssessmentStatus.Scored))
         {
-            r.IsActive = false;
-            await _roadmaps.UpdateAsync(r);
+            a.Status = CandidateAssessmentStatus.Superseded;
+            a.UpdatedAt = DateTime.UtcNow;
+            await _assessments.UpdateAsync(a);
         }
     }
+
+    private Task ArchiveAllRoadmapsAsync(Guid candidateUserId)
+        => _roadmaps.ArchiveActiveByCandidateAsync(candidateUserId);
 
     private static bool IsCoachPurpose(string purpose)
         => purpose is CandidatePersonalSetPurpose.CvDiagnostic
@@ -940,25 +970,15 @@ public class CoachCompetencyService : ICoachCompetencyService
         try
         {
             if (!string.IsNullOrWhiteSpace(latest.ExplanationJson))
-            {
-                using var doc = JsonDocument.Parse(latest.ExplanationJson);
-                var root = doc.RootElement;
-                if (root.TryGetProperty("levelExplanation", out var exp))
-                    dto.LevelExplanation = exp.GetString();
-                if (root.TryGetProperty("coverageRatio", out var cov) && cov.TryGetDouble(out var c))
-                    dto.CoverageRatio = c;
-                if (root.TryGetProperty("previousOverall", out var prev) && prev.TryGetDouble(out var p))
-                    dto.PreviousOverallReadiness = p;
-                if (root.TryGetProperty("overallDelta", out var d) && d.TryGetDouble(out var delta))
-                    dto.OverallDelta = delta;
-                if (root.TryGetProperty("achievedLevel", out var lvl) && string.IsNullOrWhiteSpace(dto.AchievedLevel))
-                    dto.AchievedLevel = lvl.GetString();
-            }
+                ApplyExplanationFields(dto, latest.ExplanationJson);
         }
         catch (JsonException)
         {
             // explanation json không phải object — giữ DTO đã map.
         }
+
+        // Không bao giờ trả raw ExplanationJson ra FE (tránh dump JSON trên báo cáo).
+        dto.Explanation = null;
 
         await ApplyTargetReadinessAsync(dto, latest);
         return dto;
@@ -998,6 +1018,30 @@ public class CoachCompetencyService : ICoachCompetencyService
         var ok = new[] { "Fresher", "Junior", "Middle", "Senior" };
         if (!ok.Any(x => string.Equals(x, level.Trim(), StringComparison.OrdinalIgnoreCase)))
             throw new BadRequestException($"{field} phải là Fresher/Junior/Middle/Senior.");
+    }
+
+    /// <summary>
+    /// Mục tiêu coaching không được thấp hơn cấp tự đánh giá
+    /// (vd. hiện tại Junior mà mục tiêu Fresher là ngược logic).
+    /// </summary>
+    private static void ValidateLevelOrder(string? selfAssessed, string? target)
+    {
+        if (string.IsNullOrWhiteSpace(selfAssessed) || string.IsNullOrWhiteSpace(target))
+            return;
+        if (LevelRank(target) < LevelRank(selfAssessed))
+            throw new BadRequestException(
+                "Cấp độ mục tiêu phải bằng hoặc cao hơn cấp độ hiện tại.");
+    }
+
+    private static int LevelRank(string level)
+    {
+        var order = new[] { "Fresher", "Junior", "Middle", "Senior" };
+        for (var i = 0; i < order.Length; i++)
+        {
+            if (string.Equals(order[i], level.Trim(), StringComparison.OrdinalIgnoreCase))
+                return i;
+        }
+        return 0;
     }
 
     private static (List<string> Skills, string? Summary) ParseCvJson(string? json)
@@ -1147,7 +1191,8 @@ public class CoachCompetencyService : ICoachCompetencyService
                 DemonstratedDifficulty = r.DemonstratedDifficulty,
                 Band = Band(r)
             }).OrderByDescending(s => s.Gap).ToList(),
-            Explanation = a.ExplanationJson,
+            // ExplanationJson là blob nội bộ — parse sang field có cấu trúc, không dump JSON.
+            Explanation = null,
             PreviousOverallReadiness = prev?.OverallReadiness,
             OverallDelta = a.OverallReadiness is double cur && prev?.OverallReadiness is double old
                 ? Math.Round(cur - old, 2)
@@ -1155,11 +1200,95 @@ public class CoachCompetencyService : ICoachCompetencyService
             AchievedLevel = null,
             LevelExplanation = null
         };
+
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(a.ExplanationJson))
+                ApplyExplanationFields(dto, a.ExplanationJson);
+        }
+        catch (JsonException)
+        {
+            // Không phải JSON object — bỏ qua.
+        }
+
         await ApplyTargetReadinessAsync(dto, a);
         return dto;
     }
 
-    private static CoachRoadmapDto MapRoadmap(CandidateRoadmap r) => new()
+    /// <summary>
+    /// Tách ExplanationJson (merge snapshot) ra các field DTO cho báo cáo FE.
+    /// Không gán raw JSON vào Explanation.
+    /// </summary>
+    private static void ApplyExplanationFields(CoachAssessmentDto dto, string explanationJson)
+    {
+        using var doc = JsonDocument.Parse(explanationJson);
+        var root = doc.RootElement;
+        if (root.ValueKind != JsonValueKind.Object) return;
+
+        if (root.TryGetProperty("levelExplanation", out var exp))
+            dto.LevelExplanation = exp.GetString();
+        if (root.TryGetProperty("coverageRatio", out var cov) && cov.TryGetDouble(out var c))
+            dto.CoverageRatio = c;
+        if (root.TryGetProperty("previousOverall", out var prev) && prev.TryGetDouble(out var p))
+            dto.PreviousOverallReadiness ??= p;
+        if (root.TryGetProperty("overallDelta", out var d) && d.TryGetDouble(out var delta))
+            dto.OverallDelta ??= delta;
+        if (root.TryGetProperty("achievedLevel", out var lvl) && string.IsNullOrWhiteSpace(dto.AchievedLevel))
+            dto.AchievedLevel = lvl.GetString();
+        if (root.TryGetProperty("estimatedBand", out var band) && string.IsNullOrWhiteSpace(dto.EstimatedBand))
+            dto.EstimatedBand = band.GetString();
+        if (root.TryGetProperty("targetLevel", out var tl) && string.IsNullOrWhiteSpace(dto.TargetLevel))
+            dto.TargetLevel = tl.GetString();
+        if (root.TryGetProperty("readinessStatus", out var rs) && string.IsNullOrWhiteSpace(dto.ReadinessStatus))
+            dto.ReadinessStatus = rs.GetString();
+    }
+
+    private static CoachRoadmapDto MapRoadmap(CandidateRoadmap r) => MapRoadmapCore(r);
+
+    /// <summary>
+    /// Hydrate DrillQuestionSetId cho cổng Re-assessment đang InProgress nếu sinh đề xong
+    /// nhưng chưa gắn (job cũ trước khi AttachQuestionSet). FE cần id để hiện CTA mở bài.
+    /// </summary>
+    private Task<CoachRoadmapDto> MapRoadmapHydratedAsync(
+        CandidateRoadmap r, IReadOnlyList<CandidateAssessment> assessments)
+    {
+        var dto = MapRoadmapCore(r);
+        foreach (var item in dto.Items.Where(i =>
+                     i.IsReassessmentGate
+                     && i.Status == CandidateRoadmapItemStatus.InProgress
+                     && i.DrillQuestionSetId is null))
+        {
+            var ready = assessments
+                .Where(a =>
+                    a.Kind == CandidateAssessmentKind.Reassessment
+                    && a.Status == CandidateAssessmentStatus.ReadyToPractice
+                    && a.QuestionSetId is not null
+                    && a.IsActive)
+                .OrderByDescending(a => a.UpdatedAt ?? a.CreatedAt)
+                .FirstOrDefault(a => AssessmentMatchesRoadmapSkill(a, r.Skill));
+            if (ready?.QuestionSetId is Guid qid)
+                item.DrillQuestionSetId = qid;
+        }
+        return Task.FromResult(dto);
+    }
+
+    private static bool AssessmentMatchesRoadmapSkill(CandidateAssessment a, string skill)
+    {
+        if (string.IsNullOrWhiteSpace(a.ScopeSkillsJson)) return true;
+        try
+        {
+            var scope = JsonSerializer.Deserialize<List<string>>(a.ScopeSkillsJson, JsonOpts) ?? new();
+            if (scope.Count == 0) return true;
+            var key = CompetencyScoringService.NormalizeSkill(skill);
+            return scope.Any(s => CompetencyScoringService.NormalizeSkill(s) == key);
+        }
+        catch (JsonException)
+        {
+            return true;
+        }
+    }
+
+    private static CoachRoadmapDto MapRoadmapCore(CandidateRoadmap r) => new()
     {
         Id = r.Id,
         Skill = r.Skill,
@@ -1171,7 +1300,7 @@ public class CoachCompetencyService : ICoachCompetencyService
         Priority = r.Priority,
         Status = r.Status,
         SourceMode = r.SourceMode,
-        Explanation = r.ExplanationJson,
+        Explanation = FormatRoadmapExplanation(r.ExplanationJson),
         Items = r.Items.OrderBy(i => i.SortOrder).Select(i => new CoachRoadmapItemDto
         {
             Id = i.Id,
@@ -1188,6 +1317,36 @@ public class CoachCompetencyService : ICoachCompetencyService
             NextTopics = ParseStringList(i.RoadmapNode?.NextTopicsJson)
         }).ToList()
     };
+
+    /// <summary>
+    /// ExplanationJson lưu {"reason":"..."} — FE chỉ cần chuỗi reason, không dump JSON.
+    /// </summary>
+    private static string? FormatRoadmapExplanation(string? explanationJson)
+    {
+        if (string.IsNullOrWhiteSpace(explanationJson)) return null;
+        var trimmed = explanationJson.Trim();
+        if (!trimmed.StartsWith('{'))
+            return trimmed;
+        try
+        {
+            using var doc = JsonDocument.Parse(trimmed);
+            if (doc.RootElement.TryGetProperty("reason", out var reason))
+            {
+                var text = reason.GetString()?.Trim();
+                if (!string.IsNullOrEmpty(text)) return text;
+            }
+            if (doc.RootElement.TryGetProperty("explanation", out var exp))
+            {
+                var text = exp.GetString()?.Trim();
+                if (!string.IsNullOrEmpty(text)) return text;
+            }
+        }
+        catch (JsonException)
+        {
+            /* giữ nguyên nếu không parse được */
+        }
+        return trimmed;
+    }
 
     private static List<string> ParseStringList(string? json)
     {

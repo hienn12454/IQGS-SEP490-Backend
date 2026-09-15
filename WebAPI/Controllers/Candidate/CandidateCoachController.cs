@@ -52,6 +52,14 @@ public class CandidateCoachController : ControllerBase
         return SuccessResp.Ok(result);
     }
 
+    /// <summary>SCRUM-459: soft-reset vòng Coach — về Confirm Goal, giữ CV.</summary>
+    [HttpPost("reset-run")]
+    public async Task<IActionResult> ResetRun()
+    {
+        var result = await _coach.ResetCoachRunAsync(User.GetUserId());
+        return SuccessResp.Ok(result);
+    }
+
     /// <summary>Diagnostic competency — Hangfire async (SCRUM-447).</summary>
     [HttpPost("diagnostic")]
     public async Task<IActionResult> StartDiagnostic(CancellationToken ct)

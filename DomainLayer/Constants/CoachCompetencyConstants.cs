@@ -16,6 +16,8 @@ public static class CandidateAssessmentStatus
     public const string Failed = "Failed";
     /// <summary>Bị thay thế khi Candidate chạy diagnostic mới / huỷ job.</summary>
     public const string Abandoned = "Abandoned";
+    /// <summary>SCRUM-459: assessment đã Scored bị thay bởi vòng Coach mới (giữ lịch sử).</summary>
+    public const string Superseded = "Superseded";
 }
 
 public static class CompetencyReadinessStatus

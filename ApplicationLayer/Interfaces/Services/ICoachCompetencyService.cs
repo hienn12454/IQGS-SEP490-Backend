@@ -10,6 +10,8 @@ public interface ICoachCompetencyService
     /// <summary>SCRUM-453: catalog Target Role đang có framework — FE dùng cho combobox Target Role.</summary>
     Task<List<CoachFrameworkOptionDto>> ListFrameworkCatalogAsync();
     Task<CoachContextDto> UpdateContextAsync(Guid candidateUserId, UpdateCoachContextDto dto);
+    /// <summary>SCRUM-459: soft-reset vòng Coach — về Confirm Goal, giữ CV.</summary>
+    Task<CoachContextDto> ResetCoachRunAsync(Guid candidateUserId);
     Task<CandidatePersonalSetJobDto> StartDiagnosticAsync(Guid candidateUserId, CancellationToken ct = default);
     Task<CandidatePersonalSetJobDto> StartDrillForRoadmapItemAsync(Guid candidateUserId, Guid roadmapId, Guid itemId, CancellationToken ct = default);
     Task<CandidatePersonalSetJobDto> StartReassessmentAsync(Guid candidateUserId, Guid roadmapId, CancellationToken ct = default);
@@ -28,4 +30,10 @@ public interface ICoachCompetencyService
 
     /// <summary>Khi RAG/Hangfire fail: đánh dấu assessment Failed + trả roadmap item về Pending.</summary>
     Task MarkGenerationFailedAsync(Guid jobId);
+
+    /// <summary>
+    /// Sau khi sinh đề xong: gắn QuestionSetId vào roadmap item (drill hoặc cổng Re-assessment)
+    /// để FE hiện CTA mở bài khi item đang InProgress.
+    /// </summary>
+    Task AttachQuestionSetToRoadmapItemAsync(Guid candidateUserId, Guid roadmapItemId, Guid questionSetId);
 }
