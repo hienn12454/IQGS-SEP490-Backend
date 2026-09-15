@@ -14,4 +14,10 @@ public class KnowledgeDocumentListQueryDto
 
     /// <summary>Lọc đến ngày nhập (createdAt), inclusive.</summary>
     public DateTime? ToDate { get; set; }
+
+    /// <summary>
+    /// SCRUM-450: lọc theo folder. Bỏ trống = tất cả.
+    /// Giá trị đặc biệt "unsorted" = Folder null/empty.
+    /// </summary>
+    public string? Folder { get; set; }
 }

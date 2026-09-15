@@ -76,7 +76,10 @@ public class KnowledgeDocumentInternalService : IKnowledgeDocumentInternalServic
             ErrorMessage = document.ErrorMessage,
             CreatedAt = document.CreatedAt,
             UpdatedAt = document.UpdatedAt,
-            DocumentType = KnowledgeDocumentType.FromSection(document.Section)
+            DocumentType = KnowledgeDocumentType.FromSection(document.Section),
+            AdminNote = document.AdminNote,
+            Folder = document.Folder,
+            BlobPath = document.BlobPath
         };
     }
 }

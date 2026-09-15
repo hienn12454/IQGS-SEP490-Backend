@@ -26,4 +26,16 @@ public interface IKnowledgeDocumentRepository
     /// Ước lượng — trùng tên file có thể đếm nhầm.
     /// </summary>
     Task<IReadOnlyDictionary<string, int>> CountCitationsByFileNamesAsync(Guid ownerId, IReadOnlyList<string> fileNames);
+
+    /// <summary>SCRUM-447: danh sách documentId SYSTEM theo document type (section).</summary>
+    Task<IReadOnlyList<Guid>> ListSystemDocumentIdsByTypeAsync(string documentType);
+
+    /// <summary>SCRUM-450: đếm document theo folder trong một scope.</summary>
+    Task<IReadOnlyList<KnowledgeFolderDto>> ListFoldersAsync(string scope);
+
+    /// <summary>SCRUM-451: đổi Folder cho mọi doc cùng scope + fromFolder.</summary>
+    Task<int> RenameFolderAsync(string scope, string? fromFolder, string? toFolder);
+
+    /// <summary>SCRUM-451: gán Folder cho danh sách documentIds (cùng scope).</summary>
+    Task<int> MoveDocumentsAsync(string scope, IReadOnlyList<Guid> documentIds, string? toFolder);
 }

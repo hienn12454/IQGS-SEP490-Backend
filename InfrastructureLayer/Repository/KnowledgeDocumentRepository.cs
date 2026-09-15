@@ -1,5 +1,7 @@
 using ApplicationLayer.DTOs.KnowledgeBase;
+using ApplicationLayer.Helpers;
 using ApplicationLayer.Interfaces.Repositories;
+using DomainLayer.Constants;
 using DomainLayer.Entities;
 using Microsoft.EntityFrameworkCore;
 
@@ -68,6 +70,16 @@ public class KnowledgeDocumentRepository : IKnowledgeDocumentRepository
         {
             var toExclusive = DateTime.SpecifyKind(query.ToDate.Value.Date.AddDays(1), DateTimeKind.Utc);
             q = q.Where(d => d.CreatedAt < toExclusive);
+        }
+
+        // SCRUM-450: lọc theo folder UI
+        if (!string.IsNullOrWhiteSpace(query.Folder))
+        {
+            var folderKey = query.Folder.Trim().ToLowerInvariant();
+            if (folderKey == KnowledgeFolderHelper.UnsortedKey)
+                q = q.Where(d => d.Folder == null || d.Folder == "");
+            else
+                q = q.Where(d => d.Folder == folderKey);
         }
 
         var total = await q.CountAsync();
@@ -173,5 +185,78 @@ public class KnowledgeDocumentRepository : IKnowledgeDocumentRepository
         }
 
         return counts;
+    }
+
+    public async Task<IReadOnlyList<Guid>> ListSystemDocumentIdsByTypeAsync(string documentType)
+    {
+        var type = KnowledgeDocumentType.NormalizeForStorage(documentType, requireHrType: false);
+        return await _context.KnowledgeDocuments.AsNoTracking()
+            .Where(d => d.IsActive
+                        && d.Scope == KnowledgeDocumentScope.System
+                        && d.Status == KnowledgeDocumentStatus.Completed
+                        && d.Section == type)
+            .Select(d => d.Id)
+            .ToListAsync();
+    }
+
+    public async Task<IReadOnlyList<KnowledgeFolderDto>> ListFoldersAsync(string scope)
+    {
+        var rows = await _context.KnowledgeDocuments.AsNoTracking()
+            .Where(d => d.Scope == scope)
+            .GroupBy(d => d.Folder == null || d.Folder == "" ? null : d.Folder)
+            .Select(g => new { Folder = g.Key, Count = g.Count() })
+            .ToListAsync();
+
+        return rows
+            .Select(r => new KnowledgeFolderDto
+            {
+                Name = KnowledgeFolderHelper.DisplayName(r.Folder),
+                Count = r.Count
+            })
+            .OrderBy(x => x.Name == KnowledgeFolderHelper.UnsortedKey ? 1 : 0)
+            .ThenBy(x => x.Name)
+            .ToList();
+    }
+
+    public async Task<int> RenameFolderAsync(string scope, string? fromFolder, string? toFolder)
+    {
+        var q = _context.KnowledgeDocuments.Where(d => d.Scope == scope);
+        if (fromFolder is null)
+            q = q.Where(d => d.Folder == null || d.Folder == "");
+        else
+            q = q.Where(d => d.Folder == fromFolder);
+
+        var docs = await q.ToListAsync();
+        var now = DateTime.UtcNow;
+        foreach (var d in docs)
+        {
+            d.Folder = toFolder;
+            d.UpdatedAt = now;
+        }
+
+        if (docs.Count > 0)
+            await _context.SaveChangesAsync();
+        return docs.Count;
+    }
+
+    public async Task<int> MoveDocumentsAsync(string scope, IReadOnlyList<Guid> documentIds, string? toFolder)
+    {
+        if (documentIds.Count == 0)
+            return 0;
+
+        var docs = await _context.KnowledgeDocuments
+            .Where(d => d.Scope == scope && documentIds.Contains(d.Id))
+            .ToListAsync();
+
+        var now = DateTime.UtcNow;
+        foreach (var d in docs)
+        {
+            d.Folder = toFolder;
+            d.UpdatedAt = now;
+        }
+
+        if (docs.Count > 0)
+            await _context.SaveChangesAsync();
+        return docs.Count;
     }
 }

@@ -10,4 +10,7 @@ public class KnowledgeDocumentQueryDto
     public DateTime? ToDate { get; set; }
     public int Page { get; set; } = 1;
     public int PageSize { get; set; } = 20;
+
+    /// <summary>SCRUM-450: lọc folder; "unsorted" = null/empty.</summary>
+    public string? Folder { get; set; }
 }

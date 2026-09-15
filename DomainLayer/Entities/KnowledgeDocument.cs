@@ -19,5 +19,11 @@ public class KnowledgeDocument : BaseEntity
     public Guid UploadedBy { get; set; }
     public string? ErrorMessage { get; set; }
 
+    /// <summary>SCRUM-447: ghi chú Admin trên từng file KB (không lưu Blob metadata).</summary>
+    public string? AdminNote { get; set; }
+
+    /// <summary>SCRUM-450: nhóm folder ảo trên UI Admin (vd. swe). Không đổi Blob path.</summary>
+    public string? Folder { get; set; }
+
     public ICollection<KnowledgeChunk> Chunks { get; set; } = new List<KnowledgeChunk>();
 }

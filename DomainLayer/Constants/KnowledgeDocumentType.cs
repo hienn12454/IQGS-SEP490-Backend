@@ -10,6 +10,8 @@ public static class KnowledgeDocumentType
     public const string InternalStack = "InternalStack";
     public const string Rubric = "Rubric";
     public const string RolePack = "RolePack";
+    /// <summary>SCRUM-447: curated technical roadmap nodes (SYSTEM) — không lẫn Tech retrieve.</summary>
+    public const string Roadmap = "Roadmap";
     /// <summary>Doc cũ / Admin không gắn loại.</summary>
     public const string Unclassified = "Unclassified";
 
@@ -19,16 +21,28 @@ public static class KnowledgeDocumentType
         InternalStack,
         Rubric,
         RolePack,
+        Roadmap,
         Unclassified
     ];
 
-    /// <summary>Loại HR được chọn lúc upload (không gồm Unclassified).</summary>
+    /// <summary>Loại HR được chọn lúc upload (không gồm Unclassified / Roadmap SYSTEM).</summary>
     public static readonly IReadOnlyList<string> HrUploadTypes =
     [
         Policy,
         InternalStack,
         Rubric,
         RolePack
+    ];
+
+    /// <summary>Loại Admin SYSTEM khuyến nghị khi upload Coach KB.</summary>
+    public static readonly IReadOnlyList<string> AdminSystemTypes =
+    [
+        InternalStack,
+        Roadmap,
+        RolePack,
+        Policy,
+        Rubric,
+        Unclassified
     ];
 
     public static bool IsHrUploadType(string? value)

@@ -112,7 +112,14 @@ public class KnowledgeDocumentService : IKnowledgeDocumentService
             Section = documentType,
             Year = null,
             Status = KnowledgeDocumentStatus.Queued,
-            UploadedBy = uploadedBy
+            UploadedBy = uploadedBy,
+            AdminNote = string.IsNullOrWhiteSpace(dto.AdminNote)
+                ? null
+                : (dto.AdminNote!.Trim().Length > 2000 ? dto.AdminNote.Trim()[..2000] : dto.AdminNote.Trim()),
+            // SCRUM-450: folder UI-only (SYSTEM); Blob path không đổi
+            Folder = string.Equals(dto.Scope, KnowledgeDocumentScope.System, StringComparison.OrdinalIgnoreCase)
+                ? KnowledgeFolderHelper.Normalize(dto.Folder)
+                : null
         };
 
         try
@@ -174,7 +181,8 @@ public class KnowledgeDocumentService : IKnowledgeDocumentService
             FromDate = listQuery.FromDate,
             ToDate = listQuery.ToDate,
             Page = listQuery.Page,
-            PageSize = listQuery.PageSize
+            PageSize = listQuery.PageSize,
+            Folder = listQuery.Folder
         };
 
         var result = await _repository.GetPagedAsync(query);
@@ -244,6 +252,72 @@ public class KnowledgeDocumentService : IKnowledgeDocumentService
         document.Section = KnowledgeDocumentType.NormalizeForStorage(documentType, requireHrType);
         await _repository.UpdateAsync(document);
         return KnowledgeDocumentInternalService.MapToDto(document);
+    }
+
+    public async Task<KnowledgeDocumentResponseDto> UpdateDocumentMetaAsync(
+        Guid id,
+        string? documentType,
+        string? adminNote,
+        string? folder = null,
+        bool updateFolder = false,
+        Guid? ownerIdFilter = null)
+    {
+        var document = await GetDocumentWithOwnership(id, ownerIdFilter);
+        if (!string.IsNullOrWhiteSpace(documentType))
+            document.Section = KnowledgeDocumentType.NormalizeForStorage(documentType, requireHrType: false);
+
+        if (adminNote is not null)
+        {
+            var trimmed = adminNote.Trim();
+            document.AdminNote = trimmed.Length == 0
+                ? null
+                : trimmed.Length > 2000 ? trimmed[..2000] : trimmed;
+        }
+
+        // SCRUM-450: đổi folder metadata (không move Blob)
+        if (updateFolder)
+            document.Folder = KnowledgeFolderHelper.Normalize(folder);
+
+        await _repository.UpdateAsync(document);
+        return KnowledgeDocumentInternalService.MapToDto(document);
+    }
+
+    public Task<IReadOnlyList<KnowledgeFolderDto>> ListFoldersAsync(string scope)
+        => _repository.ListFoldersAsync(scope);
+
+    public async Task<FolderMutationResultDto> RenameFolderAsync(string scope, string from, string? to)
+    {
+        // from: "unsorted" → null; to: normalize
+        string? fromNorm = string.Equals(from?.Trim(), KnowledgeFolderHelper.UnsortedKey, StringComparison.OrdinalIgnoreCase)
+            || string.IsNullOrWhiteSpace(from)
+            ? null
+            : KnowledgeFolderHelper.Normalize(from);
+
+        // Rename from a named folder requires non-null fromNorm (unless unsorted)
+        if (!string.IsNullOrWhiteSpace(from)
+            && !string.Equals(from.Trim(), KnowledgeFolderHelper.UnsortedKey, StringComparison.OrdinalIgnoreCase)
+            && fromNorm is null)
+            throw new BadRequestException("Folder nguồn không hợp lệ.");
+
+        string? toNorm = KnowledgeFolderHelper.Normalize(to);
+        if (string.Equals(fromNorm, toNorm, StringComparison.Ordinal))
+            return new FolderMutationResultDto { UpdatedCount = 0 };
+
+        var count = await _repository.RenameFolderAsync(scope, fromNorm, toNorm);
+        return new FolderMutationResultDto { UpdatedCount = count };
+    }
+
+    public async Task<FolderMutationResultDto> MoveDocumentsAsync(
+        string scope,
+        IReadOnlyList<Guid> documentIds,
+        string? folder)
+    {
+        if (documentIds.Count == 0)
+            return new FolderMutationResultDto { UpdatedCount = 0 };
+
+        var toNorm = KnowledgeFolderHelper.Normalize(folder);
+        var count = await _repository.MoveDocumentsAsync(scope, documentIds, toNorm);
+        return new FolderMutationResultDto { UpdatedCount = count };
     }
 
     public async Task<IReadOnlyList<KnowledgeChunkPreviewDto>> GetChunksAsync(
@@ -331,8 +405,10 @@ public class KnowledgeDocumentService : IKnowledgeDocumentService
     private void ValidateUpload(string fileName, long fileSize, KnowledgeDocumentUploadDto dto)
     {
         var ext = Path.GetExtension(fileName).ToLowerInvariant();
-        if (!_kbSettings.AllowedExtensions.Contains(ext))
-            throw new BadRequestException($"Chỉ chấp nhận file: {string.Join(", ", _kbSettings.AllowedExtensions)}.");
+        // SCRUM-448: .jsonl chỉ Admin SYSTEM; HR giữ PDF/DOCX/TXT
+        var allowed = _kbSettings.GetAllowedExtensionsForScope(dto.Scope);
+        if (!allowed.Contains(ext, StringComparer.OrdinalIgnoreCase))
+            throw new BadRequestException($"Chỉ chấp nhận file: {string.Join(", ", allowed)}.");
 
         var maxBytes = _kbSettings.MaxFileSizeMb * 1024L * 1024L;
         if (fileSize > maxBytes)
