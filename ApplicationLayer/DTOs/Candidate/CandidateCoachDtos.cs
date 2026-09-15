@@ -86,10 +86,7 @@ public class UpdateCoachContextDto
 
     public double? YearsOfExperience { get; set; }
 
-    [MaxLength(500)]
-    public string? InterviewGoal { get; set; }
-
-    public List<string>? Skills { get; set; }
+    // SCRUM-458: InterviewGoal / Skills không còn nhận từ Confirm Goal (giữ cột DB cũ).
 }
 
 public class CoachAssessmentDto
