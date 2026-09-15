@@ -81,8 +81,11 @@ public class RoadmapRecommendationService : IRoadmapRecommendationService
             var weight = fwSkill?.ImportanceWeight ?? bpSkill?.Weight ?? item.ImportanceWeight;
             var current = item.CurrentScore ?? 0;
             var gap = Math.Round(target - current, 2);
-            toAdd.Add(await BuildRoadmapAsync(
-                candidateUserId, assessment, framework, blueprint, item.Skill, current, target, gap, weight, fwSkill, bpSkill));
+            var created = await BuildRoadmapAsync(
+                candidateUserId, assessment, framework, blueprint, item.Skill, current, target, gap, weight, fwSkill, bpSkill);
+            created.Framework = null;
+            created.SourceAssessment = null;
+            toAdd.Add(created);
         }
 
         if (toAdd.Count == 0) return;

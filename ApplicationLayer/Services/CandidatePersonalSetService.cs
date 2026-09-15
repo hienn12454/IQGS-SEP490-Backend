@@ -357,6 +357,20 @@ public class CandidatePersonalSetService : ICandidatePersonalSetService
                     // Không fail job nếu cập nhật assessment lỗi
                 }
             }
+
+            // Drill / Re-assessment: gắn set vào roadmap item để FE hiện CTA mở bài.
+            if (job.RoadmapItemId is Guid roadmapItemId)
+            {
+                try
+                {
+                    await _coach.AttachQuestionSetToRoadmapItemAsync(
+                        job.CandidateUserId, roadmapItemId, set.Id);
+                }
+                catch
+                {
+                    // Best-effort — job đã Completed
+                }
+            }
         }
         catch (Exception ex)
         {

@@ -185,27 +185,24 @@ public class CandidateAssessmentRepository : ICandidateAssessmentRepository
 
     public async Task UpdateAsync(CandidateAssessment assessment)
     {
-        assessment.UpdatedAt = DateTime.UtcNow;
         DetachFrameworkGraph(assessment);
-
-        var entry = _db.Entry(assessment);
-        if (entry.State == EntityState.Detached)
-        {
-            // Không dùng DbSet.Update(graph): child SkillResults mới bị mark Modified
-            // → UPDATE 0 rows → DbUpdateConcurrencyException.
-            var tracked = await _db.CandidateAssessments
-                .Include(a => a.SkillResults)
-                .FirstOrDefaultAsync(a => a.Id == assessment.Id);
-            if (tracked is null)
-                throw new InvalidOperationException($"Assessment {assessment.Id} không tồn tại để cập nhật.");
-
-            CopyAssessmentScalars(assessment, tracked);
-            await _db.SaveChangesAsync();
-            return;
-        }
-
-        EnsureSkillResultsNotFalseModified(assessment);
-        await _db.SaveChangesAsync();
+        // Chỉ ghi scalar — không SaveChanges graph SkillResults (child mới dễ bị Modified → UPDATE 0 rows).
+        var now = DateTime.UtcNow;
+        var updated = await _db.CandidateAssessments
+            .Where(a => a.Id == assessment.Id)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(a => a.OverallReadiness, assessment.OverallReadiness)
+                .SetProperty(a => a.ReadinessStatus, assessment.ReadinessStatus)
+                .SetProperty(a => a.ExplanationJson, assessment.ExplanationJson)
+                .SetProperty(a => a.Status, assessment.Status)
+                .SetProperty(a => a.PracticeSessionId, assessment.PracticeSessionId)
+                .SetProperty(a => a.QuestionSetId, assessment.QuestionSetId)
+                .SetProperty(a => a.ScopeSkillsJson, assessment.ScopeSkillsJson)
+                .SetProperty(a => a.PersonalSetJobId, assessment.PersonalSetJobId)
+                .SetProperty(a => a.UpdatedAt, now));
+        if (updated == 0)
+            throw new InvalidOperationException($"Assessment {assessment.Id} không tồn tại để cập nhật.");
+        assessment.UpdatedAt = now;
     }
 
     public async Task SaveScoredAssessmentAsync(
@@ -213,69 +210,48 @@ public class CandidateAssessmentRepository : ICandidateAssessmentRepository
         IReadOnlyList<CandidateAssessmentSkillResult> newSkillResults)
     {
         DetachFrameworkGraph(assessment);
+        // Tách parent+child khỏi tracker TRƯỚC khi xóa/ghi. Nếu còn tracked, Clear()/fix-up
+        // đánh child Deleted rồi SaveChanges DELETE 0 rows → DbUpdateConcurrencyException.
+        DetachAssessmentSkillGraph(assessment.Id);
 
-        var tracked = await _db.CandidateAssessments
-            .Include(a => a.SkillResults)
-            .FirstOrDefaultAsync(a => a.Id == assessment.Id)
-            ?? throw new InvalidOperationException($"Assessment {assessment.Id} không tồn tại để chấm điểm.");
+        var now = DateTime.UtcNow;
+        var updated = await _db.CandidateAssessments
+            .Where(a => a.Id == assessment.Id)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(a => a.Status, assessment.Status)
+                .SetProperty(a => a.PracticeSessionId, assessment.PracticeSessionId)
+                .SetProperty(a => a.QuestionSetId, assessment.QuestionSetId)
+                .SetProperty(a => a.ScopeSkillsJson, assessment.ScopeSkillsJson)
+                .SetProperty(a => a.UpdatedAt, now));
+        if (updated == 0)
+            throw new InvalidOperationException($"Assessment {assessment.Id} không tồn tại để chấm điểm.");
 
-        // ExecuteDelete không ném concurrency khi 0 rows — an toàn hơn RemoveRange trên tracker.
         await _db.CandidateAssessmentSkillResults
-            .Where(r => r.AssessmentId == tracked.Id)
+            .Where(r => r.AssessmentId == assessment.Id)
             .ExecuteDeleteAsync();
 
-        foreach (var entry in _db.ChangeTracker.Entries<CandidateAssessmentSkillResult>()
-                     .Where(e => e.Entity.AssessmentId == tracked.Id)
-                     .ToList())
-            entry.State = EntityState.Detached;
-        tracked.SkillResults.Clear();
-
-        tracked.Status = assessment.Status;
-        tracked.PracticeSessionId = assessment.PracticeSessionId;
-        tracked.QuestionSetId = assessment.QuestionSetId;
-        tracked.ScopeSkillsJson = assessment.ScopeSkillsJson;
-        tracked.OverallReadiness = assessment.OverallReadiness;
-        tracked.ReadinessStatus = assessment.ReadinessStatus;
-        tracked.ExplanationJson = assessment.ExplanationJson;
-        tracked.UpdatedAt = DateTime.UtcNow;
-
-        foreach (var r in newSkillResults)
+        var inserted = newSkillResults.Select(r => new CandidateAssessmentSkillResult
         {
-            tracked.SkillResults.Add(new CandidateAssessmentSkillResult
-            {
-                AssessmentId = tracked.Id,
-                Skill = r.Skill,
-                SkillScore = r.SkillScore,
-                TargetScore = r.TargetScore,
-                Gap = r.Gap,
-                ImportanceWeight = r.ImportanceWeight,
-                DemonstratedDifficulty = r.DemonstratedDifficulty,
-                EvidenceJson = r.EvidenceJson
-            });
+            AssessmentId = assessment.Id,
+            Skill = r.Skill,
+            SkillScore = r.SkillScore,
+            TargetScore = r.TargetScore,
+            Gap = r.Gap,
+            ImportanceWeight = r.ImportanceWeight,
+            DemonstratedDifficulty = r.DemonstratedDifficulty,
+            EvidenceJson = string.IsNullOrWhiteSpace(r.EvidenceJson) ? "[]" : r.EvidenceJson
+        }).ToList();
+
+        if (inserted.Count > 0)
+        {
+            await _db.CandidateAssessmentSkillResults.AddRangeAsync(inserted);
+            await _db.SaveChangesAsync();
         }
 
-        await _db.SaveChangesAsync();
-
-        // Đồng bộ collection trên instance caller dùng tiếp (merge/roadmap).
-        if (!ReferenceEquals(assessment, tracked))
-        {
-            assessment.SkillResults.Clear();
-            foreach (var saved in tracked.SkillResults)
-                assessment.SkillResults.Add(saved);
-            assessment.Status = tracked.Status;
-            assessment.PracticeSessionId = tracked.PracticeSessionId;
-            assessment.QuestionSetId = tracked.QuestionSetId;
-            assessment.ScopeSkillsJson = tracked.ScopeSkillsJson;
-            assessment.OverallReadiness = tracked.OverallReadiness;
-            assessment.ReadinessStatus = tracked.ReadinessStatus;
-            assessment.ExplanationJson = tracked.ExplanationJson;
-            assessment.UpdatedAt = tracked.UpdatedAt;
-        }
-        else
-        {
-            // Cùng instance: SkillResults đã là bản mới sau Clear+Add.
-            assessment.UpdatedAt = tracked.UpdatedAt;
-        }
+        assessment.UpdatedAt = now;
+        assessment.SkillResults.Clear();
+        foreach (var row in inserted)
+            assessment.SkillResults.Add(row);
     }
 
     public async Task UpdateReadinessAsync(
@@ -310,29 +286,21 @@ public class CandidateAssessmentRepository : ICandidateAssessmentRepository
         }
     }
 
-    private void EnsureSkillResultsNotFalseModified(CandidateAssessment assessment)
+    private void DetachAssessmentSkillGraph(Guid assessmentId)
     {
-        foreach (var sr in assessment.SkillResults)
-        {
-            var srEntry = _db.Entry(sr);
-            if (srEntry.State is EntityState.Added or EntityState.Deleted or EntityState.Detached)
-                continue;
-            // Id mới (chưa từng persist) mà bị Modified → sửa thành Added.
-            if (sr.CreatedAt == default && srEntry.State == EntityState.Modified)
-                srEntry.State = EntityState.Added;
-        }
-    }
+        foreach (var entry in _db.ChangeTracker.Entries<CandidateAssessmentSkillResult>()
+                     .Where(e => e.Entity.AssessmentId == assessmentId
+                                 || e.Entity.Assessment?.Id == assessmentId)
+                     .ToList())
+            entry.State = EntityState.Detached;
 
-    private static void CopyAssessmentScalars(CandidateAssessment from, CandidateAssessment to)
-    {
-        to.OverallReadiness = from.OverallReadiness;
-        to.ReadinessStatus = from.ReadinessStatus;
-        to.ExplanationJson = from.ExplanationJson;
-        to.Status = from.Status;
-        to.PracticeSessionId = from.PracticeSessionId;
-        to.QuestionSetId = from.QuestionSetId;
-        to.ScopeSkillsJson = from.ScopeSkillsJson;
-        to.UpdatedAt = DateTime.UtcNow;
+        foreach (var entry in _db.ChangeTracker.Entries<CandidateAssessment>()
+                     .Where(e => e.Entity.Id == assessmentId)
+                     .ToList())
+        {
+            entry.Collection(a => a.SkillResults).CurrentValue = new List<CandidateAssessmentSkillResult>();
+            entry.State = EntityState.Detached;
+        }
     }
 
     public Task<CandidateAssessment?> GetByIdAsync(Guid id)
@@ -378,40 +346,85 @@ public class CandidateRoadmapRepository : ICandidateRoadmapRepository
 
     public async Task AddRangeAsync(IEnumerable<CandidateRoadmap> roadmaps)
     {
-        await _db.CandidateRoadmaps.AddRangeAsync(roadmaps);
+        var list = roadmaps.ToList();
+        foreach (var roadmap in list)
+        {
+            // Cắt navigation catalog/assessment — tránh SaveChanges đi theo graph đã ExecuteDelete.
+            roadmap.Framework = null;
+            roadmap.SourceAssessment = null;
+            foreach (var item in roadmap.Items)
+                item.RoadmapNode = null;
+        }
+        await _db.CandidateRoadmaps.AddRangeAsync(list);
         await _db.SaveChangesAsync();
     }
 
     public async Task UpdateAsync(CandidateRoadmap roadmap)
     {
-        roadmap.UpdatedAt = DateTime.UtcNow;
+        var now = DateTime.UtcNow;
+        roadmap.UpdatedAt = now;
+
+        foreach (var item in roadmap.Items)
+        {
+            if (item.RoadmapNode is not null)
+            {
+                var nodeEntry = _db.Entry(item.RoadmapNode);
+                if (nodeEntry.State == EntityState.Modified)
+                    nodeEntry.State = EntityState.Unchanged;
+            }
+        }
+
         var entry = _db.Entry(roadmap);
         if (entry.State == EntityState.Detached)
         {
-            // Không Update(graph): Items/RoadmapNode có thể bị mark Modified nhầm.
-            var tracked = await _db.CandidateRoadmaps.FirstOrDefaultAsync(r => r.Id == roadmap.Id);
-            if (tracked is null)
+            var updated = await _db.CandidateRoadmaps
+                .Where(r => r.Id == roadmap.Id)
+                .ExecuteUpdateAsync(s => s
+                    .SetProperty(r => r.IsActive, roadmap.IsActive)
+                    .SetProperty(r => r.CurrentScore, roadmap.CurrentScore)
+                    .SetProperty(r => r.TargetScore, roadmap.TargetScore)
+                    .SetProperty(r => r.Gap, roadmap.Gap)
+                    .SetProperty(r => r.PriorityScore, roadmap.PriorityScore)
+                    .SetProperty(r => r.Kind, roadmap.Kind)
+                    .SetProperty(r => r.Priority, roadmap.Priority)
+                    .SetProperty(r => r.Status, roadmap.Status)
+                    .SetProperty(r => r.SourceAssessmentId, roadmap.SourceAssessmentId)
+                    .SetProperty(r => r.ExplanationJson, roadmap.ExplanationJson)
+                    .SetProperty(r => r.UpdatedAt, now));
+            if (updated == 0)
                 throw new InvalidOperationException($"Roadmap {roadmap.Id} không tồn tại để cập nhật.");
 
-            tracked.IsActive = roadmap.IsActive;
-            tracked.CurrentScore = roadmap.CurrentScore;
-            tracked.TargetScore = roadmap.TargetScore;
-            tracked.Gap = roadmap.Gap;
-            tracked.PriorityScore = roadmap.PriorityScore;
-            tracked.Kind = roadmap.Kind;
-            tracked.Priority = roadmap.Priority;
-            tracked.Status = roadmap.Status;
-            tracked.SourceAssessmentId = roadmap.SourceAssessmentId;
-            tracked.ExplanationJson = roadmap.ExplanationJson;
-            tracked.UpdatedAt = DateTime.UtcNow;
-            await _db.SaveChangesAsync();
+            foreach (var item in roadmap.Items)
+            {
+                await _db.CandidateRoadmapItems
+                    .Where(i => i.Id == item.Id)
+                    .ExecuteUpdateAsync(s => s
+                        .SetProperty(i => i.Status, item.Status)
+                        .SetProperty(i => i.DrillSessionId, item.DrillSessionId)
+                        .SetProperty(i => i.DrillQuestionSetId, item.DrillQuestionSetId)
+                        .SetProperty(i => i.DrillScore, item.DrillScore)
+                        .SetProperty(i => i.UpdatedAt, now));
+            }
             return;
+        }
+
+        if (roadmap.Framework is not null)
+        {
+            var fwEntry = _db.Entry(roadmap.Framework);
+            if (fwEntry.State == EntityState.Modified)
+                fwEntry.State = EntityState.Unchanged;
+        }
+        if (roadmap.SourceAssessment is not null)
+        {
+            var aEntry = _db.Entry(roadmap.SourceAssessment);
+            if (aEntry.State == EntityState.Modified)
+                aEntry.State = EntityState.Unchanged;
         }
 
         await _db.SaveChangesAsync();
     }
 
-    /// <summary>Archive mọi roadmap active của user bằng ExecuteUpdate — tránh concurrency trên graph Items.</summary>
+    /// <summary>Archive IsActive=true bằng ExecuteUpdate rồi detach graph khỏi tracker.</summary>
     public async Task ArchiveActiveByCandidateAsync(Guid candidateUserId)
     {
         await _db.CandidateRoadmaps
@@ -419,6 +432,25 @@ public class CandidateRoadmapRepository : ICandidateRoadmapRepository
             .ExecuteUpdateAsync(s => s
                 .SetProperty(r => r.IsActive, false)
                 .SetProperty(r => r.UpdatedAt, DateTime.UtcNow));
+
+        var roadmapIds = _db.ChangeTracker.Entries<CandidateRoadmap>()
+            .Where(e => e.Entity.CandidateUserId == candidateUserId)
+            .Select(e => e.Entity.Id)
+            .ToHashSet();
+
+        foreach (var entry in _db.ChangeTracker.Entries<CandidateRoadmapItem>()
+                     .Where(e => roadmapIds.Contains(e.Entity.RoadmapId)
+                                 || (e.Entity.Roadmap != null && e.Entity.Roadmap.CandidateUserId == candidateUserId))
+                     .ToList())
+            entry.State = EntityState.Detached;
+
+        foreach (var entry in _db.ChangeTracker.Entries<CandidateRoadmap>()
+                     .Where(e => e.Entity.CandidateUserId == candidateUserId)
+                     .ToList())
+        {
+            entry.Collection(r => r.Items).CurrentValue = new List<CandidateRoadmapItem>();
+            entry.State = EntityState.Detached;
+        }
     }
 
     public async Task RestoreActiveAsync(IEnumerable<Guid> roadmapIds)

@@ -41,10 +41,23 @@ public class PracticeSessionRepository : IPracticeSessionRepository
             s.IsActive &&
             s.Status == PracticeSessionStatus.Completed);
 
-    public Task UpdateAsync(PracticeSession session)
+    public async Task UpdateAsync(PracticeSession session)
     {
-        _context.PracticeSessions.Update(session);
-        return _context.SaveChangesAsync();
+        // Chỉ mark session Modified — DbSet.Update(graph) kéo QuestionSet/answers theo
+        // và có thể UPDATE entity không tồn tại → DbUpdateConcurrencyException.
+        var entry = _context.Entry(session);
+        if (entry.State == EntityState.Detached)
+            _context.Attach(session);
+
+        _context.Entry(session).State = EntityState.Modified;
+        if (session.QuestionSet is not null)
+        {
+            var qsEntry = _context.Entry(session.QuestionSet);
+            if (qsEntry.State == EntityState.Modified)
+                qsEntry.State = EntityState.Unchanged;
+        }
+
+        await _context.SaveChangesAsync();
     }
 
     public async Task<int> AbandonInProgressByQuestionSetAsync(Guid questionSetId)

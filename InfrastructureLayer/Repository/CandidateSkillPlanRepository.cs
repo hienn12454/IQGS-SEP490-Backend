@@ -26,15 +26,29 @@ public class CandidateSkillPlanRepository : ICandidateSkillPlanRepository
 
     public async Task UpdateAsync(CandidateSkillPlan plan)
     {
-        // Luôn reload + thay items bằng ExecuteDelete rồi Add lại.
-        // Tránh DbUpdateConcurrencyException từ Items.Clear() / Update(graph).
+        // ExecuteUpdate/ExecuteDelete + INSERT — không Clear()/SaveChanges trên graph tracked.
+        // Clear() sau ExecuteDelete đánh child Deleted → DELETE 0 rows → DbUpdateConcurrencyException.
         var desired = plan.Items.Select(CloneItem).ToList();
+        DetachPlanGraph(plan);
 
-        var tracked = await _db.CandidateSkillPlans
-            .Include(p => p.Items)
-            .FirstOrDefaultAsync(p => p.Id == plan.Id);
+        var now = DateTime.UtcNow;
+        var updated = await _db.CandidateSkillPlans
+            .Where(p => p.Id == plan.Id)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(p => p.FrameworkId, plan.FrameworkId)
+                .SetProperty(p => p.ResolutionMode, plan.ResolutionMode)
+                .SetProperty(p => p.RoleFamilyKey, plan.RoleFamilyKey)
+                .SetProperty(p => p.ActiveBlueprintJson, plan.ActiveBlueprintJson)
+                .SetProperty(p => p.TargetLevel, plan.TargetLevel)
+                .SetProperty(p => p.SourceDiagnosticSetId, plan.SourceDiagnosticSetId)
+                .SetProperty(p => p.OverallReadiness, plan.OverallReadiness)
+                .SetProperty(p => p.ReadinessStatus, plan.ReadinessStatus)
+                .SetProperty(p => p.AchievedLevel, plan.AchievedLevel)
+                .SetProperty(p => p.LastAssessmentId, plan.LastAssessmentId)
+                .SetProperty(p => p.Status, plan.Status)
+                .SetProperty(p => p.UpdatedAt, now));
 
-        if (tracked is null)
+        if (updated == 0)
         {
             plan.Items = desired;
             await _db.CandidateSkillPlans.AddAsync(plan);
@@ -42,46 +56,40 @@ public class CandidateSkillPlanRepository : ICandidateSkillPlanRepository
             return;
         }
 
-        tracked.FrameworkId = plan.FrameworkId;
-        tracked.ResolutionMode = plan.ResolutionMode;
-        tracked.RoleFamilyKey = plan.RoleFamilyKey;
-        tracked.ActiveBlueprintJson = plan.ActiveBlueprintJson;
-        tracked.TargetLevel = plan.TargetLevel;
-        tracked.SourceDiagnosticSetId = plan.SourceDiagnosticSetId;
-        tracked.OverallReadiness = plan.OverallReadiness;
-        tracked.ReadinessStatus = plan.ReadinessStatus;
-        tracked.AchievedLevel = plan.AchievedLevel;
-        tracked.LastAssessmentId = plan.LastAssessmentId;
-        tracked.Status = plan.Status;
-        tracked.UpdatedAt = DateTime.UtcNow;
-
         await _db.CandidateSkillPlanItems
-            .Where(i => i.PlanId == tracked.Id)
+            .Where(i => i.PlanId == plan.Id)
             .ExecuteDeleteAsync();
 
-        foreach (var entry in _db.ChangeTracker.Entries<CandidateSkillPlanItem>()
-                     .Where(e => e.Entity.PlanId == tracked.Id)
-                     .ToList())
-            entry.State = EntityState.Detached;
-        tracked.Items.Clear();
-
         foreach (var item in desired)
+            item.PlanId = plan.Id;
+
+        if (desired.Count > 0)
         {
-            item.PlanId = tracked.Id;
-            tracked.Items.Add(item);
+            await _db.CandidateSkillPlanItems.AddRangeAsync(desired);
+            await _db.SaveChangesAsync();
         }
 
-        await _db.SaveChangesAsync();
+        plan.Items.Clear();
+        foreach (var item in desired)
+            plan.Items.Add(item);
+        plan.UpdatedAt = now;
+    }
 
-        if (!ReferenceEquals(plan, tracked))
+    private void DetachPlanGraph(CandidateSkillPlan plan)
+    {
+        foreach (var entry in _db.ChangeTracker.Entries<CandidateSkillPlanItem>()
+                     .Where(e => e.Entity.PlanId == plan.Id
+                                 || e.Entity.Plan?.Id == plan.Id
+                                 || ReferenceEquals(e.Entity.Plan, plan))
+                     .ToList())
+            entry.State = EntityState.Detached;
+
+        foreach (var entry in _db.ChangeTracker.Entries<CandidateSkillPlan>()
+                     .Where(e => e.Entity.Id == plan.Id)
+                     .ToList())
         {
-            plan.Items.Clear();
-            foreach (var saved in tracked.Items)
-                plan.Items.Add(saved);
-            plan.OverallReadiness = tracked.OverallReadiness;
-            plan.ReadinessStatus = tracked.ReadinessStatus;
-            plan.AchievedLevel = tracked.AchievedLevel;
-            plan.UpdatedAt = tracked.UpdatedAt;
+            entry.Collection(p => p.Items).CurrentValue = new List<CandidateSkillPlanItem>();
+            entry.State = EntityState.Detached;
         }
     }
 
