@@ -8,6 +8,8 @@ public class CandidateRoadmapItem : BaseEntity
     public int SortOrder { get; set; }
     public string Status { get; set; } = Constants.CandidateRoadmapItemStatus.Pending;
     public bool IsReassessmentGate { get; set; }
+    /// <summary>SCRUM-462: candidate chọn học topic này trong preview; gate luôn true.</summary>
+    public bool IsIncluded { get; set; } = true;
     public Guid? DrillSessionId { get; set; }
     public Guid? DrillQuestionSetId { get; set; }
     public double? DrillScore { get; set; }

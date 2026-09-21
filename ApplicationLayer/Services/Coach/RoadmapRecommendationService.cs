@@ -1,10 +1,13 @@
 using System.Text.Json;
 using ApplicationLayer.DTOs.Coach;
 using ApplicationLayer.DTOs.Rag;
+using ApplicationLayer.Helpers;
 using ApplicationLayer.Interfaces.Repositories;
 using ApplicationLayer.Interfaces.Services;
 using DomainLayer.Constants;
 using DomainLayer.Entities;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 
 namespace ApplicationLayer.Services.Coach;
 
@@ -38,15 +41,24 @@ public class RoadmapRecommendationService : IRoadmapRecommendationService
     private readonly ICandidateRoadmapRepository _roadmaps;
     private readonly IRoadmapNodeRepository _nodes;
     private readonly IRagService _rag;
+    private readonly IKnowledgeDocumentRepository _knowledgeDocs;
+    private readonly IConfiguration _config;
+    private readonly ILogger<RoadmapRecommendationService>? _logger;
 
     public RoadmapRecommendationService(
         ICandidateRoadmapRepository roadmaps,
         IRoadmapNodeRepository nodes,
-        IRagService rag)
+        IRagService rag,
+        IKnowledgeDocumentRepository knowledgeDocs,
+        IConfiguration config,
+        ILogger<RoadmapRecommendationService>? logger = null)
     {
         _roadmaps = roadmaps;
         _nodes = nodes;
         _rag = rag;
+        _knowledgeDocs = knowledgeDocs;
+        _config = config;
+        _logger = logger;
     }
 
     public async Task RebuildFromDiagnosticAsync(
@@ -57,17 +69,56 @@ public class RoadmapRecommendationService : IRoadmapRecommendationService
     {
         var blueprint = CompetencyBlueprintJson.Deserialize(assessment.BlueprintJson);
         var toAdd = new List<CandidateRoadmap>();
-        var sources = profile.Items.Where(i => i.CurrentScore is not null).ToList();
+        // SCRUM-461: Diagnostic chỉ dựng roadmap cho skill của LẦN ĐO này.
+        // Không lấy toàn bộ profile.Items (có thể còn skill Adaptive stack cũ: asp.net sau CV FE).
+        var scope = assessment.SkillResults
+            .Select(r => CompetencyScoringService.NormalizeSkill(r.Skill))
+            .Where(s => s.Length > 0)
+            .ToHashSet(StringComparer.Ordinal);
+
+        var sources = assessment.SkillResults.Select(r => new CandidateSkillPlanItem
+        {
+            Skill = r.Skill,
+            CurrentScore = r.SkillScore,
+            TargetScore = r.TargetScore,
+            ImportanceWeight = r.ImportanceWeight
+        }).ToList();
+
         if (sources.Count == 0)
         {
-            sources = assessment.SkillResults.Select(r => new CandidateSkillPlanItem
-            {
-                Skill = r.Skill,
-                CurrentScore = r.SkillScore,
-                TargetScore = r.TargetScore,
-                ImportanceWeight = r.ImportanceWeight
-            }).ToList();
+            sources = profile.Items
+                .Where(i => i.CurrentScore is not null
+                            && (scope.Count == 0 || scope.Contains(CompetencyScoringService.NormalizeSkill(i.Skill))))
+                .ToList();
         }
+        else if (profile.Items.Count > 0)
+        {
+            // Ưu tiên điểm/weight đã merge trên profile, nhưng chỉ skill nằm trong assessment.
+            sources = profile.Items
+                .Where(i => i.CurrentScore is not null
+                            && scope.Contains(CompetencyScoringService.NormalizeSkill(i.Skill)))
+                .Select(i => new CandidateSkillPlanItem
+                {
+                    Skill = i.Skill,
+                    CurrentScore = i.CurrentScore,
+                    TargetScore = i.TargetScore,
+                    ImportanceWeight = i.ImportanceWeight
+                })
+                .ToList();
+            if (sources.Count == 0)
+            {
+                sources = assessment.SkillResults.Select(r => new CandidateSkillPlanItem
+                {
+                    Skill = r.Skill,
+                    CurrentScore = r.SkillScore,
+                    TargetScore = r.TargetScore,
+                    ImportanceWeight = r.ImportanceWeight
+                }).ToList();
+            }
+        }
+
+        // SCRUM-462: skills trong snapshot = CV; coreSkills có thể pad framework ngoài CV.
+        var cvSkills = ParseCvSkillsFromSnapshot(assessment.ContextSnapshotJson);
 
         foreach (var item in sources)
         {
@@ -82,7 +133,7 @@ public class RoadmapRecommendationService : IRoadmapRecommendationService
             var current = item.CurrentScore ?? 0;
             var gap = Math.Round(target - current, 2);
             var created = await BuildRoadmapAsync(
-                candidateUserId, assessment, framework, blueprint, item.Skill, current, target, gap, weight, fwSkill, bpSkill);
+                candidateUserId, assessment, framework, blueprint, item.Skill, current, target, gap, weight, fwSkill, bpSkill, cvSkills);
             created.Framework = null;
             created.SourceAssessment = null;
             toAdd.Add(created);
@@ -138,8 +189,9 @@ public class RoadmapRecommendationService : IRoadmapRecommendationService
                 CompetencyScoringService.NormalizeSkill(r.Skill) == key);
             if (match is null)
             {
+                var cvSkills = ParseCvSkillsFromSnapshot(assessment.ContextSnapshotJson);
                 var created = await BuildRoadmapAsync(
-                    candidateUserId, assessment, framework, blueprint, result.Skill, current, target, gap, weight, fwSkill, bpSkill);
+                    candidateUserId, assessment, framework, blueprint, result.Skill, current, target, gap, weight, fwSkill, bpSkill, cvSkills);
                 await _roadmaps.AddRangeAsync(new[] { created });
                 continue;
             }
@@ -151,14 +203,111 @@ public class RoadmapRecommendationService : IRoadmapRecommendationService
             match.Kind = kind;
             match.Priority = LabelPriority(score);
             match.SourceAssessmentId = assessment.Id;
+            // Giữ provenance skillSource / outsideCvReason khi refresh điểm.
+            var (skillSource, outsideCvReason) = ParseSkillProvenanceFromJson(match.ExplanationJson);
             match.ExplanationJson = JsonSerializer.Serialize(new
             {
                 reason = kind == CandidateRoadmapKind.Gap
                     ? $"Gap {gap} điểm so với target {target}. Ưu tiên luyện topic yếu rồi Re-assessment."
-                    : $"Đã đạt target {target}. Có thể luyện nâng cao, không bắt buộc."
+                    : $"Đã đạt target {target}. Có thể luyện nâng cao, không bắt buộc.",
+                kbSource = ParseKbSourceFromJson(match.ExplanationJson),
+                skillSource,
+                outsideCvReason
             }, JsonOpts);
             await _roadmaps.UpdateAsync(match);
         }
+    }
+
+    private static string ParseKbSourceFromJson(string? explanationJson)
+    {
+        if (string.IsNullOrWhiteSpace(explanationJson))
+            return CoachRoadmapKnowledgeFolder.KbSourceInferred;
+        try
+        {
+            using var doc = JsonDocument.Parse(explanationJson);
+            if (doc.RootElement.TryGetProperty("kbSource", out var ks))
+            {
+                var v = ks.GetString()?.Trim().ToLowerInvariant();
+                if (v == CoachRoadmapKnowledgeFolder.KbSourceSystem)
+                    return CoachRoadmapKnowledgeFolder.KbSourceSystem;
+            }
+        }
+        catch (JsonException)
+        {
+            /* inferred */
+        }
+        return CoachRoadmapKnowledgeFolder.KbSourceInferred;
+    }
+
+    /// <summary>SCRUM-462: đọc skillSource/outsideCvReason đã lưu — mặc định cv.</summary>
+    public static (string SkillSource, string? OutsideCvReason) ParseSkillProvenanceFromJson(string? explanationJson)
+    {
+        if (string.IsNullOrWhiteSpace(explanationJson))
+            return ("cv", null);
+        try
+        {
+            using var doc = JsonDocument.Parse(explanationJson);
+            var root = doc.RootElement;
+            var source = "cv";
+            if (root.TryGetProperty("skillSource", out var ss))
+            {
+                var v = ss.GetString()?.Trim();
+                if (string.Equals(v, "outsideCv", StringComparison.OrdinalIgnoreCase))
+                    source = "outsideCv";
+            }
+            string? reason = null;
+            if (root.TryGetProperty("outsideCvReason", out var ocr) && ocr.ValueKind == JsonValueKind.String)
+                reason = ocr.GetString();
+            return (source, reason);
+        }
+        catch (JsonException)
+        {
+            return ("cv", null);
+        }
+    }
+
+    /// <summary>SCRUM-462: mảng skills trong ContextSnapshot = UnionCvSkills lúc StartDiagnostic.</summary>
+    public static HashSet<string> ParseCvSkillsFromSnapshot(string? contextSnapshotJson)
+    {
+        var set = new HashSet<string>(StringComparer.Ordinal);
+        if (string.IsNullOrWhiteSpace(contextSnapshotJson)) return set;
+        try
+        {
+            using var doc = JsonDocument.Parse(contextSnapshotJson);
+            if (!doc.RootElement.TryGetProperty("skills", out var arr) || arr.ValueKind != JsonValueKind.Array)
+                return set;
+            foreach (var x in arr.EnumerateArray())
+            {
+                var s = x.GetString();
+                if (string.IsNullOrWhiteSpace(s)) continue;
+                var n = CompetencyScoringService.NormalizeSkill(s);
+                if (n.Length > 0) set.Add(n);
+            }
+        }
+        catch (JsonException)
+        {
+            /* rỗng → coi mọi skill là từ CV (an toàn Adaptive) */
+        }
+        return set;
+    }
+
+    public static bool IsSkillFromCv(string skill, HashSet<string> cvNormalized)
+    {
+        if (cvNormalized.Count == 0) return true;
+        return cvNormalized.Contains(CompetencyScoringService.NormalizeSkill(skill));
+    }
+
+    public static string BuildOutsideCvReason(
+        string skill,
+        string? role,
+        string? level,
+        double importanceWeight,
+        double targetScore)
+    {
+        var roleText = string.IsNullOrWhiteSpace(role) ? "mục tiêu" : role.Trim();
+        var levelText = string.IsNullOrWhiteSpace(level) ? "Junior" : level.Trim();
+        return
+            $"Framework {levelText} cho role {roleText} yêu cầu skill \"{skill}\" dù CV chưa nêu — importance {importanceWeight:0.##}, target {targetScore:0.#}.";
     }
 
     /// <summary>PriorityScore = max(Gap, 0) × ImportanceWeight. Advanced (gap ≤ 0) có score 0 nhưng không bị khóa.</summary>
@@ -183,7 +332,8 @@ public class RoadmapRecommendationService : IRoadmapRecommendationService
         double gap,
         double weight,
         CompetencyFrameworkSkill? fwSkill,
-        CompetencyItem? bpSkill)
+        CompetencyItem? bpSkill,
+        HashSet<string> cvNormalized)
     {
         var kind = gap > 0 ? CandidateRoadmapKind.Gap : CandidateRoadmapKind.Advanced;
         var score = ComputePriorityScore(gap, weight);
@@ -191,12 +341,15 @@ public class RoadmapRecommendationService : IRoadmapRecommendationService
 
         List<TopicPick> items;
         string? explanation;
+        var kbSource = CoachRoadmapKnowledgeFolder.KbSourceInferred;
         if (adaptive)
         {
             var personalized = await PersonalizeAdaptiveTopicsAsync(
                 assessment, blueprint, skill, current, target, gap, bpSkill);
             items = personalized.Items;
             explanation = personalized.Explanation;
+            // Adaptive không retrieve folder coach-roadmap — coi là suy luận trừ khi sau này mở rộng.
+            kbSource = CoachRoadmapKnowledgeFolder.KbSourceInferred;
         }
         else
         {
@@ -210,11 +363,24 @@ public class RoadmapRecommendationService : IRoadmapRecommendationService
             var topics = await PersonalizeTopicsAsync(framework, skill, current, target, gap, nodes, fwSkill);
             items = topics.Items;
             explanation = topics.Explanation;
+            kbSource = topics.KbSource;
         }
 
         explanation ??= kind == CandidateRoadmapKind.Gap
             ? $"Gap {gap} điểm so với target {target}. Ưu tiên luyện topic yếu rồi Re-assessment."
             : $"Đã đạt target {target}. Có thể luyện nâng cao, không bắt buộc.";
+
+        // Adaptive / khớp CV → cv; pad framework không có trên CV → outsideCv + lý do.
+        var fromCv = adaptive || IsSkillFromCv(skill, cvNormalized);
+        var skillSource = fromCv ? "cv" : "outsideCv";
+        string? outsideCvReason = fromCv
+            ? null
+            : BuildOutsideCvReason(
+                skill,
+                framework?.DisplayRole ?? blueprint?.TargetRole ?? assessment.RoleFamilyKey,
+                framework?.TargetLevel ?? blueprint?.TargetLevel,
+                weight,
+                target);
 
         var roadmap = new CandidateRoadmap
         {
@@ -230,7 +396,14 @@ public class RoadmapRecommendationService : IRoadmapRecommendationService
             Kind = kind,
             Priority = LabelPriority(score),
             Status = CandidateRoadmapStatus.Suggested,
-            ExplanationJson = JsonSerializer.Serialize(new { reason = explanation }, JsonOpts)
+            AcceptedAt = null,
+            ExplanationJson = JsonSerializer.Serialize(new
+            {
+                reason = explanation,
+                kbSource,
+                skillSource,
+                outsideCvReason
+            }, JsonOpts)
         };
 
         var order = 1;
@@ -244,6 +417,7 @@ public class RoadmapRecommendationService : IRoadmapRecommendationService
                 Subtopic = TruncateNullable(t.Subtopic, 300),
                 SortOrder = order++,
                 Status = CandidateRoadmapItemStatus.Pending,
+                IsIncluded = true,
                 SourceUrl = TruncateNullable(t.SourceUrl, 1000),
                 SourceTitle = TruncateNullable(t.SourceTitle, 500),
                 RoadmapNodeId = t.NodeId
@@ -256,7 +430,8 @@ public class RoadmapRecommendationService : IRoadmapRecommendationService
             {
                 Topic = Truncate($"{skill} fundamentals", 300),
                 SortOrder = order++,
-                Status = CandidateRoadmapItemStatus.Pending
+                Status = CandidateRoadmapItemStatus.Pending,
+                IsIncluded = true
             });
         }
 
@@ -265,7 +440,8 @@ public class RoadmapRecommendationService : IRoadmapRecommendationService
             Topic = "Re-assessment",
             SortOrder = order,
             Status = CandidateRoadmapItemStatus.Pending,
-            IsReassessmentGate = true
+            IsReassessmentGate = true,
+            IsIncluded = true
         });
         return roadmap;
     }
@@ -303,8 +479,9 @@ public class RoadmapRecommendationService : IRoadmapRecommendationService
             });
             if (ctx.Success)
             {
-                chunks = ctx.Chunks;
-                foreach (var c in ctx.Chunks)
+                // SCRUM-461: chỉ giữ chunk overlap skill đang luyện — không nuốt section .NET vào allowed.
+                chunks = CoachCvSkillGate.FilterChunks(ctx.Chunks, [skill]);
+                foreach (var c in chunks)
                 {
                     if (!string.IsNullOrWhiteSpace(c.Section)) allowed.Add(c.Section.Trim());
                     if (!string.IsNullOrWhiteSpace(c.SourceTitle)) allowed.Add(c.SourceTitle.Trim());
@@ -313,7 +490,7 @@ public class RoadmapRecommendationService : IRoadmapRecommendationService
         }
         catch
         {
-            // Adaptive roadmap: không giả FRAMEWORK; fallback topic từ blueprint đã có evidence.
+            // Adaptive roadmap: không giả FRAMEWORK; fallback topic từ blueprint / inferred.
         }
 
         try
@@ -331,8 +508,10 @@ public class RoadmapRecommendationService : IRoadmapRecommendationService
             });
             if (rec.Success && rec.Topics.Count > 0)
             {
+                // Có chunk system: bắt buộc topic ∈ allowed. Inferred (chunks rỗng): chấp nhận topic LLM.
+                var requireAllowed = chunks.Count > 0 && allowed.Count > 0;
                 var picked = rec.Topics
-                    .Where(t => allowed.Count == 0 || allowed.Contains(t.Topic))
+                    .Where(t => !requireAllowed || allowed.Contains(t.Topic))
                     .Select(t => new TopicPick(t.Topic, t.Subtopic, null, t.SourceUrl, t.SourceTitle))
                     .ToList();
                 if (picked.Count > 0)
@@ -350,7 +529,7 @@ public class RoadmapRecommendationService : IRoadmapRecommendationService
         return (fallbackNames.Select(n => new TopicPick(n, null, null, null, null)).ToList(), null);
     }
 
-    private async Task<(List<TopicPick> Items, string? Explanation)> PersonalizeTopicsAsync(
+    private async Task<(List<TopicPick> Items, string? Explanation, string KbSource)> PersonalizeTopicsAsync(
         CompetencyFramework? framework,
         string skill,
         double current,
@@ -360,8 +539,21 @@ public class RoadmapRecommendationService : IRoadmapRecommendationService
         CompetencyFrameworkSkill? fwSkill)
     {
         var fallback = FallbackTopics(nodes, fwSkill, skill);
+        var kbFolder = CoachRoadmapKnowledgeFolder.Resolve(_config);
+        var coachDocs = await _knowledgeDocs.ListSystemDocumentIdsByFolderAsync(kbFolder);
+        var kbSource = coachDocs.Count > 0
+            ? CoachRoadmapKnowledgeFolder.KbSourceSystem
+            : CoachRoadmapKnowledgeFolder.KbSourceInferred;
+
+        if (coachDocs.Count == 0)
+        {
+            _logger?.LogWarning(
+                "EMPTY_RETRIEVAL: chưa có tài liệu SYSTEM trong folder \"{Folder}\" — roadmap dùng node/framework (suy luận).",
+                kbFolder);
+        }
+
         if (framework is null || nodes.Count == 0)
-            return (fallback, null);
+            return (fallback, null, kbSource);
 
         try
         {
@@ -369,6 +561,8 @@ public class RoadmapRecommendationService : IRoadmapRecommendationService
             {
                 TargetRole = framework.DisplayRole,
                 TargetLevel = framework.TargetLevel,
+                RoleKey = framework.RoleKey,
+                DocumentIds = coachDocs.Count > 0 ? coachDocs.ToList() : new List<Guid>(),
                 WeakSkills =
                 [
                     new RagRoadmapWeakSkillDto
@@ -401,7 +595,7 @@ public class RoadmapRecommendationService : IRoadmapRecommendationService
                     picked.Add(new TopicPick(node.Topic, node.Subtopic, node.Id, node.SourceUrl, node.SourceTitle));
                 }
                 if (picked.Count > 0)
-                    return (picked, rec.Explanation);
+                    return (picked, rec.Explanation, kbSource);
             }
         }
         catch
@@ -409,7 +603,7 @@ public class RoadmapRecommendationService : IRoadmapRecommendationService
             // LLM fail -> deterministic fallback, không chặn roadmap.
         }
 
-        return (fallback, null);
+        return (fallback, null, kbSource);
     }
 
     public static List<TopicPick> FallbackTopics(

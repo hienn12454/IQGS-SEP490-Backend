@@ -1,10 +1,10 @@
 using ApplicationLayer.DTOs.Coach;
 using ApplicationLayer.DTOs.Rag;
+using ApplicationLayer.Helpers;
 using ApplicationLayer.Interfaces.Services;
 using ApplicationLayer.Services.Coach;
 using DomainLayer.Constants;
 using DomainLayer.Entities;
-using DomainLayer.Exceptions;
 using Moq;
 using Xunit;
 
@@ -67,23 +67,122 @@ public sealed class AdaptiveCompetencyUnitTests
         Assert.Equal(0, gaps[1].PriorityScore);
     }
 
+    /// <summary>SCRUM-461: empty retrieve vẫn gọi generate (inferred), không giả FRAMEWORK.</summary>
     [Fact]
-    public async Task AdaptiveBlueprintBuilder_EmptyRetrieval_DoesNotFallbackFramework()
+    public async Task AdaptiveBlueprintBuilder_EmptyRetrieval_InfersFromCv_DoesNotFallbackFramework()
     {
         var rag = new Mock<IRagService>();
         rag.Setup(r => r.RetrieveCompetencyContextAsync(It.IsAny<RagCompetencyContextRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new RagCompetencyContextResult { Success = false, Error = "EMPTY_RETRIEVAL" });
+        rag.Setup(r => r.GenerateAdaptiveCompetencyBlueprintAsync(
+                It.IsAny<RagAdaptiveBlueprintRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new RagAdaptiveBlueprintResult { Success = false, Error = "LLM down" });
 
         var builder = new AdaptiveBlueprintBuilder(rag.Object);
         var resolution = new CompetencyResolution(
             CompetencyResolutionMode.Adaptive, "backend", null, null, "Backend", "Junior",
             "backend", "Backend Developer", ["Go"], 0.88, "adaptive", null, false, ["Backend Developer"]);
 
-        var ex = await Assert.ThrowsAsync<BadRequestException>(() =>
-            builder.BuildAsync(resolution, ["Go"], new CompetencyScoringPolicy { OverallReadyThreshold = 70 }));
-        Assert.Contains("ADAPTIVE_BLUEPRINT_GENERATION_FAILED", ex.Message);
+        var bp = await builder.BuildAsync(resolution, ["Go"], new CompetencyScoringPolicy { OverallReadyThreshold = 70 });
+
+        Assert.Equal(CompetencyResolutionMode.Adaptive, bp.SourceMode);
+        Assert.Null(bp.FrameworkId);
+        Assert.Contains(bp.Competencies, c => c.SkillName == "Go");
+        Assert.All(bp.Competencies, c => Assert.Empty(c.Citations));
         rag.Verify(r => r.GenerateAdaptiveCompetencyBlueprintAsync(
-            It.IsAny<RagAdaptiveBlueprintRequest>(), It.IsAny<CancellationToken>()), Times.Never);
+            It.Is<RagAdaptiveBlueprintRequest>(req => req.Chunks.Count == 0 && req.CvSkills.Contains("Go")),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task AdaptiveBlueprintBuilder_FrontendCv_DropsDotnetChunks_KeepsOnlyCvSkills()
+    {
+        var rag = new Mock<IRagService>();
+        rag.Setup(r => r.RetrieveCompetencyContextAsync(It.IsAny<RagCompetencyContextRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new RagCompetencyContextResult
+            {
+                Success = true,
+                Chunks =
+                [
+                    new RagCompetencyChunkDto
+                    {
+                        Content = "ASP.NET Core middleware and DI.",
+                        SourceTitle = "aspnet-roadmap",
+                        Section = "DI"
+                    },
+                    new RagCompetencyChunkDto
+                    {
+                        Content = "LINQ Identity JWT endpoints.",
+                        SourceTitle = "dotnet",
+                        Section = "jwt"
+                    }
+                ]
+            });
+        rag.Setup(r => r.GenerateAdaptiveCompetencyBlueprintAsync(
+                It.IsAny<RagAdaptiveBlueprintRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new RagAdaptiveBlueprintResult
+            {
+                Success = true,
+                Competencies =
+                [
+                    new RagAdaptiveCompetencyDto
+                    {
+                        SkillName = "ASP.NET Core",
+                        Weight = 0.5,
+                        Topics = ["DI"],
+                        Category = "ROLE_CORE"
+                    },
+                    new RagAdaptiveCompetencyDto
+                    {
+                        SkillName = "React",
+                        Weight = 0.3,
+                        Topics = ["hooks"],
+                        Category = "ROLE_CORE"
+                    },
+                    new RagAdaptiveCompetencyDto
+                    {
+                        SkillName = "TypeScript",
+                        Weight = 0.2,
+                        Topics = ["types"],
+                        Category = "FUNDAMENTAL"
+                    }
+                ]
+            });
+
+        var builder = new AdaptiveBlueprintBuilder(rag.Object);
+        var resolution = new CompetencyResolution(
+            CompetencyResolutionMode.Adaptive, "frontend", null, null, "Frontend Developer", "Junior",
+            "frontend", "Frontend Developer", ["React", "TypeScript"], 0.88, "adaptive", null, false,
+            ["Frontend Developer"]);
+
+        var bp = await builder.BuildAsync(
+            resolution,
+            ["React", "TypeScript"],
+            new CompetencyScoringPolicy { OverallReadyThreshold = 70 });
+
+        Assert.DoesNotContain(bp.Competencies, c =>
+            c.SkillName.Contains("ASP.NET", StringComparison.OrdinalIgnoreCase));
+        Assert.Equal(2, bp.Competencies.Count);
+        Assert.Contains(bp.Competencies, c => c.SkillName == "React");
+        Assert.Contains(bp.Competencies, c => c.SkillName == "TypeScript");
+        Assert.InRange(bp.Competencies.Sum(c => c.Weight), 0.99, 1.01);
+
+        rag.Verify(r => r.GenerateAdaptiveCompetencyBlueprintAsync(
+            It.Is<RagAdaptiveBlueprintRequest>(req => req.Chunks.Count == 0),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public void CoachCvSkillGate_DropsDotnet_KeepsReact()
+    {
+        var chunks = new List<RagCompetencyChunkDto>
+        {
+            new() { Content = "ASP.NET Core Web API", SourceTitle = "net", Section = "DI" },
+            new() { Content = "React hooks useState", SourceTitle = "fe", Section = "Hooks" }
+        };
+        var kept = CoachCvSkillGate.FilterChunks(chunks, ["React", "TypeScript"]);
+        Assert.Single(kept);
+        Assert.Contains("React", kept[0].Content);
     }
 
     [Fact]

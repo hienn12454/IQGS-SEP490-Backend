@@ -88,8 +88,9 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
             // Phiên dở dang đã hết giờ và vừa được tự động nộp — bắt đầu phiên mới bên dưới.
         }
 
-        // SCRUM-446: snapshot luật anti-cheat lúc start — đổi setting Admin không ảnh hưởng phiên đang chạy.
+        // SCRUM-446 + SCRUM-464: snapshot anti-cheat = Admin ∧ HR ∧ bộ Tuyển.
         var platformSettings = await _platformSettingsRepository.GetAsync();
+        var (isHiring, hrAntiCheat) = await _sessionRepository.GetHiringFlagsAsync(questionSetId);
 
         var session = new PracticeSession
         {
@@ -97,9 +98,11 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
             QuestionSetId = questionSetId,
             Status = PracticeSessionStatus.InProgress,
             StartedAt = DateTime.UtcNow,
-            AntiCheatEnabled = platformSettings.AntiCheatEnabled,
+            AntiCheatEnabled = HiringAssessmentRules.ShouldEnableAntiCheat(
+                isHiring, hrAntiCheat, platformSettings.AntiCheatEnabled),
             AntiCheatMaxTabLeaves = PracticeAntiCheatRules.ClampMaxTabLeaves(platformSettings.AntiCheatMaxTabLeaves),
-            TabLeaveCount = 0
+            TabLeaveCount = 0,
+            IsOfficialTest = false
         };
         await _sessionRepository.AddAsync(session);
 
@@ -555,6 +558,16 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
     /// </summary>
     private async Task<List<XpRewardDto>> FinalizeCompletedSessionAsync(PracticeSession session)
     {
+        // SCRUM-464: lần complete đầu trên bộ Tuyển → đánh dấu bài test chính thức cho lịch sử HR.
+        if (!session.IsOfficialTest)
+        {
+            var (isHiring, _) = await _sessionRepository.GetHiringFlagsAsync(session.QuestionSetId);
+            var alreadyOfficial = await _sessionRepository.HasOfficialTestAsync(
+                session.CandidateUserId, session.QuestionSetId);
+            if (HiringAssessmentRules.IsFirstOfficialComplete(isHiring, alreadyOfficial))
+                session.IsOfficialTest = true;
+        }
+
         var xpRewards = await EvaluateAnswersForSessionAsync(session);
 
         var canDetailed = await _subscriptionGate.CanDetailedAiFeedbackAsync(session.CandidateUserId);

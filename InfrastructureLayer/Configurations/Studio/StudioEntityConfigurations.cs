@@ -34,6 +34,8 @@ public sealed class JobDescriptionConfiguration : IEntityTypeConfiguration<JobDe
         builder.ToTable("tbl_studio_job_descriptions");
         builder.Property(x => x.Content).IsRequired();
         builder.Property(x => x.SourceType).HasConversion<string>().HasMaxLength(30);
+        builder.Property(x => x.OriginalFileName).HasMaxLength(260);
+        builder.Property(x => x.BlobPath).HasMaxLength(1000);
         builder.Property(x => x.DetectedSkillsJson).HasColumnType("jsonb");
         builder.Property(x => x.ExtractedInformationJson).HasColumnType("jsonb");
         builder.HasIndex(x => x.ProjectId).IsUnique();
@@ -217,6 +219,9 @@ public sealed class StudioSettingsConfiguration : IEntityTypeConfiguration<Studi
         builder.Property(x => x.QuestionDistributionJson).HasColumnType("jsonb");
         builder.Property(x => x.QuestionStylesJson).HasColumnType("jsonb");
         builder.Property(x => x.AiRecommendationJson).HasColumnType("jsonb");
+        // SCRUM-464: Practice vs Tuyển — chọn sau khi gen xong
+        builder.Property(x => x.IsHiringAssessment).IsRequired().HasDefaultValue(false);
+        builder.Property(x => x.HrAntiCheatEnabled).IsRequired().HasDefaultValue(false);
         builder.HasIndex(x => x.ProjectId).IsUnique();
 
         builder.HasOne(x => x.Project)

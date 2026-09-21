@@ -208,6 +208,17 @@ public class QuestionSetService : IQuestionSetService
 
         var (companyName, companyLogo) = await _hrCompanyInfoService.GetByHrUserIdAsync(ownerId);
 
+        string? jdFileUrl = null;
+        if (!string.IsNullOrWhiteSpace(questionSet.JdBlobPath))
+        {
+            try
+            {
+                jdFileUrl = await _blobStorage.GenerateReadSasUrlAsync(
+                    questionSet.JdBlobPath.Trim(), TimeSpan.FromHours(2));
+            }
+            catch { /* ignore */ }
+        }
+
         return new QuestionSetDetailResponseDto
         {
             QuestionSetId = questionSet.Id,
@@ -220,10 +231,22 @@ public class QuestionSetService : IQuestionSetService
             JobDescription = questionSet.JobDescription,
             JdSourceType = string.IsNullOrWhiteSpace(questionSet.JdSourceType) ? "PastedText" : questionSet.JdSourceType,
             JdOriginalFileName = questionSet.JdOriginalFileName,
+            JdBlobPath = questionSet.JdBlobPath,
+            JdFileUrl = jdFileUrl,
+            PublicJobDescription = questionSet.PublicJobDescription,
+            JobLocation = questionSet.JobLocation,
+            WorkplaceType = questionSet.WorkplaceType,
+            SalaryMin = questionSet.SalaryMin,
+            SalaryMax = questionSet.SalaryMax,
+            SalaryNegotiable = questionSet.SalaryNegotiable,
+            JobExpertise = questionSet.JobExpertise,
+            JobDomain = questionSet.JobDomain,
             HrNote = questionSet.HrNote,
             TimeLimitMinutes = questionSet.TimeLimitMinutes,
             AutoRecommendEnabled = questionSet.AutoRecommendEnabled,
             RecommendationMinScore = questionSet.RecommendationMinScore,
+            IsHiringAssessment = questionSet.IsHiringAssessment,
+            HrAntiCheatEnabled = questionSet.HrAntiCheatEnabled,
             Plan = planObj,
             GeneratedAt = questionSet.GeneratedAt,
             SavedAt = questionSet.CreatedAt,
@@ -392,6 +415,35 @@ public class QuestionSetService : IQuestionSetService
         if (request?.RecommendationMinScore is double minScore)
             questionSet.RecommendationMinScore = RecommendationService.ResolveIntakeMinScore(minScore);
 
+        // SCRUM-464: Practice vs Tuyển — null = giữ giá trị đã Save từ review
+        if (request?.IsHiringAssessment is bool isHiring)
+            questionSet.IsHiringAssessment = isHiring;
+        if (request?.HrAntiCheatEnabled is bool hrAc)
+            questionSet.HrAntiCheatEnabled = hrAc;
+        if (!questionSet.IsHiringAssessment)
+            questionSet.HrAntiCheatEnabled = false;
+
+        if (questionSet.IsHiringAssessment
+            && (string.IsNullOrWhiteSpace(questionSet.JobDescription)
+                || questionSet.JobDescription.Trim().StartsWith("(Studio)", StringComparison.OrdinalIgnoreCase)))
+            throw new BadRequestException("Bộ Tuyển cần Job Description hợp lệ trước khi publish.");
+
+        if (HiringJdExposureHelper.RequiresPublicJobDescription(
+                questionSet.IsHiringAssessment, questionSet.PublicJobDescription))
+            throw new BadRequestException("Bộ Tuyển cần bản JD ngắn (PublicJobDescription) trước khi publish.");
+
+        // SCRUM-468: tin tuyển cần location / expertise / domain / lương (hoặc thỏa thuận)
+        if (HiringPostingHelper.RequiresHiringPostingFields(
+                questionSet.IsHiringAssessment,
+                questionSet.JobLocation,
+                questionSet.JobExpertise,
+                questionSet.JobDomain,
+                questionSet.SalaryMin,
+                questionSet.SalaryMax,
+                questionSet.SalaryNegotiable))
+            throw new BadRequestException(
+                "Bộ Tuyển cần địa điểm, chuyên môn, lĩnh vực và lương (hoặc thỏa thuận) trước khi publish.");
+
         var minQuestionsToPublish = (await _platformSettingsRepository.GetAsync()).MinQuestionsToPublish;
         var activeQuestions = questionSet.Questions.Where(q => q.IsActive).ToList();
         if (activeQuestions.Count < minQuestionsToPublish)
@@ -461,6 +513,115 @@ public class QuestionSetService : IQuestionSetService
         };
     }
 
+    /// <summary>SCRUM-464: cho phép sửa khi PUBLISHED — chỉ ảnh hưởng phiên practice mới.</summary>
+    public async Task<SetHiringAssessmentResponseDto> SetHiringAssessmentAsync(
+        Guid questionSetId, Guid ownerId, SetHiringAssessmentRequestDto dto)
+    {
+        var questionSet = await EnsureOwnedQuestionSetAsync(questionSetId, ownerId);
+
+        if (HiringJdExposureHelper.RequiresPublicJobDescription(
+                dto.IsHiringAssessment, questionSet.PublicJobDescription))
+            throw new BadRequestException("Bật Tuyển cần bản JD ngắn (PublicJobDescription) trước.");
+
+        if (HiringPostingHelper.RequiresHiringPostingFields(
+                dto.IsHiringAssessment,
+                questionSet.JobLocation,
+                questionSet.JobExpertise,
+                questionSet.JobDomain,
+                questionSet.SalaryMin,
+                questionSet.SalaryMax,
+                questionSet.SalaryNegotiable))
+            throw new BadRequestException(
+                "Bật Tuyển cần địa điểm, chuyên môn, lĩnh vực và lương (hoặc thỏa thuận) trước.");
+
+        if (dto.IsHiringAssessment
+            && (string.IsNullOrWhiteSpace(questionSet.JobDescription)
+                || questionSet.JobDescription.Trim().StartsWith("(Studio)", StringComparison.OrdinalIgnoreCase)))
+            throw new BadRequestException("Bật Tuyển cần Job Description gốc hợp lệ.");
+
+        questionSet.IsHiringAssessment = dto.IsHiringAssessment;
+        questionSet.HrAntiCheatEnabled = dto.IsHiringAssessment && dto.HrAntiCheatEnabled;
+        questionSet.UpdatedAt = DateTime.UtcNow;
+        await _questionSetRepository.UpdateAsync(questionSet);
+
+        return new SetHiringAssessmentResponseDto
+        {
+            QuestionSetId = questionSet.Id,
+            IsHiringAssessment = questionSet.IsHiringAssessment,
+            HrAntiCheatEnabled = questionSet.HrAntiCheatEnabled
+        };
+    }
+
+    /// <summary>SCRUM-465: bản JD ngắn cho candidate.</summary>
+    public async Task<SetPublicJobDescriptionResponseDto> SetPublicJobDescriptionAsync(
+        Guid questionSetId, Guid ownerId, SetPublicJobDescriptionRequestDto dto)
+    {
+        var questionSet = await EnsureOwnedQuestionSetAsync(questionSetId, ownerId);
+        var text = (dto.PublicJobDescription ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(text))
+            throw new BadRequestException("PublicJobDescription không được để trống.");
+        if (text.Length > 20000)
+            throw new BadRequestException("PublicJobDescription tối đa 20000 ký tự.");
+
+        questionSet.PublicJobDescription = text;
+        questionSet.UpdatedAt = DateTime.UtcNow;
+        await _questionSetRepository.UpdateAsync(questionSet);
+
+        return new SetPublicJobDescriptionResponseDto
+        {
+            QuestionSetId = questionSet.Id,
+            PublicJobDescription = questionSet.PublicJobDescription ?? text,
+            CharacterCount = text.Length
+        };
+    }
+
+    /// <summary>SCRUM-468: metadata tin tuyển cho candidate (cho phép sửa khi PUBLISHED).</summary>
+    public async Task<SetHiringPostingResponseDto> SetHiringPostingAsync(
+        Guid questionSetId, Guid ownerId, SetHiringPostingRequestDto dto)
+    {
+        var questionSet = await EnsureOwnedQuestionSetAsync(questionSetId, ownerId);
+
+        var location = HiringPostingHelper.NormalizeOptionalText(dto.JobLocation, 200)
+            ?? throw new BadRequestException("JobLocation không được để trống.");
+        var expertise = HiringPostingHelper.NormalizeOptionalText(dto.JobExpertise, 120)
+            ?? throw new BadRequestException("JobExpertise không được để trống.");
+        var domain = HiringPostingHelper.NormalizeOptionalText(dto.JobDomain, 120)
+            ?? throw new BadRequestException("JobDomain không được để trống.");
+
+        string? workplace = null;
+        if (!string.IsNullOrWhiteSpace(dto.WorkplaceType))
+        {
+            workplace = HiringPostingHelper.NormalizeWorkplaceType(dto.WorkplaceType)
+                ?? throw new BadRequestException("WorkplaceType phải là AtOffice, Hybrid hoặc Remote.");
+        }
+
+        if (!HiringPostingHelper.HasValidSalary(dto.SalaryMin, dto.SalaryMax, dto.SalaryNegotiable))
+            throw new BadRequestException(
+                "Lương không hợp lệ — bật thỏa thuận hoặc nhập min/max dương (max ≥ min).");
+
+        questionSet.JobLocation = location;
+        questionSet.WorkplaceType = workplace;
+        questionSet.SalaryMin = dto.SalaryNegotiable ? null : dto.SalaryMin;
+        questionSet.SalaryMax = dto.SalaryNegotiable ? null : dto.SalaryMax;
+        questionSet.SalaryNegotiable = dto.SalaryNegotiable;
+        questionSet.JobExpertise = expertise;
+        questionSet.JobDomain = domain;
+        questionSet.UpdatedAt = DateTime.UtcNow;
+        await _questionSetRepository.UpdateAsync(questionSet);
+
+        return new SetHiringPostingResponseDto
+        {
+            QuestionSetId = questionSet.Id,
+            JobLocation = questionSet.JobLocation,
+            WorkplaceType = questionSet.WorkplaceType,
+            SalaryMin = questionSet.SalaryMin,
+            SalaryMax = questionSet.SalaryMax,
+            SalaryNegotiable = questionSet.SalaryNegotiable,
+            JobExpertise = questionSet.JobExpertise,
+            JobDomain = questionSet.JobDomain
+        };
+    }
+
     public async Task<RenameQuestionSetTitleResponseDto> RenameTitleAsync(
         Guid questionSetId, Guid ownerId, RenameQuestionSetTitleRequestDto dto)
     {
@@ -478,33 +639,78 @@ public class QuestionSetService : IQuestionSetService
         };
     }
 
-    public Task<UpdateQuestionSetJobDescriptionResponseDto> SetJobDescriptionFromTextAsync(
+    public async Task<UpdateQuestionSetJobDescriptionResponseDto> SetJobDescriptionFromTextAsync(
         Guid questionSetId, Guid ownerId, string jobDescription)
     {
         var jd = JobDescriptionValidator.Validate(jobDescription);
-        return PersistJobDescriptionAsync(questionSetId, ownerId, jd, "PastedText", null);
+        await JdItClassifyHelper.EnsureItJobPostingAsync(_ragService, jd);
+        return await PersistJobDescriptionAsync(questionSetId, ownerId, jd, "PastedText", null, null);
     }
 
     public async Task<UpdateQuestionSetJobDescriptionResponseDto> SetJobDescriptionFromFileAsync(
         Guid questionSetId, Guid ownerId, Stream file, string fileName, CancellationToken ct = default)
     {
         var ext = Path.GetExtension(fileName ?? "").ToLowerInvariant();
-        if (ext is not ".pdf" and not ".docx" and not ".txt")
-            throw new BadRequestException("Chỉ hỗ trợ file PDF, DOCX hoặc TXT.");
+        if (ext is not ".pdf" and not ".docx" and not ".txt" and not ".jpg" and not ".jpeg" and not ".png")
+            throw new BadRequestException("Chỉ hỗ trợ file PDF, DOCX, TXT, JPG, JPEG hoặc PNG.");
 
         var safeName = string.IsNullOrWhiteSpace(fileName) ? "jd.txt" : Path.GetFileName(fileName.Trim());
-        var parsed = await _ragService.ParseJdAsync(file, safeName, ct);
+
+        // Buffer để vừa parse vừa upload blob
+        await using var ms = new MemoryStream();
+        await file.CopyToAsync(ms, ct);
+        if (ms.Length == 0)
+            throw new BadRequestException("File rỗng.");
+        if (ms.Length > 20 * 1024 * 1024)
+            throw new BadRequestException("File JD tối đa 20 MB.");
+
+        ms.Position = 0;
+        var parsed = await _ragService.ParseJdAsync(ms, safeName, ct);
         if (!parsed.Success || string.IsNullOrWhiteSpace(parsed.JobDescription))
             throw new BadRequestException(parsed.Error ?? "Không đọc được Job Description từ file.");
 
         var jd = JobDescriptionValidator.Validate(parsed.JobDescription, safeName);
-        return await PersistJobDescriptionAsync(questionSetId, ownerId, jd, "UploadedFile", safeName);
+        // SCRUM-466 L2: classify trước khi lưu blob/JD
+        await JdItClassifyHelper.EnsureItJobPostingAsync(_ragService, jd, ct: ct);
+
+        var contentType = ext switch
+        {
+            ".pdf" => "application/pdf",
+            ".docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            ".txt" => "text/plain",
+            ".jpg" or ".jpeg" => "image/jpeg",
+            ".png" => "image/png",
+            _ => "application/octet-stream"
+        };
+        var blobPath = BlobPathHelper.BuildQuestionSetJobDescriptionPath(questionSetId, safeName);
+        ms.Position = 0;
+        await _blobStorage.UploadAsync(ms, contentType, blobPath, ct);
+
+        return await PersistJobDescriptionAsync(questionSetId, ownerId, jd, "UploadedFile", safeName, blobPath);
     }
 
     private async Task<UpdateQuestionSetJobDescriptionResponseDto> PersistJobDescriptionAsync(
-        Guid questionSetId, Guid ownerId, string jd, string sourceType, string? originalFileName)
+        Guid questionSetId, Guid ownerId, string jd, string sourceType, string? originalFileName, string? blobPath)
     {
         var questionSet = await EnsureOwnedQuestionSetAsync(questionSetId, ownerId);
+
+        if (sourceType == "PastedText" && !string.IsNullOrWhiteSpace(questionSet.JdBlobPath))
+        {
+            try { await _blobStorage.DeleteAsync(questionSet.JdBlobPath); }
+            catch { /* ignore */ }
+            questionSet.JdBlobPath = null;
+        }
+        else if (sourceType == "UploadedFile" && !string.IsNullOrWhiteSpace(blobPath))
+        {
+            if (!string.IsNullOrWhiteSpace(questionSet.JdBlobPath)
+                && !string.Equals(questionSet.JdBlobPath, blobPath, StringComparison.Ordinal))
+            {
+                try { await _blobStorage.DeleteAsync(questionSet.JdBlobPath); }
+                catch { /* ignore */ }
+            }
+            questionSet.JdBlobPath = blobPath;
+        }
+
         questionSet.JobDescription = jd;
         questionSet.JdSourceType = sourceType;
         questionSet.JdOriginalFileName = sourceType == "UploadedFile" ? originalFileName : null;
@@ -520,12 +726,24 @@ public class QuestionSetService : IQuestionSetService
         };
     }
 
-    public async Task<IReadOnlyList<QuestionSetPractitionerDto>> GetPractitionersAsync(Guid questionSetId, Guid ownerId)
+    public async Task<IReadOnlyList<QuestionSetPractitionerDto>> GetPractitionersAsync(
+        Guid questionSetId, Guid ownerId, bool includePractice = false)
     {
-        await EnsureOwnedQuestionSetAsync(questionSetId, ownerId);
+        var questionSet = await EnsureOwnedQuestionSetAsync(questionSetId, ownerId);
 
         var rows = await _practiceSessionRepository.ListPractitionersByQuestionSetAsync(questionSetId);
-        return rows.Select(r => new QuestionSetPractitionerDto
+
+        // SCRUM-464 / SCRUM-471: bộ Tuyển mặc định chỉ official (+ IN_PROGRESS);
+        // includePractice=true → HR xem thêm phiên luyện.
+        IEnumerable<QuestionSetPractitionerRow> filtered = rows;
+        if (questionSet.IsHiringAssessment && !includePractice)
+        {
+            filtered = rows.Where(r =>
+                r.IsOfficialTest
+                || string.Equals(r.Status, PracticeSessionStatus.InProgress, StringComparison.OrdinalIgnoreCase));
+        }
+
+        return filtered.Select(r => new QuestionSetPractitionerDto
         {
             SessionId = r.SessionId,
             CandidateUserId = r.CandidateUserId,
@@ -536,7 +754,8 @@ public class QuestionSetService : IQuestionSetService
             Status = r.Status,
             OverallScore = r.OverallScore,
             StartedAt = r.StartedAt,
-            CompletedAt = r.CompletedAt
+            CompletedAt = r.CompletedAt,
+            IsOfficialTest = r.IsOfficialTest
         }).ToList();
     }
 
@@ -585,10 +804,18 @@ public class QuestionSetService : IQuestionSetService
         foreach (var qs in sets)
         {
             var practitioners = await _practiceSessionRepository.ListPractitionersByQuestionSetAsync(qs.Id);
-            var attemptCount = practitioners.Count;
-            var completed = practitioners.Where(p =>
+            // SCRUM-464: bộ Tuyển chỉ đếm official (+ in-progress) cho overview HR
+            IReadOnlyList<QuestionSetPractitionerRow> scoped = qs.IsHiringAssessment
+                ? practitioners
+                    .Where(p =>
+                        p.IsOfficialTest
+                        || string.Equals(p.Status, PracticeSessionStatus.InProgress, StringComparison.OrdinalIgnoreCase))
+                    .ToList()
+                : practitioners;
+            var attemptCount = scoped.Count;
+            var completed = scoped.Where(p =>
                 string.Equals(p.Status, PracticeSessionStatus.Completed, StringComparison.OrdinalIgnoreCase)).ToList();
-            var inProgress = practitioners.Count(p =>
+            var inProgress = scoped.Count(p =>
                 string.Equals(p.Status, PracticeSessionStatus.InProgress, StringComparison.OrdinalIgnoreCase));
             double? avgScore = null;
             var scores = completed.Where(p => p.OverallScore.HasValue).Select(p => p.OverallScore!.Value).ToList();
@@ -609,7 +836,8 @@ public class QuestionSetService : IQuestionSetService
                 InProgressCount = inProgress,
                 AverageScore = avgScore,
                 AverageRating = avgRating.HasValue ? Math.Round(avgRating.Value, 2) : null,
-                FeedbackCount = feedbackCount
+                FeedbackCount = feedbackCount,
+                IsHiringAssessment = qs.IsHiringAssessment
             });
         }
 

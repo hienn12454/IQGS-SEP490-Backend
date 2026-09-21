@@ -21,6 +21,12 @@ public interface IPracticeSessionRepository
     /// <summary>Giới hạn thời gian làm bài (phút) HR đặt cho bộ câu hỏi — null nếu không giới hạn hoặc bộ không tồn tại.</summary>
     Task<int?> GetTimeLimitMinutesAsync(Guid questionSetId);
 
+    /// <summary>SCRUM-464: flags Practice vs Tuyển trên bộ (null set → cả hai false).</summary>
+    Task<(bool IsHiringAssessment, bool HrAntiCheatEnabled)> GetHiringFlagsAsync(Guid questionSetId);
+
+    /// <summary>SCRUM-464: candidate đã có phiên COMPLETED với IsOfficialTest trên bộ này.</summary>
+    Task<bool> HasOfficialTestAsync(Guid candidateUserId, Guid questionSetId);
+
     /// <summary>Các phiên IN_PROGRESS thuộc bộ có giới hạn thời gian (kèm QuestionSet) — cho watchdog tự nộp bài khi hết giờ.</summary>
     Task<IReadOnlyList<PracticeSession>> GetInProgressWithTimeLimitAsync();
 

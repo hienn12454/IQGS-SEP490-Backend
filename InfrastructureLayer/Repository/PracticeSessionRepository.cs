@@ -77,6 +77,24 @@ public class PracticeSessionRepository : IPracticeSessionRepository
             .Select(qs => qs.TimeLimitMinutes)
             .FirstOrDefaultAsync();
 
+    public async Task<(bool IsHiringAssessment, bool HrAntiCheatEnabled)> GetHiringFlagsAsync(Guid questionSetId)
+    {
+        var row = await _context.QuestionSets
+            .AsNoTracking()
+            .Where(qs => qs.Id == questionSetId)
+            .Select(qs => new { qs.IsHiringAssessment, qs.HrAntiCheatEnabled })
+            .FirstOrDefaultAsync();
+        return row is null ? (false, false) : (row.IsHiringAssessment, row.HrAntiCheatEnabled);
+    }
+
+    public Task<bool> HasOfficialTestAsync(Guid candidateUserId, Guid questionSetId)
+        => _context.PracticeSessions.AnyAsync(s =>
+            s.CandidateUserId == candidateUserId
+            && s.QuestionSetId == questionSetId
+            && s.IsActive
+            && s.Status == PracticeSessionStatus.Completed
+            && s.IsOfficialTest);
+
     public async Task<IReadOnlyList<PracticeSession>> GetInProgressWithTimeLimitAsync()
         => await _context.PracticeSessions
             .Include(s => s.QuestionSet)
@@ -226,7 +244,8 @@ public class PracticeSessionRepository : IPracticeSessionRepository
                 Status = x.s.Status,
                 OverallScore = x.s.OverallScore,
                 StartedAt = x.s.StartedAt,
-                CompletedAt = x.s.CompletedAt
+                CompletedAt = x.s.CompletedAt,
+                IsOfficialTest = x.s.IsOfficialTest
             });
 
         return await projected.ToListAsync();

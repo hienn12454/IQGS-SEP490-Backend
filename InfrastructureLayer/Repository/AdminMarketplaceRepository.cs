@@ -86,6 +86,8 @@ public class AdminMarketplaceRepository : IAdminMarketplaceRepository
                 .Where(ps => ps.QuestionSetId == x.QuestionSet.Id && ps.IsActive)
                 .Average(ps => (double?)ps.OverallScore),
             IsPinned = x.QuestionSet.IsPinned,
+            // SCRUM-472: tag Practice / Tuyển cho Admin
+            IsHiringAssessment = x.QuestionSet.IsHiringAssessment,
             PinnedAt = x.QuestionSet.PinnedAt,
             PublishedAt = x.QuestionSet.PublishedAt,
             TimeLimitMinutes = x.QuestionSet.TimeLimitMinutes
@@ -112,7 +114,8 @@ public class AdminMarketplaceRepository : IAdminMarketplaceRepository
     }
 
     public async Task<(IReadOnlyList<AdminMarketplaceSetRow> Items, int TotalCount)> ListPublishedAsync(
-        int page, int pageSize, string? keyword, Guid? companyId, Guid? hrUserId, string sortBy)
+        int page, int pageSize, string? keyword, Guid? companyId, Guid? hrUserId,
+        bool? isHiringAssessment, string sortBy)
     {
         var query = PublishedJoinQuery();
 
@@ -135,6 +138,10 @@ public class AdminMarketplaceRepository : IAdminMarketplaceRepository
 
         if (hrUserId.HasValue)
             query = query.Where(x => x.HrUser.Id == hrUserId.Value);
+
+        // SCRUM-472: lọc theo chế độ Practice / Tuyển
+        if (isHiringAssessment.HasValue)
+            query = query.Where(x => x.QuestionSet.IsHiringAssessment == isHiringAssessment.Value);
 
         var projected = ApplySort(ProjectRows(query), sortBy);
         var totalCount = await projected.CountAsync();

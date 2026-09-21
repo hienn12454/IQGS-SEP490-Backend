@@ -89,6 +89,15 @@ public class UpdateCoachContextDto
     // SCRUM-458: InterviewGoal / Skills không còn nhận từ Confirm Goal (giữ cột DB cũ).
 }
 
+/// <summary>SCRUM-463: candidate chỉnh danh sách công nghệ trên màn Phân tích CV.</summary>
+public class UpdateCoachSkillsDto
+{
+    [Required]
+    [MinLength(1)]
+    [MaxLength(40)]
+    public List<string> Skills { get; set; } = new();
+}
+
 public class CoachAssessmentDto
 {
     public Guid Id { get; set; }
@@ -118,6 +127,11 @@ public class CoachAssessmentDto
     public string? EstimatedBand { get; set; }
     public string? TargetReadinessStatus { get; set; }
     public List<CoachSkillGapDto> SkillGaps { get; set; } = new();
+    /// <summary>SCRUM-461: level liền kề gợi ý khi READY (Fresher→Junior→Middle→Senior).</summary>
+    public string? SuggestedNextLevel { get; set; }
+    /// <summary>true nếu có thể promote (framework exact hoặc adaptive).</summary>
+    public bool SuggestedNextLevelAvailable { get; set; }
+    public string? SuggestedNextLevelMessage { get; set; }
 }
 
 public class CoachSkillGapDto
@@ -154,6 +168,14 @@ public class CoachRoadmapDto
     public string Status { get; set; } = string.Empty;
     public string? SourceMode { get; set; }
     public string? Explanation { get; set; }
+    /// <summary>system = có retrieve folder coach-roadmap; inferred = suy luận từ node/framework.</summary>
+    public string? KbSource { get; set; }
+    /// <summary>SCRUM-462: null = chưa Accept; có giá trị = đã chấp nhận lộ trình.</summary>
+    public DateTime? AcceptedAt { get; set; }
+    /// <summary>cv | outsideCv — skill khớp CV hay pad từ framework.</summary>
+    public string? SkillSource { get; set; }
+    /// <summary>Lý do gợi ý khi skillSource = outsideCv.</summary>
+    public string? OutsideCvReason { get; set; }
     public List<CoachRoadmapItemDto> Items { get; set; } = new();
 }
 
@@ -165,10 +187,31 @@ public class CoachRoadmapItemDto
     public int SortOrder { get; set; }
     public string Status { get; set; } = string.Empty;
     public bool IsReassessmentGate { get; set; }
+    /// <summary>SCRUM-462: candidate chọn học topic này; gate luôn true.</summary>
+    public bool IsIncluded { get; set; } = true;
+    /// <summary>Lý do ngắn cho topic (RAG/node/fallback).</summary>
+    public string? TopicReason { get; set; }
     public double? DrillScore { get; set; }
     public Guid? DrillQuestionSetId { get; set; }
     public string? SourceUrl { get; set; }
     public string? SourceTitle { get; set; }
     public List<string> Prerequisites { get; set; } = new();
     public List<string> NextTopics { get; set; } = new();
+}
+
+/// <summary>SCRUM-462: cập nhật toggle topic trên draft Suggested.</summary>
+public class UpdateRoadmapDraftDto
+{
+    public List<UpdateRoadmapDraftItemDto> Items { get; set; } = new();
+}
+
+public class UpdateRoadmapDraftItemDto
+{
+    public Guid ItemId { get; set; }
+    public bool IsIncluded { get; set; }
+}
+
+/// <summary>SCRUM-462: chấp nhận toàn bộ roadmap Suggested đang active.</summary>
+public class AcceptRoadmapsDto
+{
 }

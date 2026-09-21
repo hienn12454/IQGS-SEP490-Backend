@@ -100,6 +100,10 @@ public class RecommendationService : IRecommendationService
         if (!questionSet.AutoRecommendEnabled)
             return;
 
+        // SCRUM-464: bộ Tuyển chỉ ghi lịch sử từ phiên official (lần complete đầu).
+        if (questionSet.IsHiringAssessment && !session.IsOfficialTest)
+            return;
+
         var minScore = ResolveIntakeMinScore(questionSet.RecommendationMinScore);
         if (session.OverallScore is not double score || score < minScore)
             return;
@@ -120,7 +124,11 @@ public class RecommendationService : IRecommendationService
             return;
         }
 
-        // Làm lại nhiều lần: chỉ giữ điểm cao nhất, không reset trạng thái HR đã xử lý.
+        // SCRUM-464: bộ Tuyển — không đè bản test bằng lần luyện lại.
+        if (questionSet.IsHiringAssessment)
+            return;
+
+        // Practice: làm lại nhiều lần — chỉ giữ điểm cao nhất, không reset trạng thái HR đã xử lý.
         if (score > existing.OverallScore)
         {
             existing.OverallScore = score;

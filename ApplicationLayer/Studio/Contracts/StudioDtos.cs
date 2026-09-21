@@ -26,7 +26,10 @@ public sealed record StudioPublishRequestDto(
     IReadOnlyList<Guid>? InterviewQuestionIds = null,
     int? TimeLimitMinutes = null,
     bool? AutoRecommendEnabled = null,
-    double? RecommendationMinScore = null);
+    double? RecommendationMinScore = null,
+    /// <summary>SCRUM-464: null = giữ giá trị QuestionSet/StudioSettings đã Save.</summary>
+    bool? IsHiringAssessment = null,
+    bool? HrAntiCheatEnabled = null);
 
 public sealed record CreateStudioProjectRequest(string Name, string? Description);
 public sealed record UpdateStudioProjectRequest(string Name, string? Description);
@@ -286,7 +289,10 @@ public sealed record UpdateStudioSettingsRequest(
     string? OutputLanguage = null,
     IReadOnlyList<QuestionDistributionItemDto>? QuestionDistribution = null,
     IReadOnlyList<StudioFocusAreaItemDto>? FocusAreas = null,
-    IReadOnlyList<string>? QuestionStyles = null);
+    IReadOnlyList<string>? QuestionStyles = null,
+    /// <summary>SCRUM-464: null = không đổi.</summary>
+    bool? IsHiringAssessment = null,
+    bool? HrAntiCheatEnabled = null);
 public sealed record StudioSettingsDto(
     Guid ProjectId,
     Guid? AppliedPlanId,
@@ -307,7 +313,10 @@ public sealed record StudioSettingsDto(
     IReadOnlyList<StudioFocusAreaItemDto>? FocusAreas = null,
     IReadOnlyList<string>? QuestionStyles = null,
     RecommendedConfigurationDto? RecommendedConfiguration = null,
-    DateTime? RecommendedGeneratedAt = null);
+    DateTime? RecommendedGeneratedAt = null,
+    /// <summary>SCRUM-464</summary>
+    bool IsHiringAssessment = false,
+    bool HrAntiCheatEnabled = false);
 public sealed record ApplyPlanSettingsRequest(
     int NumberOfQuestions,
     QuestionDifficulty Difficulty,

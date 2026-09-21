@@ -1,9 +1,11 @@
 using ApplicationLayer.DTOs.Coach;
+using ApplicationLayer.Helpers;
 using ApplicationLayer.Interfaces.Repositories;
 using ApplicationLayer.Interfaces.Services;
 using ApplicationLayer.Services.Coach;
 using DomainLayer.Constants;
 using DomainLayer.Entities;
+using Microsoft.Extensions.Configuration;
 using Moq;
 using Xunit;
 
@@ -63,8 +65,23 @@ public sealed class RoadmapRecommendationTests
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ApplicationLayer.DTOs.Rag.RagRoadmapRecommendResult { Success = false });
 
-        var svc = new RoadmapRecommendationService(roadmaps.Object, nodeRepo.Object, rag.Object);
-        var assessment = new CandidateAssessment { Id = Guid.NewGuid(), CandidateUserId = userId };
+        var knowledge = new Mock<IKnowledgeDocumentRepository>();
+        knowledge.Setup(k => k.ListSystemDocumentIdsByFolderAsync(It.IsAny<string>()))
+            .ReturnsAsync(Array.Empty<Guid>());
+        var config = new ConfigurationBuilder().AddInMemoryCollection().Build();
+
+        var svc = new RoadmapRecommendationService(
+            roadmaps.Object, nodeRepo.Object, rag.Object, knowledge.Object, config);
+        var assessment = new CandidateAssessment
+        {
+            Id = Guid.NewGuid(),
+            CandidateUserId = userId,
+            SkillResults =
+            {
+                new CandidateAssessmentSkillResult { Skill = "Spring", SkillScore = 40, TargetScore = 70, ImportanceWeight = 0.6 },
+                new CandidateAssessmentSkillResult { Skill = "SQL", SkillScore = 80, TargetScore = 70, ImportanceWeight = 0.4 }
+            }
+        };
         await svc.RebuildFromDiagnosticAsync(userId, assessment, fw, profile);
 
         Assert.Equal(2, stored.Count);
@@ -75,6 +92,7 @@ public sealed class RoadmapRecommendationTests
         Assert.Equal(18, gap.PriorityScore);
         Assert.Contains(gap.Items, i => i.SourceUrl == "https://example.test/di");
         Assert.Contains(gap.Items, i => i.IsReassessmentGate);
+        Assert.Contains("\"kbSource\":\"inferred\"", gap.ExplanationJson ?? "", StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -101,7 +119,9 @@ public sealed class RoadmapRecommendationTests
         var svc = new RoadmapRecommendationService(
             roadmaps.Object,
             Mock.Of<IRoadmapNodeRepository>(),
-            rag.Object);
+            rag.Object,
+            EmptyKnowledge(),
+            EmptyConfig());
 
         var bp = new CompetencyBlueprint
         {
@@ -141,6 +161,81 @@ public sealed class RoadmapRecommendationTests
         Assert.Contains(row.Items, i => i.IsReassessmentGate);
     }
 
+    /// <summary>SCRUM-461: profile còn asp.net cũ không được dựng lại khi diagnostic chỉ đo React/TS.</summary>
+    [Fact]
+    public async Task Rebuild_IgnoresStaleProfileSkillsOutsideAssessment()
+    {
+        var userId = Guid.NewGuid();
+        var stored = new List<CandidateRoadmap>();
+        var roadmaps = new Mock<ICandidateRoadmapRepository>();
+        roadmaps.Setup(r => r.ListAllByCandidateAsync(userId)).ReturnsAsync(stored);
+        roadmaps.Setup(r => r.AddRangeAsync(It.IsAny<IEnumerable<CandidateRoadmap>>()))
+            .Callback<IEnumerable<CandidateRoadmap>>(rows => stored.AddRange(rows))
+            .Returns(Task.CompletedTask);
+        roadmaps.Setup(r => r.ArchiveActiveByCandidateAsync(userId)).Returns(Task.CompletedTask);
+
+        var rag = new Mock<IRagService>();
+        rag.Setup(r => r.RetrieveCompetencyContextAsync(
+                It.IsAny<ApplicationLayer.DTOs.Rag.RagCompetencyContextRequest>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ApplicationLayer.DTOs.Rag.RagCompetencyContextResult { Success = true, Chunks = [] });
+        rag.Setup(r => r.GenerateAdaptiveRoadmapAsync(
+                It.IsAny<ApplicationLayer.DTOs.Rag.RagAdaptiveRoadmapRequest>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ApplicationLayer.DTOs.Rag.RagAdaptiveRoadmapResult { Success = false });
+
+        var svc = new RoadmapRecommendationService(
+            roadmaps.Object,
+            Mock.Of<IRoadmapNodeRepository>(),
+            rag.Object,
+            EmptyKnowledge(),
+            EmptyConfig());
+
+        var bp = new CompetencyBlueprint
+        {
+            SourceMode = CompetencyResolutionMode.Adaptive,
+            TargetRole = "Frontend",
+            TargetLevel = "Junior",
+            Competencies =
+            {
+                new CompetencyItem { SkillName = "React", TargetScore = 70, Weight = 0.5, Topics = { "hooks" } },
+                new CompetencyItem { SkillName = "TypeScript", TargetScore = 70, Weight = 0.5, Topics = { "types" } }
+            }
+        };
+        var assessment = new CandidateAssessment
+        {
+            Id = Guid.NewGuid(),
+            CandidateUserId = userId,
+            ResolutionMode = CompetencyResolutionMode.Adaptive,
+            Kind = CandidateAssessmentKind.Diagnostic,
+            BlueprintJson = CompetencyBlueprintJson.Serialize(bp),
+            SkillResults =
+            {
+                new CandidateAssessmentSkillResult { Skill = "React", SkillScore = 0, TargetScore = 70, ImportanceWeight = 0.5 },
+                new CandidateAssessmentSkillResult { Skill = "TypeScript", SkillScore = 0, TargetScore = 70, ImportanceWeight = 0.5 }
+            }
+        };
+        var profile = new CandidateSkillPlan
+        {
+            ResolutionMode = CompetencyResolutionMode.Adaptive,
+            Items =
+            {
+                new CandidateSkillPlanItem { Skill = "asp.net core", CurrentScore = 118, TargetScore = 70, ImportanceWeight = 0.2 },
+                new CandidateSkillPlanItem { Skill = "linq", CurrentScore = 100, TargetScore = 70, ImportanceWeight = 0.2 },
+                new CandidateSkillPlanItem { Skill = "React", CurrentScore = 0, TargetScore = 70, ImportanceWeight = 0.5 },
+                new CandidateSkillPlanItem { Skill = "TypeScript", CurrentScore = 0, TargetScore = 70, ImportanceWeight = 0.5 }
+            }
+        };
+
+        await svc.RebuildFromDiagnosticAsync(userId, assessment, framework: null, profile);
+
+        Assert.Equal(2, stored.Count);
+        Assert.All(stored, r => Assert.DoesNotContain("asp.net", r.Skill, StringComparison.OrdinalIgnoreCase));
+        Assert.All(stored, r => Assert.DoesNotContain("linq", r.Skill, StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(stored, r => r.Skill == "React");
+        Assert.Contains(stored, r => r.Skill == "TypeScript");
+    }
+
     [Fact]
     public async Task Rebuild_TruncatesTopicLongerThanColumnLimit()
     {
@@ -177,7 +272,9 @@ public sealed class RoadmapRecommendationTests
         var svc = new RoadmapRecommendationService(
             roadmaps.Object,
             nodeRepo.Object,
-            rag.Object);
+            rag.Object,
+            EmptyKnowledge(),
+            EmptyConfig());
         var assessment = new CandidateAssessment { Id = Guid.NewGuid(), CandidateUserId = userId };
         var profile = new CandidateSkillPlan
         {
@@ -187,6 +284,62 @@ public sealed class RoadmapRecommendationTests
         await svc.RebuildFromDiagnosticAsync(userId, assessment, fw, profile);
         var topic = Assert.Single(stored).Items.First(i => !i.IsReassessmentGate).Topic;
         Assert.Equal(300, topic.Length);
+        Assert.Contains("\"kbSource\":\"inferred\"", Assert.Single(stored).ExplanationJson ?? "", StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Rebuild_WithCoachRoadmapDocs_SetsKbSourceSystem()
+    {
+        var userId = Guid.NewGuid();
+        var stored = new List<CandidateRoadmap>();
+        var roadmaps = new Mock<ICandidateRoadmapRepository>();
+        roadmaps.Setup(r => r.ListAllByCandidateAsync(userId)).ReturnsAsync(stored);
+        roadmaps.Setup(r => r.AddRangeAsync(It.IsAny<IEnumerable<CandidateRoadmap>>()))
+            .Callback<IEnumerable<CandidateRoadmap>>(rows => stored.AddRange(rows))
+            .Returns(Task.CompletedTask);
+
+        var fw = new CompetencyFramework
+        {
+            Id = Guid.NewGuid(),
+            RoleKey = "java-backend",
+            DisplayRole = "Java Backend",
+            TargetLevel = "Junior",
+            Skills = { new CompetencyFrameworkSkill { Skill = "Spring", ImportanceWeight = 1, TargetScore = 70 } }
+        };
+        var nodes = new List<RoadmapNode>
+        {
+            new() { Id = Guid.NewGuid(), RoleKey = "java-backend", Level = "Junior", Skill = "Spring", Topic = "DI", Importance = 1 }
+        };
+        var nodeRepo = new Mock<IRoadmapNodeRepository>();
+        nodeRepo.Setup(n => n.ListBySkillAsync("java-backend", "Junior", "Spring")).ReturnsAsync(nodes);
+
+        var docId = Guid.NewGuid();
+        var knowledge = new Mock<IKnowledgeDocumentRepository>();
+        knowledge.Setup(k => k.ListSystemDocumentIdsByFolderAsync(CoachRoadmapKnowledgeFolder.DefaultFolder))
+            .ReturnsAsync(new List<Guid> { docId });
+
+        ApplicationLayer.DTOs.Rag.RagRoadmapRecommendRequest? captured = null;
+        var rag = new Mock<IRagService>();
+        rag.Setup(r => r.RecommendRoadmapAsync(
+                It.IsAny<ApplicationLayer.DTOs.Rag.RagRoadmapRecommendRequest>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<ApplicationLayer.DTOs.Rag.RagRoadmapRecommendRequest, CancellationToken>((req, _) => captured = req)
+            .ReturnsAsync(new ApplicationLayer.DTOs.Rag.RagRoadmapRecommendResult { Success = false });
+
+        var svc = new RoadmapRecommendationService(
+            roadmaps.Object, nodeRepo.Object, rag.Object, knowledge.Object, EmptyConfig());
+        await svc.RebuildFromDiagnosticAsync(
+            userId,
+            new CandidateAssessment { Id = Guid.NewGuid(), CandidateUserId = userId },
+            fw,
+            new CandidateSkillPlan
+            {
+                Items = { new CandidateSkillPlanItem { Skill = "Spring", CurrentScore = 40, TargetScore = 70, ImportanceWeight = 1 } }
+            });
+
+        Assert.NotNull(captured);
+        Assert.Contains(docId, captured!.DocumentIds ?? []);
+        Assert.Contains("\"kbSource\":\"system\"", Assert.Single(stored).ExplanationJson ?? "", StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -218,7 +371,9 @@ public sealed class RoadmapRecommendationTests
         var svc = new RoadmapRecommendationService(
             roadmaps.Object,
             Mock.Of<IRoadmapNodeRepository>(),
-            Mock.Of<IRagService>());
+            Mock.Of<IRagService>(),
+            EmptyKnowledge(),
+            EmptyConfig());
 
         var fw = new CompetencyFramework
         {
@@ -239,4 +394,15 @@ public sealed class RoadmapRecommendationTests
         Assert.Equal(0, spring.PriorityScore);
         roadmaps.Verify(r => r.AddRangeAsync(It.IsAny<IEnumerable<CandidateRoadmap>>()), Times.Never);
     }
+
+    private static IKnowledgeDocumentRepository EmptyKnowledge()
+    {
+        var knowledge = new Mock<IKnowledgeDocumentRepository>();
+        knowledge.Setup(k => k.ListSystemDocumentIdsByFolderAsync(It.IsAny<string>()))
+            .ReturnsAsync(Array.Empty<Guid>());
+        return knowledge.Object;
+    }
+
+    private static IConfiguration EmptyConfig()
+        => new ConfigurationBuilder().AddInMemoryCollection().Build();
 }

@@ -9,7 +9,8 @@ public interface ICandidateMarketplaceRepository
         int page, int pageSize, string? keyword, Guid? companyId, string? difficulty,
         IReadOnlyList<string>? skills, string sortBy = "featured",
         string? targetRole = null, IReadOnlyList<string>? requireOverlapSkills = null,
-        int? minAttemptCount = null, Guid? practiceFilterCandidateId = null, bool? hasCompletedPractice = null);
+        int? minAttemptCount = null, Guid? practiceFilterCandidateId = null, bool? hasCompletedPractice = null,
+        bool? isHiringAssessment = null);
 
     Task<PublishedQuestionSetDetail?> GetPublishedByIdAsync(Guid id);
 

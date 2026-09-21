@@ -300,6 +300,16 @@ public class AppDbContext : DbContext
             entity.Property(qs => qs.JobDescription).IsRequired();
             entity.Property(qs => qs.JdSourceType).IsRequired().HasMaxLength(20).HasDefaultValue("PastedText");
             entity.Property(qs => qs.JdOriginalFileName).HasMaxLength(260);
+            entity.Property(qs => qs.JdBlobPath).HasMaxLength(1000);
+            entity.Property(qs => qs.PublicJobDescription);
+            // SCRUM-468: metadata tin tuyển (chỉ meaningful khi IsHiringAssessment)
+            entity.Property(qs => qs.JobLocation).HasMaxLength(200);
+            entity.Property(qs => qs.WorkplaceType).HasMaxLength(20);
+            entity.Property(qs => qs.SalaryMin);
+            entity.Property(qs => qs.SalaryMax);
+            entity.Property(qs => qs.SalaryNegotiable).IsRequired().HasDefaultValue(true);
+            entity.Property(qs => qs.JobExpertise).HasMaxLength(120);
+            entity.Property(qs => qs.JobDomain).HasMaxLength(120);
             entity.Property(qs => qs.HrNote).HasMaxLength(2000);
             entity.Property(qs => qs.PlanJson).IsRequired().HasColumnType("jsonb");
 
@@ -333,6 +343,10 @@ public class AppDbContext : DbContext
             // SCRUM-424: intake recommendation theo từng bộ
             entity.Property(qs => qs.AutoRecommendEnabled).IsRequired().HasDefaultValue(true);
             entity.Property(qs => qs.RecommendationMinScore).IsRequired().HasDefaultValue(70.0);
+
+            // SCRUM-464: Practice vs Tuyển
+            entity.Property(qs => qs.IsHiringAssessment).IsRequired().HasDefaultValue(false);
+            entity.Property(qs => qs.HrAntiCheatEnabled).IsRequired().HasDefaultValue(false);
 
             // SCRUM-404: pin Marketplace — mặc định false/null; index hỗ trợ sort featured
             entity.Property(qs => qs.IsPinned).IsRequired().HasDefaultValue(false);
@@ -523,6 +537,7 @@ public class AppDbContext : DbContext
                   .HasForeignKey(r => r.SourceAssessmentId)
                   .OnDelete(DeleteBehavior.SetNull);
             entity.Property(r => r.SourceMode).IsRequired().HasMaxLength(20);
+            entity.Property(r => r.AcceptedAt);
             entity.HasOne(r => r.Framework)
                   .WithMany()
                   .HasForeignKey(r => r.FrameworkId)
@@ -538,6 +553,7 @@ public class AppDbContext : DbContext
             entity.Property(i => i.Topic).IsRequired().HasMaxLength(300);
             entity.Property(i => i.Subtopic).HasMaxLength(300);
             entity.Property(i => i.Status).IsRequired().HasMaxLength(30);
+            entity.Property(i => i.IsIncluded).IsRequired().HasDefaultValue(true);
             entity.Property(i => i.SourceUrl).HasMaxLength(1000);
             entity.Property(i => i.SourceTitle).HasMaxLength(500);
             entity.HasOne(i => i.Roadmap)
@@ -718,6 +734,8 @@ public class AppDbContext : DbContext
             entity.Property(s => s.AntiCheatEnabled).IsRequired().HasDefaultValue(false);
             entity.Property(s => s.AntiCheatMaxTabLeaves).IsRequired().HasDefaultValue(3);
             entity.Property(s => s.TabLeaveCount).IsRequired().HasDefaultValue(0);
+            // SCRUM-464: lần complete đầu trên bộ Tuyển
+            entity.Property(s => s.IsOfficialTest).IsRequired().HasDefaultValue(false);
 
             entity.HasOne(s => s.QuestionSet)
                   .WithMany()

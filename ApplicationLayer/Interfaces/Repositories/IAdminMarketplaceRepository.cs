@@ -8,7 +8,8 @@ namespace ApplicationLayer.Interfaces.Repositories;
 public interface IAdminMarketplaceRepository
 {
     Task<(IReadOnlyList<AdminMarketplaceSetRow> Items, int TotalCount)> ListPublishedAsync(
-        int page, int pageSize, string? keyword, Guid? companyId, Guid? hrUserId, string sortBy);
+        int page, int pageSize, string? keyword, Guid? companyId, Guid? hrUserId,
+        bool? isHiringAssessment, string sortBy);
 
     Task<AdminMarketplaceSetRow?> GetPublishedByIdAsync(Guid id);
 

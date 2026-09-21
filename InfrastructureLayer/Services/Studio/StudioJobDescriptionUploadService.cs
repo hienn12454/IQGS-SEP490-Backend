@@ -19,7 +19,8 @@ public sealed class StudioJobDescriptionUploadService(
     IInterviewProjectService projectService,
     IJobDescriptionAnalyzer analyzer,
     IDocumentTextExtractorFactory extractorFactory,
-    IRagService ragService) : IStudioJobDescriptionUploadService
+    IRagService ragService,
+    IBlobStorageService blobStorage) : IStudioJobDescriptionUploadService
 {
     private static readonly HashSet<string> AllowedExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -59,6 +60,12 @@ public sealed class StudioJobDescriptionUploadService(
         // SCRUM-432: classify IT job posting TRƯỚC SaveChanges — fail → không ghi DB.
         var summary = await analyzer.AnalyzeAsync(text, ct);
 
+        // SCRUM-465: lưu file gốc lên blob (preview candidate)
+        var contentTypeNorm = string.IsNullOrWhiteSpace(contentType) ? "application/octet-stream" : contentType.Trim();
+        var blobPath = BlobPathHelper.BuildStudioJobDescriptionPath(projectId, safeName);
+        await using (var ms = new MemoryStream(content, writable: false))
+            await blobStorage.UploadAsync(ms, contentTypeNorm, blobPath, ct);
+
         var row = await dbContext.StudioJobDescriptions.FirstOrDefaultAsync(x => x.ProjectId == projectId && x.IsActive, ct);
         if (row is null)
         {
@@ -67,15 +74,22 @@ public sealed class StudioJobDescriptionUploadService(
                 ProjectId = projectId,
                 Content = text,
                 SourceType = JobDescriptionSourceType.UploadedFile,
-                OriginalFileName = safeName
+                OriginalFileName = safeName,
+                BlobPath = blobPath
             };
             dbContext.StudioJobDescriptions.Add(row);
         }
         else
         {
+            if (!string.IsNullOrWhiteSpace(row.BlobPath) && !string.Equals(row.BlobPath, blobPath, StringComparison.Ordinal))
+            {
+                try { await blobStorage.DeleteAsync(row.BlobPath); }
+                catch { /* ignore */ }
+            }
             row.Content = text;
             row.SourceType = JobDescriptionSourceType.UploadedFile;
             row.OriginalFileName = safeName;
+            row.BlobPath = blobPath;
             row.UpdatedAt = DateTime.UtcNow;
         }
 

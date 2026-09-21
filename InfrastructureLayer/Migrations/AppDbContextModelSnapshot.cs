@@ -1026,6 +1026,11 @@ namespace InfrastructureLayer.Migrations
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
 
+                    b.Property<bool>("IsOfficialTest")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
                     b.Property<DateTime?>("LastTabLeaveAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -1084,8 +1089,18 @@ namespace InfrastructureLayer.Migrations
                         .HasMaxLength(2000)
                         .HasColumnType("character varying(2000)");
 
+                    b.Property<bool>("HrAntiCheatEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
+
+                    b.Property<bool>("IsHiringAssessment")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
 
                     b.Property<bool>("IsPinned")
                         .ValueGeneratedOnAdd()
@@ -1095,6 +1110,10 @@ namespace InfrastructureLayer.Migrations
                     b.Property<string>("JdOriginalFileName")
                         .HasMaxLength(260)
                         .HasColumnType("character varying(260)");
+
+                    b.Property<string>("JdBlobPath")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
 
                     b.Property<string>("JdSourceType")
                         .IsRequired()
@@ -1106,6 +1125,36 @@ namespace InfrastructureLayer.Migrations
                     b.Property<string>("JobDescription")
                         .IsRequired()
                         .HasColumnType("text");
+
+                    b.Property<string>("JobDomain")
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)");
+
+                    b.Property<string>("JobExpertise")
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)");
+
+                    b.Property<string>("JobLocation")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("PublicJobDescription")
+                        .HasColumnType("text");
+
+                    b.Property<int?>("SalaryMax")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("SalaryMin")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("SalaryNegotiable")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true);
+
+                    b.Property<string>("WorkplaceType")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
 
                     b.Property<string>("Kind")
                         .IsRequired()
@@ -2308,7 +2357,12 @@ namespace InfrastructureLayer.Migrations
                         .HasColumnType("boolean");
 
                     b.Property<string>("OriginalFileName")
-                        .HasColumnType("text");
+                        .HasMaxLength(260)
+                        .HasColumnType("character varying(260)");
+
+                    b.Property<string>("BlobPath")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
 
                     b.Property<Guid>("ProjectId")
                         .HasColumnType("uuid");
@@ -2730,6 +2784,11 @@ namespace InfrastructureLayer.Migrations
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)");
 
+                    b.Property<bool>("HrAntiCheatEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
                     b.Property<bool>("IncludeSampleAnswers")
                         .HasColumnType("boolean");
 
@@ -2741,6 +2800,11 @@ namespace InfrastructureLayer.Migrations
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
+
+                    b.Property<bool>("IsHiringAssessment")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
 
                     b.Property<string>("Language")
                         .IsRequired()

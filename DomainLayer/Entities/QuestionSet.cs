@@ -28,6 +28,33 @@ public class QuestionSet : BaseEntity
     /// <summary>Tên file gốc nếu JD upload (PDF/DOCX/TXT); null khi paste.</summary>
     public string? JdOriginalFileName { get; set; }
 
+    /// <summary>SCRUM-465: path file JD gốc trên Azure Blob — null khi paste.</summary>
+    public string? JdBlobPath { get; set; }
+
+    /// <summary>SCRUM-465: bản JD ngắn HR soạn cho candidate (bộ Tuyển) — không đụng JobDescription gen.</summary>
+    public string? PublicJobDescription { get; set; }
+
+    /// <summary>SCRUM-468: địa điểm làm việc (tin tuyển) — ví dụ "Quảng Ngãi - Đà Nẵng".</summary>
+    public string? JobLocation { get; set; }
+
+    /// <summary>SCRUM-468: AtOffice | Hybrid | Remote.</summary>
+    public string? WorkplaceType { get; set; }
+
+    /// <summary>SCRUM-468: lương tối thiểu (VND) — null nếu thỏa thuận / chưa nhập.</summary>
+    public int? SalaryMin { get; set; }
+
+    /// <summary>SCRUM-468: lương tối đa (VND).</summary>
+    public int? SalaryMax { get; set; }
+
+    /// <summary>SCRUM-468: true = thỏa thuận (không bắt buộc min/max).</summary>
+    public bool SalaryNegotiable { get; set; } = true;
+
+    /// <summary>SCRUM-468: chuyên môn vị trí — ví dụ "Backend Developer".</summary>
+    public string? JobExpertise { get; set; }
+
+    /// <summary>SCRUM-468: lĩnh vực / domain — ví dụ "IT Services".</summary>
+    public string? JobDomain { get; set; }
+
     public string? HrNote { get; set; }
     public string PlanJson { get; set; } = "{}";
     public DateTime? GeneratedAt { get; set; }
@@ -41,6 +68,12 @@ public class QuestionSet : BaseEntity
 
     /// <summary>SCRUM-424: Ngưỡng OverallScore (0–100) tối thiểu để tạo recommendation — mặc định 70.</summary>
     public double RecommendationMinScore { get; set; } = 70;
+
+    /// <summary>SCRUM-464: true = bộ Tuyển (JD public + lần complete đầu ghi lịch sử HR).</summary>
+    public bool IsHiringAssessment { get; set; }
+
+    /// <summary>SCRUM-464: HR muốn bật anti-cheat trên bộ này — thực tế = Admin ON ∧ flag này.</summary>
+    public bool HrAntiCheatEnabled { get; set; }
 
     /// <summary>SCRUM-404: Admin ghim bộ lên đầu Marketplace Candidate.</summary>
     public bool IsPinned { get; set; }

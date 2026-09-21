@@ -97,7 +97,11 @@ public class CompetencyProfileService : ICompetencyProfileService
                             && !string.Equals(plan.ResolutionMode, nextMode, StringComparison.OrdinalIgnoreCase))
                            || (framework is not null && plan.FrameworkId is Guid oldFw && oldFw != framework.Id)
                            || (framework is null && plan.FrameworkId is not null && nextMode == CompetencyResolutionMode.Adaptive);
-        if (scaleChanged)
+        // SCRUM-461: Adaptive→Adaptive đổi blueprint skill (FE vs .NET) cũng phải clear —
+        // nếu không, skill cũ còn CurrentScore và Rebuild dựng lại roadmap lệch stack.
+        var blueprintSkillsChanged = assessment.Kind == CandidateAssessmentKind.Diagnostic
+            && BlueprintSkillSetChanged(plan.ActiveBlueprintJson, assessment.BlueprintJson, blueprint);
+        if (scaleChanged || blueprintSkillsChanged)
         {
             plan.Items.Clear();
             previousScores.Clear();
@@ -121,6 +125,19 @@ public class CompetencyProfileService : ICompetencyProfileService
             .ToList();
         if (resultsToMerge.Count == 0)
             resultsToMerge = assessment.SkillResults.ToList();
+
+        // Diagnostic = đo lại toàn bộ blueprint hiện tại — bỏ skill ngoài scope (vd. asp.net sau khi đổi CV FE).
+        if (assessment.Kind == CandidateAssessmentKind.Diagnostic && resultsToMerge.Count > 0)
+        {
+            var keep = resultsToMerge
+                .Select(r => CompetencyScoringService.NormalizeSkill(r.Skill))
+                .ToHashSet(StringComparer.Ordinal);
+            var stale = plan.Items
+                .Where(i => !keep.Contains(CompetencyScoringService.NormalizeSkill(i.Skill)))
+                .ToList();
+            foreach (var item in stale)
+                plan.Items.Remove(item);
+        }
 
         foreach (var result in resultsToMerge)
         {
@@ -249,6 +266,28 @@ public class CompetencyProfileService : ICompetencyProfileService
                 TargetScore = target
             })
             .ToList();
+    }
+
+    /// <summary>So sánh tập skillName (normalize) giữa blueprint cũ/mới — khác → coi như đổi stack.</summary>
+    public static bool BlueprintSkillSetChanged(
+        string? previousBlueprintJson,
+        string? nextBlueprintJson,
+        CompetencyBlueprint? nextBlueprint)
+    {
+        var next = nextBlueprint ?? CompetencyBlueprintJson.Deserialize(nextBlueprintJson);
+        if (next is null || next.Competencies.Count == 0) return false;
+        var prev = CompetencyBlueprintJson.Deserialize(previousBlueprintJson);
+        if (prev is null || prev.Competencies.Count == 0) return false;
+
+        var a = prev.Competencies
+            .Select(c => CompetencyScoringService.NormalizeSkill(c.SkillName))
+            .Where(s => s.Length > 0)
+            .ToHashSet(StringComparer.Ordinal);
+        var b = next.Competencies
+            .Select(c => CompetencyScoringService.NormalizeSkill(c.SkillName))
+            .Where(s => s.Length > 0)
+            .ToHashSet(StringComparer.Ordinal);
+        return !a.SetEquals(b);
     }
 
     private static HashSet<string> ParseScopeSkills(string? json)

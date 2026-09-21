@@ -52,6 +52,14 @@ public class CandidateCoachController : ControllerBase
         return SuccessResp.Ok(result);
     }
 
+    /// <summary>SCRUM-463: chỉnh danh sách công nghệ trên Phân tích CV (không Confirm Goal).</summary>
+    [HttpPut("skills")]
+    public async Task<IActionResult> UpdateSkills([FromBody] UpdateCoachSkillsDto dto)
+    {
+        var result = await _coach.UpdateCoachSkillsAsync(User.GetUserId(), dto);
+        return SuccessResp.Ok(result);
+    }
+
     /// <summary>SCRUM-459: soft-reset vòng Coach — về Confirm Goal, giữ CV.</summary>
     [HttpPost("reset-run")]
     public async Task<IActionResult> ResetRun()
@@ -131,6 +139,22 @@ public class CandidateCoachController : ControllerBase
     public async Task<IActionResult> ListRoadmaps()
     {
         var result = await _coach.ListRoadmapsAsync(User.GetUserId());
+        return SuccessResp.Ok(result);
+    }
+
+    /// <summary>SCRUM-462: toggle topic trên draft Suggested (không gọi LLM).</summary>
+    [HttpPatch("roadmaps/draft")]
+    public async Task<IActionResult> UpdateRoadmapDraft([FromBody] UpdateRoadmapDraftDto dto)
+    {
+        var result = await _coach.UpdateRoadmapDraftAsync(User.GetUserId(), dto);
+        return SuccessResp.Ok(result);
+    }
+
+    /// <summary>SCRUM-462: chấp nhận lộ trình → Active + AcceptedAt.</summary>
+    [HttpPost("roadmaps/accept")]
+    public async Task<IActionResult> AcceptRoadmaps([FromBody] AcceptRoadmapsDto? dto)
+    {
+        var result = await _coach.AcceptRoadmapsAsync(User.GetUserId(), dto);
         return SuccessResp.Ok(result);
     }
 
