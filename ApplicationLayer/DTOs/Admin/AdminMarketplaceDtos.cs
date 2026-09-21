@@ -11,6 +11,9 @@ public class AdminMarketplaceListQueryDto
     public Guid? CompanyId { get; set; }
     public Guid? HrUserId { get; set; }
 
+    /// <summary>SCRUM-472: null = tất cả; true = Tuyển; false = Practice.</summary>
+    public bool? IsHiringAssessment { get; set; }
+
     /// <summary>featured | newest | most_practiced | highest_rated — mặc định featured.</summary>
     public string? SortBy { get; set; }
 }
@@ -36,6 +39,8 @@ public class AdminMarketplaceListItemDto
     public double? Rating { get; set; }
     public bool IsPinned { get; set; }
     public bool IsTrending { get; set; }
+    /// <summary>SCRUM-472: true = chế độ Tuyển; false = Practice.</summary>
+    public bool IsHiringAssessment { get; set; }
     public DateTime? PinnedAt { get; set; }
     public DateTime? PublishedAt { get; set; }
 }
@@ -56,6 +61,8 @@ public class AdminMarketplaceDetailDto
     public int UniqueCandidateCount { get; set; }
     public double? Rating { get; set; }
     public bool IsPinned { get; set; }
+    /// <summary>SCRUM-472: true = chế độ Tuyển; false = Practice.</summary>
+    public bool IsHiringAssessment { get; set; }
     public DateTime? PinnedAt { get; set; }
     public DateTime? PublishedAt { get; set; }
     public int? TimeLimitMinutes { get; set; }
@@ -124,6 +131,7 @@ public class AdminMarketplaceSetRow
     public int UniqueCandidateCount { get; set; }
     public double? Rating { get; set; }
     public bool IsPinned { get; set; }
+    public bool IsHiringAssessment { get; set; }
     public DateTime? PinnedAt { get; set; }
     public DateTime? PublishedAt { get; set; }
     public int? TimeLimitMinutes { get; set; }

@@ -38,7 +38,8 @@ public class AdminMarketplaceService : IAdminMarketplaceService
         var sortBy = NormalizeSortBy(query.SortBy);
 
         var (rows, totalCount) = await _repository.ListPublishedAsync(
-            page, pageSize, query.Keyword, query.CompanyId, query.HrUserId, sortBy);
+            page, pageSize, query.Keyword, query.CompanyId, query.HrUserId,
+            query.IsHiringAssessment, sortBy);
 
         var trendingThreshold = (await _platformSettingsRepository.GetAsync()).MinAttemptsForTrending;
 
@@ -75,6 +76,7 @@ public class AdminMarketplaceService : IAdminMarketplaceService
             UniqueCandidateCount = row.UniqueCandidateCount,
             Rating = PublishedQuestionSetMapper.RoundRating(row.Rating),
             IsPinned = row.IsPinned,
+            IsHiringAssessment = row.IsHiringAssessment,
             PinnedAt = row.PinnedAt,
             PublishedAt = row.PublishedAt,
             TimeLimitMinutes = row.TimeLimitMinutes,
@@ -218,6 +220,7 @@ public class AdminMarketplaceService : IAdminMarketplaceService
         Rating = PublishedQuestionSetMapper.RoundRating(row.Rating),
         IsPinned = row.IsPinned,
         IsTrending = row.AttemptCount >= minAttemptsForTrending,
+        IsHiringAssessment = row.IsHiringAssessment,
         PinnedAt = row.PinnedAt,
         PublishedAt = row.PublishedAt
     };
