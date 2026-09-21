@@ -7,15 +7,19 @@ namespace ApplicationLayer.Helpers;
 public static class PlanJsonSummaryReader
 {
     public static PlanJsonSummary Read(QuestionGenerationJob job, QuestionGenerationPlan plan)
+        => ReadFromJson(plan.PlanJson);
+
+    /// <summary>SCRUM-473: đọc tóm tắt plan từ PlanJson của QuestionSet (History export).</summary>
+    public static PlanJsonSummary ReadFromJson(string? planJson)
     {
         var summary = new PlanJsonSummary();
 
-        if (string.IsNullOrWhiteSpace(plan.PlanJson))
+        if (string.IsNullOrWhiteSpace(planJson) || planJson.Trim() == "{}")
             return summary;
 
         try
         {
-            using var doc = JsonDocument.Parse(plan.PlanJson);
+            using var doc = JsonDocument.Parse(planJson);
             var root = doc.RootElement;
 
             // Role = tiêu đề vị trí thật — KHÔNG dùng skills join (gây chuỗi dài trên Insights/KPI).
