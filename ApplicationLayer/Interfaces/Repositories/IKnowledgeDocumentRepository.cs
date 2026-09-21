@@ -30,6 +30,12 @@ public interface IKnowledgeDocumentRepository
     /// <summary>SCRUM-447: danh sách documentId SYSTEM theo document type (section).</summary>
     Task<IReadOnlyList<Guid>> ListSystemDocumentIdsByTypeAsync(string documentType);
 
+    /// <summary>
+    /// Coach diagnostic: documentId SYSTEM đã ingest xong trong một folder (vd. test-candidate).
+    /// Không quét cả túi SYSTEM / không lọc theo type.
+    /// </summary>
+    Task<IReadOnlyList<Guid>> ListSystemDocumentIdsByFolderAsync(string folder);
+
     /// <summary>SCRUM-450: đếm document theo folder trong một scope.</summary>
     Task<IReadOnlyList<KnowledgeFolderDto>> ListFoldersAsync(string scope);
 

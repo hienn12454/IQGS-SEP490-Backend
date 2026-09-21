@@ -8,6 +8,7 @@ using ApplicationLayer.Settings;
 using DomainLayer.Constants;
 using DomainLayer.Entities;
 using DomainLayer.Exceptions;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Options;
 
 namespace ApplicationLayer.Services;
@@ -56,6 +57,39 @@ public class CandidateCvService : ICandidateCvService
         await fileStream.CopyToAsync(buffer, ct);
         var fileBytes = buffer.ToArray();
 
+        // SCRUM-466: parse + classify TRƯỚC khi lưu Blob/DB — fail giữ CV cũ.
+        ParseCvResult parseResult;
+        try
+        {
+            using var parseStream = new MemoryStream(fileBytes);
+            parseResult = await _ragService.ParseCvAsync(parseStream, fileName, ct);
+        }
+        catch (StructuredHttpException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            throw ItDomainClassifyGate.CvClassifyFailed(ex.Message);
+        }
+
+        if (!parseResult.Success)
+        {
+            throw ItDomainClassifyGate.FromRagCvFailure(
+                parseResult.Stage,
+                StatusCodes.Status422UnprocessableEntity,
+                parseResult.Detail ?? parseResult.Error,
+                parseResult.Errors,
+                parseResult.DocumentType,
+                parseResult.IsItRole);
+        }
+
+        ItDomainClassifyGate.EnsureCvPass(
+            parseResult.DocumentType,
+            parseResult.IsItRole,
+            parseResult.RejectReason);
+        ItDomainClassifyGate.EnsureCvHasSkills(parseResult.Skills);
+
         var profile = await _candidateProfileRepository.GetByUserIdAsync(userId);
         var oldBlobPath = profile?.CvBlobPath;
 
@@ -71,24 +105,6 @@ public class CandidateCvService : ICandidateCvService
         profile.CvBlobPath = newBlobPath;
         profile.CvContentType = contentType;
         profile.CvUploadedAt = DateTime.UtcNow;
-
-        if (isNewProfile)
-            await _candidateProfileRepository.AddAsync(profile);
-        else
-            await _candidateProfileRepository.UpdateAsync(profile);
-
-        // Xóa CV cũ SAU KHI đã lưu CV mới thành công — tránh mất CV nếu upload/lưu DB lỗi giữa chừng.
-        if (!string.IsNullOrEmpty(oldBlobPath) && oldBlobPath != newBlobPath)
-        {
-            try { await _blobStorage.DeleteAsync(oldBlobPath, ct); }
-            catch { /* best-effort — CV mới đã lưu thành công, không chặn luồng chính vì blob cũ mồ côi */ }
-        }
-
-        // Gọi RAG parse-cv — nếu lỗi/timeout, RagService đã tự bọc thành exception tiếng Việt rõ ràng (giống ParseJdAsync)
-        // và ném ra ngoài — CV vẫn đã lưu thành công ở bước trên, chỉ TechStack/đánh giá giữ nguyên giá trị cũ (AC-06).
-        ParseCvResult parseResult;
-        using (var parseStream = new MemoryStream(fileBytes))
-            parseResult = await _ragService.ParseCvAsync(parseStream, fileName, ct);
 
         profile.TechStack = parseResult.Skills.ToArray();
         profile.CvEvaluationJson = JsonSerializer.Serialize(
@@ -109,7 +125,18 @@ public class CandidateCvService : ICandidateCvService
         profile.CoachContextConfirmedAt = null;
 
         var syncedFields = await ApplyCvProfileSyncAsync(profile, parseResult, userId);
-        await _candidateProfileRepository.UpdateAsync(profile);
+
+        if (isNewProfile)
+            await _candidateProfileRepository.AddAsync(profile);
+        else
+            await _candidateProfileRepository.UpdateAsync(profile);
+
+        // Xóa CV cũ SAU KHI đã lưu CV mới thành công
+        if (!string.IsNullOrEmpty(oldBlobPath) && oldBlobPath != newBlobPath)
+        {
+            try { await _blobStorage.DeleteAsync(oldBlobPath, ct); }
+            catch { /* best-effort */ }
+        }
 
         var downloadUrl = await _blobStorage.GenerateReadSasUrlAsync(
             newBlobPath, TimeSpan.FromMinutes(_blobSettings.SasExpiryMinutes), ct);
@@ -197,14 +224,6 @@ public class CandidateCvService : ICandidateCvService
         return new CvSyncSettingsDto { AutoSyncProfileFromCv = dto.AutoSyncProfileFromCv };
     }
 
-    /// <summary>
-    /// Feature "CV auto-apply profile": khi bật AutoSyncProfileFromCv, CV được ƯU TIÊN CAO NHẤT — ghi đè
-    /// họ tên/SĐT/địa chỉ/GitHub/LinkedIn trên User + CandidateProfile bằng dữ liệu CV vừa trích xuất, MIỄN LÀ
-    /// field đó chưa từng bị candidate tự tay khóa (<see cref="CandidateProfile.CvSyncLockedFields"/> — một khi
-    /// candidate tự sửa field nào qua PUT profile thì field đó không bao giờ bị CV ghi đè nữa, kể cả khi
-    /// AutoSyncProfileFromCv đang bật). Field CV không trích được (null/rỗng) thì giữ nguyên giá trị cũ.
-    /// Trả về danh sách tên field vừa được áp dụng để FE hiển thị cho candidate biết.
-    /// </summary>
     private async Task<List<string>> ApplyCvProfileSyncAsync(
         CandidateProfile profile, ParseCvResult parseResult, Guid userId)
     {

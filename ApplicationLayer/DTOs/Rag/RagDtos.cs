@@ -156,6 +156,13 @@ public class ParseCvResult
     public string? SuggestedRole { get; set; }
     public double? YearsOfExperienceHint { get; set; }
 
+    /// <summary>SCRUM-466: resume | other — classify trong parse-cv.</summary>
+    public string? DocumentType { get; set; }
+    /// <summary>SCRUM-466: true khi hồ sơ thuộc IT/phần mềm.</summary>
+    public bool? IsItRole { get; set; }
+    /// <summary>SCRUM-466: lý do reject classify.</summary>
+    public string? RejectReason { get; set; }
+
     public List<string> Warnings { get; set; } = new();
     public string? Error { get; set; }
     public string? Detail { get; set; }
@@ -313,6 +320,8 @@ public class GenerateQuestionsFromPlanResult
     public List<RagGeneratedQuestionDto> Questions { get; set; } = new();
     public double? ProcessingTimeMs { get; set; }
     public string? Error { get; set; }
+    /// <summary>Coach: system | inferred.</summary>
+    public string? KbSource { get; set; }
 }
 
 /// <summary>Request gọi RAG evaluate-answer (SCRUM-281/282).</summary>
@@ -483,6 +492,9 @@ public class RagRoadmapRecommendRequest
 {
     public string TargetRole { get; set; } = string.Empty;
     public string TargetLevel { get; set; } = string.Empty;
+    public string? RoleKey { get; set; }
+    /// <summary>DocumentIds SYSTEM trong folder coach-roadmap — RAG chỉ retrieve các id này.</summary>
+    public List<Guid>? DocumentIds { get; set; }
     public List<RagRoadmapWeakSkillDto> WeakSkills { get; set; } = new();
     public List<RagRoadmapNodeDto> CandidateNodes { get; set; } = new();
 }

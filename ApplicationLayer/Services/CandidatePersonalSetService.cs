@@ -9,6 +9,7 @@ using ApplicationLayer.Services.Coach;
 using DomainLayer.Constants;
 using DomainLayer.Entities;
 using DomainLayer.Exceptions;
+using Microsoft.Extensions.Configuration;
 
 namespace ApplicationLayer.Services;
 
@@ -33,6 +34,7 @@ public class CandidatePersonalSetService : ICandidatePersonalSetService
     private readonly ICandidateAssessmentRepository _assessments;
     private readonly IKnowledgeDocumentRepository _knowledgeDocs;
     private readonly ICoachCompetencyService _coach;
+    private readonly IConfiguration _config;
 
     public CandidatePersonalSetService(
         ICandidateProfileRepository profiles,
@@ -47,7 +49,8 @@ public class CandidatePersonalSetService : ICandidatePersonalSetService
         ICandidateSkillPlanRepository skillPlans,
         ICandidateAssessmentRepository assessments,
         IKnowledgeDocumentRepository knowledgeDocs,
-        ICoachCompetencyService coach)
+        ICoachCompetencyService coach,
+        IConfiguration config)
     {
         _profiles = profiles;
         _jobs = jobs;
@@ -62,12 +65,14 @@ public class CandidatePersonalSetService : ICandidatePersonalSetService
         _assessments = assessments;
         _knowledgeDocs = knowledgeDocs;
         _coach = coach;
+        _config = config;
     }
 
     public async Task<CandidatePersonalSetJobDto> CreateFromTextAsync(
         Guid candidateUserId, CreatePersonalSetFromTextDto dto, CancellationToken ct = default)
     {
         var jd = JobDescriptionValidator.Validate(dto.JobDescription);
+        await JdItClassifyHelper.EnsureItJobPostingAsync(_rag, jd, ct: ct);
         return await EnqueueAsync(
             candidateUserId, jd, ClampCount(dto.NumberOfQuestions),
             CandidatePersonalSetPurpose.JdGap, Array.Empty<string>(), ct);
@@ -80,6 +85,7 @@ public class CandidatePersonalSetService : ICandidatePersonalSetService
         if (!parsed.Success || string.IsNullOrWhiteSpace(parsed.JobDescription))
             throw new BadRequestException(parsed.Error ?? "Không đọc được Job Description từ file.");
         var jd = JobDescriptionValidator.Validate(parsed.JobDescription, fileName);
+        await JdItClassifyHelper.EnsureItJobPostingAsync(_rag, jd, ct: ct);
         return await EnqueueAsync(
             candidateUserId, jd, ClampCount(numberOfQuestions),
             CandidatePersonalSetPurpose.JdGap, Array.Empty<string>(), ct);
@@ -227,7 +233,8 @@ public class CandidatePersonalSetService : ICandidatePersonalSetService
                     planJson = JsonSerializer.Serialize(syntheticPlan, JsonOpts);
                     job.PlanJson = planJson;
                 }
-                job.GapSkillsJson = "[]";
+                // Coach: GapSkillsJson lưu provenance { kbSource } thay vì list gap JD.
+                job.GapSkillsJson = "{}";
 
                 // Note phải bám blueprint: số câu + skill lấy từ PlanJson, không ép cứng "tối thiểu 10 câu".
                 var blueprintSlots = BlueprintComplianceValidator.ParseSlots(planJson);
@@ -237,9 +244,9 @@ public class CandidatePersonalSetService : ICandidatePersonalSetService
                     planJson, blueprintSlots.Count > 0 ? blueprintSlots.Count : count);
                 var coachNote = CvCoachPromptBuilder.BlueprintNote(blueprintSkills, blueprintTotal);
 
-                // Diagnostic/Drill/Reassessment: retrieve chỉ SYSTEM Tech (InternalStack), không lẫn Roadmap
-                var techDocs = await _knowledgeDocs.ListSystemDocumentIdsByTypeAsync(
-                    KnowledgeDocumentType.InternalStack);
+                // Sinh đề Coach: retrieve folder SYSTEM (mặc định test-candidate); folder trống → LLM inferred.
+                var coachDocs = await _knowledgeDocs.ListSystemDocumentIdsByFolderAsync(
+                    CoachDiagnosticKnowledgeFolder.Resolve(_config));
 
                 var qFast = await _rag.GenerateCandidateQuestionsFromPlanAsync(new GenerateQuestionsFromPlanRequest
                 {
@@ -250,10 +257,17 @@ public class CandidatePersonalSetService : ICandidatePersonalSetService
                     Audience = "coach",
                     CvContext = job.JobDescription,
                     CandidateNote = coachNote,
-                    DocumentIds = techDocs.Count > 0 ? techDocs.ToList() : null
+                    DocumentIds = coachDocs.ToList()
                 }, ragCts.Token);
                 if (!qFast.Success || qFast.Questions.Count == 0)
                     throw new ServerFailureException(qFast.Error ?? "RAG không sinh được câu hỏi.");
+
+                var kbSource = string.Equals(qFast.KbSource, CoachDiagnosticKnowledgeFolder.KbSourceSystem, StringComparison.OrdinalIgnoreCase)
+                    ? CoachDiagnosticKnowledgeFolder.KbSourceSystem
+                    : CoachDiagnosticKnowledgeFolder.KbSourceInferred;
+                if (coachDocs.Count == 0)
+                    kbSource = CoachDiagnosticKnowledgeFolder.KbSourceInferred;
+                job.GapSkillsJson = CoachDiagnosticKnowledgeFolder.SerializeKbSource(kbSource);
 
                 // Skill/difficulty là input của công thức competency → phải khớp blueprint, nếu lệch thì fail job.
                 var compliance = BlueprintComplianceValidator.Validate(blueprintSlots, qFast.Questions);
@@ -595,18 +609,50 @@ public class CandidatePersonalSetService : ICandidatePersonalSetService
 
     private static int ClampCount(int n) => Math.Clamp(n <= 0 ? 10 : n, 8, 12);
 
-    private static CandidatePersonalSetJobDto MapJob(CandidatePersonalSetJob job) => new()
+    private static CandidatePersonalSetJobDto MapJob(CandidatePersonalSetJob job)
     {
-        Id = job.Id,
-        Status = job.Status,
-        Purpose = job.Purpose,
-        QuestionSetId = job.QuestionSetId,
-        ErrorMessage = job.ErrorMessage,
-        CvSkills = DeserializeStringList(job.CvSkillsJson),
-        GapSkills = DeserializeStringList(job.GapSkillsJson),
-        FocusSkills = DeserializeStringList(job.FocusSkillsJson),
-        CreatedAt = job.CreatedAt
-    };
+        var (gaps, kbSource) = ParseGapSkillsPayload(job.GapSkillsJson);
+        return new()
+        {
+            Id = job.Id,
+            Status = job.Status,
+            Purpose = job.Purpose,
+            QuestionSetId = job.QuestionSetId,
+            ErrorMessage = job.ErrorMessage,
+            CvSkills = DeserializeStringList(job.CvSkillsJson),
+            GapSkills = gaps,
+            FocusSkills = DeserializeStringList(job.FocusSkillsJson),
+            KbSource = kbSource,
+            CreatedAt = job.CreatedAt
+        };
+    }
+
+    /// <summary>
+    /// GapSkillsJson: mảng skill (JD practice) hoặc object { kbSource } (coach).
+    /// </summary>
+    private static (List<string> Gaps, string? KbSource) ParseGapSkillsPayload(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json) || json == "[]" || json == "{}")
+            return (new List<string>(), null);
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind == JsonValueKind.Array)
+            {
+                var list = JsonSerializer.Deserialize<List<string>>(json, JsonOpts) ?? new List<string>();
+                return (list, null);
+            }
+
+            if (doc.RootElement.ValueKind == JsonValueKind.Object)
+                return (new List<string>(), CoachDiagnosticKnowledgeFolder.ParseKbSourceFromGapSkillsJson(json));
+        }
+        catch (JsonException)
+        {
+            /* ignore */
+        }
+
+        return (new List<string>(), null);
+    }
 
     private static List<string> DeserializeStringList(string? json)
     {
@@ -614,6 +660,9 @@ public class CandidatePersonalSetService : ICandidatePersonalSetService
             return new List<string>();
         try
         {
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind != JsonValueKind.Array)
+                return new List<string>();
             return JsonSerializer.Deserialize<List<string>>(json, JsonOpts) ?? new List<string>();
         }
         catch (JsonException)

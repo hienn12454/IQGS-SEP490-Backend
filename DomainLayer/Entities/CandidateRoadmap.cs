@@ -18,6 +18,8 @@ public class CandidateRoadmap : BaseEntity
     public string? ExplanationJson { get; set; }
     /// <summary>SCRUM-457: framework | rag_dynamic.</summary>
     public string SourceMode { get; set; } = Constants.CompetencySourceMode.Framework;
+    /// <summary>SCRUM-462: null = chưa Accept preview; có giá trị = candidate đã chấp nhận lộ trình.</summary>
+    public DateTime? AcceptedAt { get; set; }
 
     public CandidateAssessment? SourceAssessment { get; set; }
     public CompetencyFramework? Framework { get; set; }

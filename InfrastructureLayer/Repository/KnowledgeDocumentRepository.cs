@@ -199,6 +199,22 @@ public class KnowledgeDocumentRepository : IKnowledgeDocumentRepository
             .ToListAsync();
     }
 
+    public async Task<IReadOnlyList<Guid>> ListSystemDocumentIdsByFolderAsync(string folder)
+    {
+        // Folder null/unsorted → không trả doc (Coach bắt buộc folder có tên, vd. test-candidate).
+        var folderKey = KnowledgeFolderHelper.Normalize(folder);
+        if (folderKey is null)
+            return Array.Empty<Guid>();
+
+        return await _context.KnowledgeDocuments.AsNoTracking()
+            .Where(d => d.IsActive
+                        && d.Scope == KnowledgeDocumentScope.System
+                        && d.Status == KnowledgeDocumentStatus.Completed
+                        && d.Folder == folderKey)
+            .Select(d => d.Id)
+            .ToListAsync();
+    }
+
     public async Task<IReadOnlyList<KnowledgeFolderDto>> ListFoldersAsync(string scope)
     {
         var rows = await _context.KnowledgeDocuments.AsNoTracking()

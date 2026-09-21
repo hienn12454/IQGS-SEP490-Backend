@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 using ApplicationLayer.Debugging;
 using ApplicationLayer.DTOs.KnowledgeBase;
@@ -7,6 +8,7 @@ using ApplicationLayer.Interfaces.Jobs;
 using ApplicationLayer.Interfaces.Repositories;
 using ApplicationLayer.Interfaces.Services;
 using ApplicationLayer.Settings;
+using ApplicationLayer.Studio.Interfaces;
 using DomainLayer.Constants;
 using DomainLayer.Entities;
 using DomainLayer.Exceptions;
@@ -22,6 +24,7 @@ public class KnowledgeDocumentService : IKnowledgeDocumentService
     private readonly IRagService _ragService;
     private readonly IJobScheduler _jobScheduler;
     private readonly KnowledgeBaseSettings _kbSettings;
+    private readonly IDocumentTextExtractorFactory _textExtractors;
     private readonly ILogger<KnowledgeDocumentService> _logger;
 
     public KnowledgeDocumentService(
@@ -30,6 +33,7 @@ public class KnowledgeDocumentService : IKnowledgeDocumentService
         IRagService ragService,
         IJobScheduler jobScheduler,
         IOptions<KnowledgeBaseSettings> kbSettings,
+        IDocumentTextExtractorFactory textExtractors,
         ILogger<KnowledgeDocumentService> logger)
     {
         _repository = repository;
@@ -37,6 +41,7 @@ public class KnowledgeDocumentService : IKnowledgeDocumentService
         _ragService = ragService;
         _jobScheduler = jobScheduler;
         _kbSettings = kbSettings.Value;
+        _textExtractors = textExtractors;
         _logger = logger;
     }
 
@@ -51,6 +56,16 @@ public class KnowledgeDocumentService : IKnowledgeDocumentService
     {
         ValidateUpload(fileName, fileSize, dto);
 
+        // Buffer toàn bộ — cần hash + L1 extract + upload
+        await using var buffer = new MemoryStream();
+        await fileStream.CopyToAsync(buffer, ct);
+        var fileBytes = buffer.ToArray();
+        if (fileBytes.Length == 0)
+            throw new BadRequestException("File trống hoặc không hợp lệ.");
+
+        // SCRUM-466 L1: extract text → ValidateItDomain trước khi Blob
+        await EnsureItDomainAsync(fileBytes, fileName, contentType, ct);
+
         var documentId = Guid.NewGuid();
         var blobPath = BlobPathHelper.BuildBlobPath(dto.Scope, documentId, fileName);
 
@@ -59,13 +74,8 @@ public class KnowledgeDocumentService : IKnowledgeDocumentService
             new { documentId, scope = dto.Scope, fileName, fileSize });
         // #endregion
 
-        // Tính hash trước khi upload — cần copy stream nếu không seekable
-        string? contentHash = null;
-        if (fileStream.CanSeek)
-        {
-            contentHash = await ContentHashHelper.ComputeSha256Async(fileStream, ct);
-            fileStream.Position = 0;
-        }
+        buffer.Position = 0;
+        var contentHash = await ContentHashHelper.ComputeSha256Async(buffer, ct);
 
         // SCRUM-442: chặn upload trùng nội dung cùng owner/scope
         if (!string.IsNullOrWhiteSpace(contentHash))
@@ -85,7 +95,8 @@ public class KnowledgeDocumentService : IKnowledgeDocumentService
 
         try
         {
-            await _blobStorage.UploadAsync(fileStream, contentType, blobPath, ct);
+            buffer.Position = 0;
+            await _blobStorage.UploadAsync(buffer, contentType, blobPath, ct);
             // #region agent log
             AgentDebugLog.Write("B", "KnowledgeDocumentService.UploadAsync", "blob_upload_ok", new { blobPath });
             // #endregion
@@ -155,6 +166,54 @@ public class KnowledgeDocumentService : IKnowledgeDocumentService
         }
 
         return KnowledgeDocumentInternalService.MapToDto(document);
+    }
+
+    /// <summary>SCRUM-466 L1: extract text rồi ValidateItDomain — fail 422, không Blob.</summary>
+    private async Task EnsureItDomainAsync(byte[] fileBytes, string fileName, string contentType, CancellationToken ct)
+    {
+        var ext = Path.GetExtension(fileName).ToLowerInvariant();
+        string text;
+        try
+        {
+            if (ext == ".jsonl")
+                text = SampleJsonlText(fileBytes);
+            else
+            {
+                var extractor = _textExtractors.Resolve(contentType, fileName);
+                text = await extractor.ExtractTextAsync(fileBytes, ct);
+            }
+        }
+        catch (Exception ex) when (ex is not StructuredHttpException and not BadRequestException)
+        {
+            _logger.LogWarning(ex, "Không extract được text để validate IT domain: {File}", fileName);
+            throw new BadRequestException(
+                $"Không đọc được nội dung file '{fileName}' để kiểm tra domain IT. " +
+                "Vui lòng dùng PDF/DOCX/TXT (hoặc JSONL Q/A kỹ thuật).");
+        }
+
+        if (string.IsNullOrWhiteSpace(text) || text.Trim().Length < 40)
+            throw new BadRequestException(
+                "File không có đủ nội dung text để xác nhận thuộc IT. " +
+                "Vui lòng upload tài liệu kỹ thuật rõ ràng hơn.");
+
+        ItDomainClassifyGate.EnsureItDomainL1(text, ItDomainClassifyGate.StageKbClassify, "Tài liệu Knowledge");
+    }
+
+    /// <summary>Lấy sample Q/A từ JSONL để L1 keyword (không cần full file).</summary>
+    private static string SampleJsonlText(byte[] fileBytes)
+    {
+        var raw = Encoding.UTF8.GetString(fileBytes);
+        var sb = new StringBuilder();
+        var lines = 0;
+        foreach (var line in raw.Split('\n'))
+        {
+            var trimmed = line.Trim();
+            if (trimmed.Length == 0) continue;
+            sb.AppendLine(trimmed);
+            lines++;
+            if (lines >= 30) break;
+        }
+        return sb.ToString();
     }
 
     private static Exception WrapStage(Exception ex, string stage)

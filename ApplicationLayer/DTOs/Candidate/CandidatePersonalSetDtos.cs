@@ -20,6 +20,8 @@ public class CandidatePersonalSetJobDto
     public List<string> CvSkills { get; set; } = new();
     public List<string> GapSkills { get; set; } = new();
     public List<string> FocusSkills { get; set; } = new();
+    /// <summary>Coach: system | inferred — nguồn KB khi sinh đề.</summary>
+    public string? KbSource { get; set; }
     public DateTime CreatedAt { get; set; }
 }
 
