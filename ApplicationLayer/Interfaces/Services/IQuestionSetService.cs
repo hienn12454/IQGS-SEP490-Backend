@@ -27,13 +27,28 @@ public interface IQuestionSetService
     /// <summary>SCRUM-424: bật/tắt auto recommend + ngưỡng điểm (cho phép khi PUBLISHED).</summary>
     Task<SetRecommendationSettingsResponseDto> SetRecommendationSettingsAsync(
         Guid questionSetId, Guid ownerId, SetRecommendationSettingsRequestDto dto);
+
+    /// <summary>SCRUM-464: Practice vs Tuyển + HR anti-cheat.</summary>
+    Task<SetHiringAssessmentResponseDto> SetHiringAssessmentAsync(
+        Guid questionSetId, Guid ownerId, SetHiringAssessmentRequestDto dto);
+
+    /// <summary>SCRUM-465: bản JD ngắn cho candidate.</summary>
+    Task<SetPublicJobDescriptionResponseDto> SetPublicJobDescriptionAsync(
+        Guid questionSetId, Guid ownerId, SetPublicJobDescriptionRequestDto dto);
+
+    /// <summary>SCRUM-468: metadata tin tuyển (location / salary / expertise / domain).</summary>
+    Task<SetHiringPostingResponseDto> SetHiringPostingAsync(
+        Guid questionSetId, Guid ownerId, SetHiringPostingRequestDto dto);
+
     Task<RenameQuestionSetTitleResponseDto> RenameTitleAsync(
         Guid questionSetId, Guid ownerId, RenameQuestionSetTitleRequestDto dto);
     Task<UpdateQuestionSetJobDescriptionResponseDto> SetJobDescriptionFromTextAsync(
         Guid questionSetId, Guid ownerId, string jobDescription);
     Task<UpdateQuestionSetJobDescriptionResponseDto> SetJobDescriptionFromFileAsync(
         Guid questionSetId, Guid ownerId, Stream file, string fileName, CancellationToken ct = default);
-    Task<IReadOnlyList<QuestionSetPractitionerDto>> GetPractitionersAsync(Guid questionSetId, Guid ownerId);
+    /// <summary>SCRUM-471: includePractice=true trên bộ Tuyển trả thêm phiên luyện (không chỉ official).</summary>
+    Task<IReadOnlyList<QuestionSetPractitionerDto>> GetPractitionersAsync(
+        Guid questionSetId, Guid ownerId, bool includePractice = false);
     /// <summary>SCRUM-391: xuất Excel bộ câu hỏi (gate export).</summary>
     Task<QuestionExportFileDto> ExportExcelAsync(Guid questionSetId, Guid ownerId);
     /// <summary>SCRUM-391: soft-delete bộ câu hỏi (unpublish nếu đang PUBLISHED).</summary>

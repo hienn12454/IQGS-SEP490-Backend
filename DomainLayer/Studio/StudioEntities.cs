@@ -31,6 +31,8 @@ public sealed class JobDescription : BaseEntity
     public string Content { get; set; } = string.Empty;
     public JobDescriptionSourceType SourceType { get; set; } = JobDescriptionSourceType.PastedText;
     public string? OriginalFileName { get; set; }
+    /// <summary>SCRUM-465: path file JD gốc trên Azure Blob — null khi paste.</summary>
+    public string? BlobPath { get; set; }
     public string? DetectedRole { get; set; }
     public string? DetectedSeniority { get; set; }
     public string? DetectedLanguage { get; set; }
@@ -189,6 +191,12 @@ public sealed class StudioSettings : BaseEntity
     /// <summary>AI recommendation draft snapshot — không ghi đè final settings.</summary>
     public string? AiRecommendationJson { get; set; }
     public DateTime? AiRecommendationGeneratedAt { get; set; }
+
+    /// <summary>SCRUM-464: HR chọn Practice/Tuyển sau khi gen xong — copy sang QuestionSet lúc Save/Publish.</summary>
+    public bool IsHiringAssessment { get; set; }
+
+    /// <summary>SCRUM-464: HR muốn anti-cheat trên bộ Tuyển (cần Admin platform ON).</summary>
+    public bool HrAntiCheatEnabled { get; set; }
 
     public InterviewProject? Project { get; set; }
     public InterviewPlan? AppliedPlan { get; set; }

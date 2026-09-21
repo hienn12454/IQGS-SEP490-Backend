@@ -86,7 +86,8 @@ public class CandidateQuestionSetService : ICandidateQuestionSetService
 
         var (rows, totalCount) = await _repository.ListPublishedAsync(
             fetchPage, fetchSize, query.Keyword, query.CompanyId, query.Difficulty, query.Skills, sortBy,
-            targetRole, overlap, minAttemptCount, candidateUserId, hasCompletedPractice);
+            targetRole, overlap, minAttemptCount, candidateUserId, hasCompletedPractice,
+            query.IsHiringAssessment);
         var items = rows.Select(r => PublishedQuestionSetMapper.ToListItemDto(r, trendingThreshold)).ToList();
 
         await EnrichListItemsAsync(items, candidateUserId, cvSkills);
@@ -137,6 +138,20 @@ public class CandidateQuestionSetService : ICandidateQuestionSetService
             IsLocked = false
         }).ToList();
 
+        string? jdFileUrl = null;
+        if (HiringJdExposureHelper.ShouldExposeJdFileUrl(detail.IsHiringAssessment, detail.JdBlobPath))
+        {
+            try
+            {
+                jdFileUrl = await _blobStorage.GenerateReadSasUrlAsync(
+                    detail.JdBlobPath!.Trim(), TimeSpan.FromHours(2));
+            }
+            catch
+            {
+                jdFileUrl = null;
+            }
+        }
+
         return new CandidateQuestionSetDetailDto
         {
             Id = detail.Id,
@@ -145,6 +160,20 @@ public class CandidateQuestionSetService : ICandidateQuestionSetService
             CompanyName = detail.CompanyName,
             CompanyLogo = CompanyLogoResolver.Resolve(detail.CompanyLogo, detail.CompanyWebsite, detail.CompanyName),
             Description = detail.Description,
+            IsHiringAssessment = detail.IsHiringAssessment,
+            JobDescription = HiringJdExposureHelper.ResolveCandidateJobDescription(
+                detail.IsHiringAssessment, detail.PublicJobDescription),
+            JobLocation = detail.IsHiringAssessment ? detail.JobLocation : null,
+            WorkplaceType = detail.IsHiringAssessment ? detail.WorkplaceType : null,
+            SalaryMin = detail.IsHiringAssessment ? detail.SalaryMin : null,
+            SalaryMax = detail.IsHiringAssessment ? detail.SalaryMax : null,
+            SalaryNegotiable = detail.IsHiringAssessment && detail.SalaryNegotiable,
+            JobExpertise = detail.IsHiringAssessment ? detail.JobExpertise : null,
+            JobDomain = detail.IsHiringAssessment ? detail.JobDomain : null,
+            PublishedAt = detail.PublishedAt,
+            JdSourceType = detail.IsHiringAssessment ? detail.JdSourceType : null,
+            JdOriginalFileName = detail.IsHiringAssessment ? detail.JdOriginalFileName : null,
+            JdFileUrl = jdFileUrl,
             Difficulty = detail.Difficulty,
             Skills = PublishedQuestionSetMapper.MergeSkills(
                 ordered.Where(q => !string.IsNullOrWhiteSpace(q.Skill)).Select(q => q.Skill!),

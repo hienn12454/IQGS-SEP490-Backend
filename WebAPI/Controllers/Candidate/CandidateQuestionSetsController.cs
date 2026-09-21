@@ -28,7 +28,7 @@ public class CandidateQuestionSetsController : ControllerBase
 
     /// <summary>Danh sách bộ câu hỏi đã PUBLISHED kèm tên/logo công ty, phân trang. Hỗ trợ tìm theo keyword (tên bộ/công ty), lọc theo companyId/difficulty/skills.</summary>
     /// <remarks>Public — không cần đăng nhập, ai cũng gọi được.</remarks>
-    /// <param name="query">page, pageSize, keyword, companyId, difficulty, skills (có thể truyền nhiều lần).</param>
+    /// <param name="query">page, pageSize, keyword, companyId, difficulty, skills, isHiringAssessment (SCRUM-467).</param>
     [HttpGet]
     [AllowAnonymous]
     public async Task<IActionResult> List([FromQuery] CandidateQuestionSetListQueryDto query)

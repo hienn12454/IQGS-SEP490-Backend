@@ -1,6 +1,7 @@
 using System.Text.Json;
 using ApplicationLayer.DTOs.Candidate;
 using ApplicationLayer.DTOs.QuestionSet;
+using ApplicationLayer.Helpers;
 
 namespace ApplicationLayer.Services.Mapping;
 
@@ -24,6 +25,17 @@ internal static class PublishedQuestionSetMapper
         CompanyName = row.CompanyName,
         CompanyLogo = CompanyLogoResolver.Resolve(row.CompanyLogo, row.CompanyWebsite, row.CompanyName),
         Description = row.Description,
+        IsHiringAssessment = row.IsHiringAssessment,
+        PublicJobDescriptionPreview = HiringJdExposureHelper.BuildPublicJobDescriptionPreview(
+            row.IsHiringAssessment, row.PublicJobDescription),
+        PublishedAt = row.PublishedAt,
+        JobLocation = row.IsHiringAssessment ? row.JobLocation : null,
+        WorkplaceType = row.IsHiringAssessment ? row.WorkplaceType : null,
+        SalaryMin = row.IsHiringAssessment ? row.SalaryMin : null,
+        SalaryMax = row.IsHiringAssessment ? row.SalaryMax : null,
+        SalaryNegotiable = row.IsHiringAssessment && row.SalaryNegotiable,
+        JobExpertise = row.IsHiringAssessment ? row.JobExpertise : null,
+        JobDomain = row.IsHiringAssessment ? row.JobDomain : null,
         Difficulty = row.Difficulty,
         Skills = MergeSkills(row.QuestionSkills, row.SkillsJson),
         TotalQuestions = row.TotalQuestions,

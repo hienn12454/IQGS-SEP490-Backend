@@ -68,6 +68,15 @@ public class CandidateMarketplaceRepository : ICandidateMarketplaceRepository
                     || EF.Functions.ILike(x.QuestionSet.HrNote, MarketplaceDescriptionHelper.StudioMirrorPrefix + "%"))
                 ? null
                 : x.QuestionSet.HrNote,
+            IsHiringAssessment = x.QuestionSet.IsHiringAssessment,
+            PublicJobDescription = x.QuestionSet.PublicJobDescription,
+            JobLocation = x.QuestionSet.JobLocation,
+            WorkplaceType = x.QuestionSet.WorkplaceType,
+            SalaryMin = x.QuestionSet.SalaryMin,
+            SalaryMax = x.QuestionSet.SalaryMax,
+            SalaryNegotiable = x.QuestionSet.SalaryNegotiable,
+            JobExpertise = x.QuestionSet.JobExpertise,
+            JobDomain = x.QuestionSet.JobDomain,
             Rating = _context.PracticeSessions
                 .Where(ps => ps.QuestionSetId == x.QuestionSet.Id && ps.IsActive)
                 .Average(ps => ps.OverallScore),
@@ -103,19 +112,28 @@ public class CandidateMarketplaceRepository : ICandidateMarketplaceRepository
         int page, int pageSize, string? keyword, Guid? companyId, string? difficulty,
         IReadOnlyList<string>? skills, string sortBy = "featured",
         string? targetRole = null, IReadOnlyList<string>? requireOverlapSkills = null,
-        int? minAttemptCount = null, Guid? practiceFilterCandidateId = null, bool? hasCompletedPractice = null)
+        int? minAttemptCount = null, Guid? practiceFilterCandidateId = null, bool? hasCompletedPractice = null,
+        bool? isHiringAssessment = null)
     {
         var query = PublishedWithCompanyQuery();
+
+        // SCRUM-467: tách Practice vs Tuyển dụng
+        if (isHiringAssessment is bool hiringOnly)
+            query = query.Where(x => x.QuestionSet.IsHiringAssessment == hiringOnly);
 
         if (!string.IsNullOrWhiteSpace(keyword))
         {
             var term = $"%{keyword.Trim()}%";
+            var searchPublicJd = isHiringAssessment == true;
             query = query.Where(x =>
                 EF.Functions.ILike(x.QuestionSet.Title ?? "", term) ||
                 (x.QuestionSet.HrNote != null
                     && !EF.Functions.ILike(x.QuestionSet.HrNote, MarketplaceDescriptionHelper.StudioSavePrefix + "%")
                     && !EF.Functions.ILike(x.QuestionSet.HrNote, MarketplaceDescriptionHelper.StudioMirrorPrefix + "%")
-                    && EF.Functions.ILike(x.QuestionSet.HrNote, term)));
+                    && EF.Functions.ILike(x.QuestionSet.HrNote, term)) ||
+                (searchPublicJd
+                    && x.QuestionSet.PublicJobDescription != null
+                    && EF.Functions.ILike(x.QuestionSet.PublicJobDescription, term)));
         }
 
         if (companyId.HasValue)
@@ -208,12 +226,26 @@ public class CandidateMarketplaceRepository : ICandidateMarketplaceRepository
                         || EF.Functions.ILike(x.QuestionSet.HrNote, MarketplaceDescriptionHelper.StudioMirrorPrefix + "%"))
                     ? null
                     : x.QuestionSet.HrNote,
+                IsHiringAssessment = x.QuestionSet.IsHiringAssessment,
+                JobDescription = x.QuestionSet.JobDescription,
+                PublicJobDescription = x.QuestionSet.PublicJobDescription,
+                JobLocation = x.QuestionSet.JobLocation,
+                WorkplaceType = x.QuestionSet.WorkplaceType,
+                SalaryMin = x.QuestionSet.SalaryMin,
+                SalaryMax = x.QuestionSet.SalaryMax,
+                SalaryNegotiable = x.QuestionSet.SalaryNegotiable,
+                JobExpertise = x.QuestionSet.JobExpertise,
+                JobDomain = x.QuestionSet.JobDomain,
+                JdSourceType = x.QuestionSet.JdSourceType,
+                JdOriginalFileName = x.QuestionSet.JdOriginalFileName,
+                JdBlobPath = x.QuestionSet.JdBlobPath,
                 Rating = _context.PracticeSessions
                     .Where(ps => ps.QuestionSetId == x.QuestionSet.Id && ps.IsActive)
                     .Average(ps => ps.OverallScore),
                 AttemptCount = _context.PracticeSessions
                     .Count(ps => ps.QuestionSetId == x.QuestionSet.Id && ps.IsActive),
-                IsPinned = x.QuestionSet.IsPinned
+                IsPinned = x.QuestionSet.IsPinned,
+                PublishedAt = x.QuestionSet.PublishedAt
             }).FirstOrDefaultAsync();
 
         if (detail is null)
@@ -272,6 +304,19 @@ public class CandidateMarketplaceRepository : ICandidateMarketplaceRepository
             Difficulty = difficulty,
             TimeLimitMinutes = set.TimeLimitMinutes,
             Description = MarketplaceDescriptionHelper.ToPublic(set.HrNote),
+            IsHiringAssessment = set.IsHiringAssessment,
+            JobDescription = set.JobDescription,
+            PublicJobDescription = set.PublicJobDescription,
+            JobLocation = set.JobLocation,
+            WorkplaceType = set.WorkplaceType,
+            SalaryMin = set.SalaryMin,
+            SalaryMax = set.SalaryMax,
+            SalaryNegotiable = set.SalaryNegotiable,
+            JobExpertise = set.JobExpertise,
+            JobDomain = set.JobDomain,
+            JdSourceType = set.JdSourceType,
+            JdOriginalFileName = set.JdOriginalFileName,
+            JdBlobPath = set.JdBlobPath,
             AttemptCount = await _context.PracticeSessions.CountAsync(ps => ps.QuestionSetId == id && ps.IsActive),
             Rating = await _context.PracticeSessions
                 .Where(ps => ps.QuestionSetId == id && ps.IsActive)

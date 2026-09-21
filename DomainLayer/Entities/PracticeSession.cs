@@ -30,5 +30,8 @@ public class PracticeSession : BaseEntity
     /// <summary>SCRUM-446: Thời điểm ghi nhận rời tab gần nhất — dùng debounce ~2s.</summary>
     public DateTime? LastTabLeaveAt { get; set; }
 
+    /// <summary>SCRUM-464: lần complete đầu trên bộ Tuyển — ghi lịch sử HR; retry = false.</summary>
+    public bool IsOfficialTest { get; set; }
+
     public QuestionSet QuestionSet { get; set; } = null!;
 }

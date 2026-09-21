@@ -76,6 +76,27 @@ public class QuestionSetDetailResponseDto
     /// <summary>Tên file gốc khi JD upload; null khi paste.</summary>
     public string? JdOriginalFileName { get; set; }
 
+    /// <summary>SCRUM-465: path blob JD gốc (HR nội bộ).</summary>
+    public string? JdBlobPath { get; set; }
+
+    /// <summary>SCRUM-465: SAS ngắn hạn để HR preview file JD — null nếu không có blob.</summary>
+    public string? JdFileUrl { get; set; }
+
+    /// <summary>SCRUM-465: bản JD ngắn hiện cho candidate khi Tuyển.</summary>
+    public string? PublicJobDescription { get; set; }
+
+    /// <summary>SCRUM-468: địa điểm tin tuyển.</summary>
+    public string? JobLocation { get; set; }
+
+    /// <summary>SCRUM-468: AtOffice | Hybrid | Remote.</summary>
+    public string? WorkplaceType { get; set; }
+
+    public int? SalaryMin { get; set; }
+    public int? SalaryMax { get; set; }
+    public bool SalaryNegotiable { get; set; } = true;
+    public string? JobExpertise { get; set; }
+    public string? JobDomain { get; set; }
+
     public string? HrNote { get; set; }
 
     /// <summary>Giới hạn thời gian làm bài practice (phút) — null = không giới hạn.</summary>
@@ -86,6 +107,12 @@ public class QuestionSetDetailResponseDto
 
     /// <summary>SCRUM-424: Ngưỡng OverallScore tối thiểu để tạo recommendation.</summary>
     public double RecommendationMinScore { get; set; } = 70;
+
+    /// <summary>SCRUM-464: bộ Tuyển (JD public + official test).</summary>
+    public bool IsHiringAssessment { get; set; }
+
+    /// <summary>SCRUM-464: HR muốn anti-cheat trên bộ Tuyển.</summary>
+    public bool HrAntiCheatEnabled { get; set; }
 
     public object? Plan { get; set; }
     public DateTime? GeneratedAt { get; set; }
@@ -119,6 +146,12 @@ public class PublishQuestionSetRequestDto
     /// <summary>Ngưỡng điểm gợi ý ứng viên 50–95; chỉ áp dụng khi AutoRecommendEnabled có gửi hoặc đang bật.</summary>
     [System.ComponentModel.DataAnnotations.Range(50, 95, ErrorMessage = "Ngưỡng điểm phải từ 50 đến 95.")]
     public double? RecommendationMinScore { get; set; }
+
+    /// <summary>SCRUM-464: null = giữ cấu hình hiện tại.</summary>
+    public bool? IsHiringAssessment { get; set; }
+
+    /// <summary>SCRUM-464: null = giữ; chỉ có ý nghĩa khi bộ Tuyển.</summary>
+    public bool? HrAntiCheatEnabled { get; set; }
 }
 
 /// <summary>SCRUM-438: Tổng hợp set PUBLISHED của HR (practice + rating).</summary>
@@ -135,6 +168,9 @@ public class PublishedOverviewItemDto
     public double? AverageScore { get; set; }
     public double? AverageRating { get; set; }
     public int FeedbackCount { get; set; }
+
+    /// <summary>SCRUM-464</summary>
+    public bool IsHiringAssessment { get; set; }
 }
 
 /// <summary>Request đặt giới hạn thời gian làm bài practice cho 1 bộ câu hỏi.</summary>
@@ -166,6 +202,76 @@ public class SetRecommendationSettingsResponseDto
     public Guid QuestionSetId { get; set; }
     public bool AutoRecommendEnabled { get; set; }
     public double RecommendationMinScore { get; set; }
+}
+
+/// <summary>SCRUM-464: Practice vs Tuyển + anti-cheat HR (cho phép sửa khi PUBLISHED — ảnh hưởng phiên mới).</summary>
+public class SetHiringAssessmentRequestDto
+{
+    public bool IsHiringAssessment { get; set; }
+
+    /// <summary>Chỉ có hiệu lực khi IsHiringAssessment; thực tế cần Admin platform ON.</summary>
+    public bool HrAntiCheatEnabled { get; set; }
+}
+
+public class SetHiringAssessmentResponseDto
+{
+    public Guid QuestionSetId { get; set; }
+    public bool IsHiringAssessment { get; set; }
+    public bool HrAntiCheatEnabled { get; set; }
+}
+
+/// <summary>SCRUM-465: bản JD ngắn cho candidate (cho phép sửa khi PUBLISHED).</summary>
+public class SetPublicJobDescriptionRequestDto
+{
+    [System.ComponentModel.DataAnnotations.Required(ErrorMessage = "PublicJobDescription không được để trống.")]
+    [System.ComponentModel.DataAnnotations.MinLength(1, ErrorMessage = "PublicJobDescription không được để trống.")]
+    [System.ComponentModel.DataAnnotations.MaxLength(20000, ErrorMessage = "PublicJobDescription tối đa 20000 ký tự.")]
+    public string PublicJobDescription { get; set; } = string.Empty;
+}
+
+public class SetPublicJobDescriptionResponseDto
+{
+    public Guid QuestionSetId { get; set; }
+    public string PublicJobDescription { get; set; } = string.Empty;
+    public int CharacterCount { get; set; }
+}
+
+/// <summary>SCRUM-468: metadata tin tuyển (location / salary / expertise / domain).</summary>
+public class SetHiringPostingRequestDto
+{
+    [System.ComponentModel.DataAnnotations.Required(ErrorMessage = "JobLocation không được để trống.")]
+    [System.ComponentModel.DataAnnotations.MaxLength(200, ErrorMessage = "JobLocation tối đa 200 ký tự.")]
+    public string JobLocation { get; set; } = string.Empty;
+
+    /// <summary>AtOffice | Hybrid | Remote — optional.</summary>
+    [System.ComponentModel.DataAnnotations.MaxLength(20)]
+    public string? WorkplaceType { get; set; }
+
+    public int? SalaryMin { get; set; }
+    public int? SalaryMax { get; set; }
+
+    /// <summary>true = thỏa thuận (không bắt buộc min/max).</summary>
+    public bool SalaryNegotiable { get; set; } = true;
+
+    [System.ComponentModel.DataAnnotations.Required(ErrorMessage = "JobExpertise không được để trống.")]
+    [System.ComponentModel.DataAnnotations.MaxLength(120, ErrorMessage = "JobExpertise tối đa 120 ký tự.")]
+    public string JobExpertise { get; set; } = string.Empty;
+
+    [System.ComponentModel.DataAnnotations.Required(ErrorMessage = "JobDomain không được để trống.")]
+    [System.ComponentModel.DataAnnotations.MaxLength(120, ErrorMessage = "JobDomain tối đa 120 ký tự.")]
+    public string JobDomain { get; set; } = string.Empty;
+}
+
+public class SetHiringPostingResponseDto
+{
+    public Guid QuestionSetId { get; set; }
+    public string? JobLocation { get; set; }
+    public string? WorkplaceType { get; set; }
+    public int? SalaryMin { get; set; }
+    public int? SalaryMax { get; set; }
+    public bool SalaryNegotiable { get; set; }
+    public string? JobExpertise { get; set; }
+    public string? JobDomain { get; set; }
 }
 
 /// <summary>SCRUM-397: tạo bộ câu hỏi DRAFT rỗng từ Question Builder (không qua Studio).</summary>
@@ -224,6 +330,9 @@ public class QuestionSetPractitionerRow
     public double? OverallScore { get; set; }
     public DateTime? StartedAt { get; set; }
     public DateTime? CompletedAt { get; set; }
+
+    /// <summary>SCRUM-464: phiên bài test chính thức trên bộ Tuyển.</summary>
+    public bool IsOfficialTest { get; set; }
 }
 
 /// <summary>SCRUM-326: 1 candidate đã practice bộ câu hỏi của HR — khác Recommendation (không lọc theo ngưỡng điểm).</summary>
@@ -243,6 +352,9 @@ public class QuestionSetPractitionerDto
     public double? OverallScore { get; set; }
     public DateTime? StartedAt { get; set; }
     public DateTime? CompletedAt { get; set; }
+
+    /// <summary>SCRUM-464</summary>
+    public bool IsOfficialTest { get; set; }
 }
 
 /// <summary>Read-model cho 1 dòng marketplace (projection JOIN question_sets/HRProfiles/Companies), dùng nội bộ bởi repository.</summary>
@@ -266,6 +378,21 @@ public class PublishedQuestionSetRow
 
     /// <summary>Mô tả bộ câu hỏi hiển thị trên card — lấy từ question_sets.HrNote sau khi lọc marker nội bộ (STUDIO_SAVE / STUDIO_MIRROR).</summary>
     public string? Description { get; set; }
+
+    /// <summary>SCRUM-464</summary>
+    public bool IsHiringAssessment { get; set; }
+
+    /// <summary>SCRUM-467: bản ngắn — dùng tạo PublicJobDescriptionPreview trên list.</summary>
+    public string? PublicJobDescription { get; set; }
+
+    /// <summary>SCRUM-468: metadata tin tuyển (null khi Practice / chưa nhập).</summary>
+    public string? JobLocation { get; set; }
+    public string? WorkplaceType { get; set; }
+    public int? SalaryMin { get; set; }
+    public int? SalaryMax { get; set; }
+    public bool SalaryNegotiable { get; set; } = true;
+    public string? JobExpertise { get; set; }
+    public string? JobDomain { get; set; }
 
     /// <summary>
     /// OverallScore trung bình các phiên luyện tập đã chấm — RAW, thang 0-100 (SCRUM-304).
@@ -297,6 +424,30 @@ public class PublishedQuestionSetDetail
     public string SkillsJson { get; set; } = "[]";
     public int? TimeLimitMinutes { get; set; }
     public string? Description { get; set; }
+
+    /// <summary>SCRUM-464</summary>
+    public bool IsHiringAssessment { get; set; }
+
+    /// <summary>SCRUM-464: raw JD extract — không expose nguyên văn cho candidate.</summary>
+    public string? JobDescription { get; set; }
+
+    /// <summary>SCRUM-465: bản ngắn HR soạn cho candidate.</summary>
+    public string? PublicJobDescription { get; set; }
+
+    /// <summary>SCRUM-468: metadata tin tuyển.</summary>
+    public string? JobLocation { get; set; }
+    public string? WorkplaceType { get; set; }
+    public int? SalaryMin { get; set; }
+    public int? SalaryMax { get; set; }
+    public bool SalaryNegotiable { get; set; } = true;
+    public string? JobExpertise { get; set; }
+    public string? JobDomain { get; set; }
+    public DateTime? PublishedAt { get; set; }
+
+    /// <summary>SCRUM-465</summary>
+    public string JdSourceType { get; set; } = "PastedText";
+    public string? JdOriginalFileName { get; set; }
+    public string? JdBlobPath { get; set; }
 
     /// <summary>OverallScore trung bình RAW, thang 0-100 — xem ghi chú ở PublishedQuestionSetRow.Rating.</summary>
     public double? Rating { get; set; }

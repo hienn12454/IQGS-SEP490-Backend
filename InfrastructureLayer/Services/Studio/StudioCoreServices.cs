@@ -161,6 +161,9 @@ public sealed class InterviewProjectService(
         var jdFileName = jdSourceType == "UploadedFile"
             ? (string.IsNullOrWhiteSpace(jd?.OriginalFileName) ? null : jd!.OriginalFileName!.Trim())
             : null;
+        var jdBlobPath = jdSourceType == "UploadedFile"
+            ? (string.IsNullOrWhiteSpace(jd?.BlobPath) ? null : jd!.BlobPath!.Trim())
+            : null;
         var planJson = string.IsNullOrWhiteSpace(plan?.SourcePlanJson) ? "{}" : plan!.SourcePlanJson!;
         var ownerId = project.OwnerId != Guid.Empty ? project.OwnerId : userId;
 
@@ -230,6 +233,13 @@ public sealed class InterviewProjectService(
         var publicNote = MarketplaceDescriptionHelper.ResolveForStudioSave(
             project.Description, existing?.HrNote);
 
+        // SCRUM-464: copy Practice/Tuyển từ StudioSettings → QuestionSet
+        var studioSettings = await dbContext.StudioSettings
+            .AsNoTracking()
+            .FirstOrDefaultAsync(s => s.ProjectId == projectId && s.IsActive, ct);
+        var isHiring = studioSettings?.IsHiringAssessment ?? false;
+        var hrAntiCheat = isHiring && (studioSettings?.HrAntiCheatEnabled ?? false);
+
         if (existing is null)
         {
             var set = new DomainLayer.Entities.QuestionSet
@@ -244,9 +254,12 @@ public sealed class InterviewProjectService(
                 JobDescription = jdContent,
                 JdSourceType = jdSourceType,
                 JdOriginalFileName = jdFileName,
+                JdBlobPath = jdBlobPath,
                 HrNote = publicNote,
                 PlanJson = planJson,
-                GeneratedAt = latestRun?.CompletedAt ?? DateTime.UtcNow
+                GeneratedAt = latestRun?.CompletedAt ?? DateTime.UtcNow,
+                IsHiringAssessment = isHiring,
+                HrAntiCheatEnabled = hrAntiCheat
             };
 
             foreach (var q in snapshot)
@@ -262,6 +275,7 @@ public sealed class InterviewProjectService(
         existing.JobDescription = jdContent;
         existing.JdSourceType = jdSourceType;
         existing.JdOriginalFileName = jdFileName;
+        existing.JdBlobPath = jdBlobPath;
         existing.HrNote = publicNote;
         existing.PlanJson = planJson;
         existing.SourcePlanId = plan?.Id;
@@ -269,6 +283,8 @@ public sealed class InterviewProjectService(
         existing.GeneratedAt = latestRun?.CompletedAt ?? DateTime.UtcNow;
         existing.UpdatedAt = DateTime.UtcNow;
         existing.OwnerId = ownerId;
+        existing.IsHiringAssessment = isHiring;
+        existing.HrAntiCheatEnabled = hrAntiCheat;
 
         if (existing.Questions.Count > 0)
             dbContext.QuestionSetQuestions.RemoveRange(existing.Questions);
@@ -338,7 +354,9 @@ public sealed class InterviewProjectService(
                 QuestionIds = mappedSetQuestionIds,
                 TimeLimitMinutes = request?.TimeLimitMinutes,
                 AutoRecommendEnabled = request?.AutoRecommendEnabled,
-                RecommendationMinScore = request?.RecommendationMinScore
+                RecommendationMinScore = request?.RecommendationMinScore,
+                IsHiringAssessment = request?.IsHiringAssessment,
+                HrAntiCheatEnabled = request?.HrAntiCheatEnabled
             });
     }
 
@@ -414,7 +432,8 @@ public sealed class JobDescriptionService(
                 ProjectId = projectId,
                 Content = content,
                 SourceType = request.SourceType,
-                OriginalFileName = request.OriginalFileName
+                OriginalFileName = request.OriginalFileName,
+                BlobPath = null
             };
             dbContext.StudioJobDescriptions.Add(row);
         }
@@ -424,6 +443,16 @@ public sealed class JobDescriptionService(
             row.SourceType = request.SourceType;
             if (request.OriginalFileName is not null)
                 row.OriginalFileName = request.OriginalFileName;
+            // Paste text → không còn file gốc
+            if (request.SourceType == JobDescriptionSourceType.PastedText)
+            {
+                if (!string.IsNullOrWhiteSpace(row.BlobPath))
+                {
+                    // Blob delete optional — paste không inject blobStorage vào nested class; bỏ path
+                    row.BlobPath = null;
+                }
+                row.OriginalFileName = null;
+            }
             row.UpdatedAt = DateTime.UtcNow;
         }
 
@@ -3078,9 +3107,28 @@ public sealed class StudioSettingsService(AppDbContext dbContext, IInterviewProj
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray());
 
+        // SCRUM-464: Practice vs Tuyển — null = không đổi
+        if (request.IsHiringAssessment is bool isHiring)
+            settings.IsHiringAssessment = isHiring;
+        if (request.HrAntiCheatEnabled is bool hrAc)
+            settings.HrAntiCheatEnabled = hrAc;
+        if (!settings.IsHiringAssessment)
+            settings.HrAntiCheatEnabled = false;
+
         settings.UpdatedAt = DateTime.UtcNow;
         // Phase 1: chỉ lưu scalar settings (không đụng focus navigation)
         await dbContext.SaveChangesAsync(ct);
+
+        // SCRUM-464: đồng bộ Practice/Tuyển sang QuestionSet (kể cả PUBLISHED — ảnh hưởng phiên mới)
+        var linkedSet = await dbContext.QuestionSets
+            .FirstOrDefaultAsync(qs => qs.SourceProjectId == projectId && qs.IsActive, ct);
+        if (linkedSet is not null)
+        {
+            linkedSet.IsHiringAssessment = settings.IsHiringAssessment;
+            linkedSet.HrAntiCheatEnabled = settings.IsHiringAssessment && settings.HrAntiCheatEnabled;
+            linkedSet.UpdatedAt = DateTime.UtcNow;
+            await dbContext.SaveChangesAsync(ct);
+        }
 
         // Phase 2: thay focus qua ExecuteUpdate + AddRange (tách khỏi tracker settings)
         if (request.FocusAreas is { Count: > 0 })
@@ -3134,7 +3182,9 @@ public sealed class StudioSettingsService(AppDbContext dbContext, IInterviewProj
             focusAreas,
             styles,
             recommended,
-            settings.AiRecommendationGeneratedAt);
+            settings.AiRecommendationGeneratedAt,
+            settings.IsHiringAssessment,
+            settings.HrAntiCheatEnabled);
     }
 
     private async Task<StudioReadinessDto> BuildReadinessAsync(Guid projectId, Guid? appliedPlanId, CancellationToken ct)

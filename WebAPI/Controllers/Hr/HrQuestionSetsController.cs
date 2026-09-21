@@ -126,6 +126,30 @@ public class HrQuestionSetsController : ControllerBase
         return SuccessResp.Ok(result);
     }
 
+    /// <summary>SCRUM-464: Practice vs Tuyển + anti-cheat HR. Được sửa khi PUBLISHED — chỉ ảnh hưởng phiên mới.</summary>
+    [HttpPut("{id:guid}/hiring-assessment")]
+    public async Task<IActionResult> SetHiringAssessment(Guid id, [FromBody] SetHiringAssessmentRequestDto dto)
+    {
+        var result = await _service.SetHiringAssessmentAsync(id, GetCurrentUserId(), dto);
+        return SuccessResp.Ok(result);
+    }
+
+    /// <summary>SCRUM-465: bản JD ngắn hiện cho candidate (bộ Tuyển). Được sửa khi PUBLISHED.</summary>
+    [HttpPut("{id:guid}/public-job-description")]
+    public async Task<IActionResult> SetPublicJobDescription(Guid id, [FromBody] SetPublicJobDescriptionRequestDto dto)
+    {
+        var result = await _service.SetPublicJobDescriptionAsync(id, GetCurrentUserId(), dto);
+        return SuccessResp.Ok(result);
+    }
+
+    /// <summary>SCRUM-468: metadata tin tuyển (location / salary / expertise / domain).</summary>
+    [HttpPut("{id:guid}/hiring-posting")]
+    public async Task<IActionResult> SetHiringPosting(Guid id, [FromBody] SetHiringPostingRequestDto dto)
+    {
+        var result = await _service.SetHiringPostingAsync(id, GetCurrentUserId(), dto);
+        return SuccessResp.Ok(result);
+    }
+
     /// <summary>Đổi tên bộ câu hỏi (SCRUM-330) — không ảnh hưởng trạng thái DRAFT/PUBLISHED hiện tại. Marketplace/danh sách sẽ phản ánh tên mới ngay.</summary>
     /// <param name="id">Id bộ câu hỏi.</param>
     /// <param name="dto">title: 1–500 ký tự, không được để trống.</param>
@@ -136,12 +160,17 @@ public class HrQuestionSetsController : ControllerBase
         return SuccessResp.Ok(result);
     }
 
-    /// <summary>Danh sách candidate đã practice bộ câu hỏi này (SCRUM-326) — mọi trạng thái phiên (IN_PROGRESS/COMPLETED/ABANDONED), không lọc theo ngưỡng điểm như Recommendation. Chỉ HR chủ sở hữu xem được. Candidate đã tắt "Cho phép đề xuất hồ sơ cho HR" (AllowRecruiterRecommendation) sẽ không xuất hiện trong danh sách này.</summary>
+    /// <summary>
+    /// Danh sách candidate đã practice / làm bài trên bộ (SCRUM-326 / SCRUM-471).
+    /// Bộ Tuyển mặc định chỉ official (+ IN_PROGRESS); includePractice=true trả thêm phiên luyện.
+    /// Candidate tắt AllowRecruiterRecommendation không xuất hiện.
+    /// </summary>
     /// <param name="id">Id bộ câu hỏi.</param>
+    /// <param name="includePractice">SCRUM-471: true = xem thêm người luyện trên bộ Tuyển.</param>
     [HttpGet("{id:guid}/practitioners")]
-    public async Task<IActionResult> GetPractitioners(Guid id)
+    public async Task<IActionResult> GetPractitioners(Guid id, [FromQuery] bool includePractice = false)
     {
-        var result = await _service.GetPractitionersAsync(id, GetCurrentUserId());
+        var result = await _service.GetPractitionersAsync(id, GetCurrentUserId(), includePractice);
         return SuccessResp.Ok(result);
     }
 

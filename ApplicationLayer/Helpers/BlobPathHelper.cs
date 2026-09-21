@@ -22,6 +22,14 @@ public static class BlobPathHelper
         return $"question-set-media/{questionSetId:D}/{questionId:D}/{safeName}";
     }
 
+    /// <summary>SCRUM-465: file JD gốc (Studio project).</summary>
+    public static string BuildStudioJobDescriptionPath(Guid projectId, string fileName)
+        => $"job-descriptions/studio/{projectId:N}/{Guid.NewGuid():N}-{SanitizeFileName(fileName)}";
+
+    /// <summary>SCRUM-465: file JD gốc (QuestionSet History upload).</summary>
+    public static string BuildQuestionSetJobDescriptionPath(Guid questionSetId, string fileName)
+        => $"job-descriptions/question-sets/{questionSetId:N}/{Guid.NewGuid():N}-{SanitizeFileName(fileName)}";
+
     public static string SanitizeFileName(string fileName)
     {
         var name = Path.GetFileName(fileName);

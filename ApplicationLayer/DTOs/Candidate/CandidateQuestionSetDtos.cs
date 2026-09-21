@@ -23,6 +23,11 @@ public class CandidateQuestionSetListQueryDto
 
     /// <summary>cv | targetRole | weak | trending | unattempted | retry — chip gợi ý trên Practice (saved/mine xử lý FE bằng API khác).</summary>
     public string? Chip { get; set; }
+
+    /// <summary>
+    /// SCRUM-467: true = trang Tuyển dụng; false = Practice; null = không lọc (legacy).
+    /// </summary>
+    public bool? IsHiringAssessment { get; set; }
 }
 
 /// <summary>1 item hiển thị trên card marketplace.</summary>
@@ -39,6 +44,24 @@ public class CandidateQuestionSetListItemDto
 
     /// <summary>Mô tả bộ câu hỏi (question_sets.HrNote sau khi lọc marker STUDIO_SAVE / STUDIO_MIRROR) — null nếu HR không nhập hoặc chỉ còn marker.</summary>
     public string? Description { get; set; }
+
+    /// <summary>SCRUM-464: bộ Tuyển trên marketplace.</summary>
+    public bool IsHiringAssessment { get; set; }
+
+    /// <summary>SCRUM-467: snippet PublicJobDescription (~200 ký tự) — chỉ khi IsHiringAssessment.</summary>
+    public string? PublicJobDescriptionPreview { get; set; }
+
+    /// <summary>SCRUM-468: thời điểm publish — FE hiện "Posted X ago".</summary>
+    public DateTime? PublishedAt { get; set; }
+
+    /// <summary>SCRUM-468: metadata tin tuyển (chỉ meaningful khi IsHiringAssessment).</summary>
+    public string? JobLocation { get; set; }
+    public string? WorkplaceType { get; set; }
+    public int? SalaryMin { get; set; }
+    public int? SalaryMax { get; set; }
+    public bool SalaryNegotiable { get; set; }
+    public string? JobExpertise { get; set; }
+    public string? JobDomain { get; set; }
 
     public string Difficulty { get; set; } = string.Empty;
     public List<string> Skills { get; set; } = new();
@@ -84,6 +107,30 @@ public class CandidateQuestionSetDetailDto
 
     /// <summary>Mô tả bộ câu hỏi (question_sets.HrNote sau khi lọc marker STUDIO_SAVE / STUDIO_MIRROR) — null nếu HR không nhập hoặc chỉ còn marker.</summary>
     public string? Description { get; set; }
+
+    /// <summary>SCRUM-464: bộ Tuyển trên marketplace.</summary>
+    public bool IsHiringAssessment { get; set; }
+
+    /// <summary>SCRUM-465: bản JD ngắn (PublicJobDescription) chỉ khi IsHiringAssessment.</summary>
+    public string? JobDescription { get; set; }
+
+    /// <summary>SCRUM-468: metadata tin tuyển.</summary>
+    public string? JobLocation { get; set; }
+    public string? WorkplaceType { get; set; }
+    public int? SalaryMin { get; set; }
+    public int? SalaryMax { get; set; }
+    public bool SalaryNegotiable { get; set; }
+    public string? JobExpertise { get; set; }
+    public string? JobDomain { get; set; }
+    public DateTime? PublishedAt { get; set; }
+
+    /// <summary>SCRUM-465: PastedText | UploadedFile</summary>
+    public string? JdSourceType { get; set; }
+
+    public string? JdOriginalFileName { get; set; }
+
+    /// <summary>SCRUM-465: SAS URL file JD gốc — null nếu paste / không blob.</summary>
+    public string? JdFileUrl { get; set; }
 
     public string Difficulty { get; set; } = string.Empty;
     public List<string> Skills { get; set; } = new();
