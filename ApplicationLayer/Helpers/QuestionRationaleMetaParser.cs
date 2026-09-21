@@ -17,6 +17,8 @@ public static class QuestionRationaleMetaParser
         public string? CodeTemplateType { get; init; }
         public string? CodeSnippet { get; init; }
         public string? SnippetLanguage { get; init; }
+        /// <summary>SCRUM-473: gợi ý ảnh/diagram — chỉ dùng cho HR export, không expose Candidate API.</summary>
+        public string? ImageHint { get; init; }
         /// <summary>Phần rationale thật (bỏ meta keys) — null nếu chỉ còn meta.</summary>
         public string? CleanRationale { get; init; }
     }
@@ -29,6 +31,7 @@ public static class QuestionRationaleMetaParser
         string? template = null;
         string? snippet = null;
         string? lang = null;
+        string? imageHint = null;
         var textParts = new List<string>();
 
         foreach (var rawPart in rationale.Split(';', StringSplitOptions.TrimEntries))
@@ -58,7 +61,11 @@ public static class QuestionRationaleMetaParser
             else if (key.Equals("lang", StringComparison.OrdinalIgnoreCase)
                      || key.Equals("language", StringComparison.OrdinalIgnoreCase))
                 lang = value;
-            // imageHint / diagramHint: HR-only — bỏ, không expose Candidate
+            else if (key.Equals("imageHint", StringComparison.OrdinalIgnoreCase)
+                     || key.Equals("imagePrompt", StringComparison.OrdinalIgnoreCase)
+                     || key.Equals("diagramHint", StringComparison.OrdinalIgnoreCase)
+                     || key.Equals("diagram", StringComparison.OrdinalIgnoreCase))
+                imageHint = value;
         }
 
         var clean = textParts.Count > 0 ? string.Join("; ", textParts) : null;
@@ -67,6 +74,7 @@ public static class QuestionRationaleMetaParser
             CodeTemplateType = template,
             CodeSnippet = snippet,
             SnippetLanguage = lang,
+            ImageHint = imageHint,
             CleanRationale = clean
         };
     }
