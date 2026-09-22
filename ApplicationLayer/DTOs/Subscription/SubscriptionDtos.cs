@@ -84,6 +84,24 @@ public class UpgradePaymentIntentDto
     public string? TransferContent { get; set; }
 }
 
+/// <summary>
+/// Lịch sử thanh toán của user hiện tại (từ tbl SubscriptionTransaction).
+/// Status chuẩn hóa PAID | PENDING | FAILED để FE dùng chung.
+/// </summary>
+public class PaymentHistoryItemDto
+{
+    public string InvoiceId { get; set; } = string.Empty;
+    public string PlanName { get; set; } = string.Empty;
+    public decimal Amount { get; set; }
+    public string Currency { get; set; } = "VND";
+    /// <summary>PAID | PENDING | FAILED</summary>
+    public string Status { get; set; } = "PAID";
+    public DateTime PaymentDate { get; set; }
+    public string? ReceiptUrl { get; set; }
+    public string? Type { get; set; }
+    public string? Provider { get; set; }
+}
+
 public class SePayWebhookRequestDto
 {
     /// <summary>ID webhook/event từ SePay.</summary>
