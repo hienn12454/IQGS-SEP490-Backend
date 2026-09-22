@@ -221,9 +221,12 @@ public class SubscriptionTransactionRepository : ISubscriptionTransactionReposit
 
     public Task<List<SubscriptionTransaction>> ListBySubscriptionAsync(Guid subscriptionId, int take = 50)
         => _db.SubscriptionTransactions
-            .Where(t => t.SubscriptionId == subscriptionId)
+            .AsNoTracking()
+            .Include(t => t.Subscription)
+                .ThenInclude(s => s.Plan)
+            .Where(t => t.SubscriptionId == subscriptionId && t.IsActive)
             .OrderByDescending(t => t.CreatedAt)
-            .Take(take)
+            .Take(Math.Clamp(take, 1, 100))
             .ToListAsync();
 
     public Task<List<SubscriptionTransaction>> ListRecentWithDetailsAsync(int take = 20)

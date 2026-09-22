@@ -49,6 +49,15 @@ public class SubscriptionController : ControllerBase
         return SuccessResp.Ok(dto);
     }
 
+    /// <summary>Lịch sử thanh toán (SubscriptionTransaction Paid/Pending/Failed) của user hiện tại.</summary>
+    [HttpGet("api/me/subscription/payments")]
+    [Authorize]
+    public async Task<IActionResult> ListMyPayments([FromQuery] int take = 50)
+    {
+        var items = await _subscriptionService.ListMyPaymentHistoryAsync(GetUserId(), take);
+        return SuccessResp.Ok(items);
+    }
+
     /// <summary>Tạo đơn SePay để nâng Premium, chưa nâng ngay.</summary>
     [HttpPost("api/me/subscription/upgrade")]
     [Authorize]

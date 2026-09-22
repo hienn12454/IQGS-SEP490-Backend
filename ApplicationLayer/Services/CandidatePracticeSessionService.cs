@@ -237,6 +237,11 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
             throw new BadRequestException("Phiên đang bật chống gian lận — không thể huỷ giữa chừng. Hãy nộp bài hoặc tiếp tục làm.");
 
         session.Status = PracticeSessionStatus.Abandoned;
+        // Empty abandon (0 câu trả lời): soft-delete để không làm đầy Kho ứng viên / history.
+        var answerCount = await _answerRepository.CountBySessionAsync(sessionId);
+        if (answerCount == 0)
+            session.IsActive = false;
+
         await _sessionRepository.UpdateAsync(session);
 
         return await BuildSessionResponseAsync(session);

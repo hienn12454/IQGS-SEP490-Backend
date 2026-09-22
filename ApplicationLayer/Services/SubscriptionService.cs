@@ -28,6 +28,8 @@ public interface ISubscriptionService
     Task<MySubscriptionDto> CancelAsync(Guid userId);
     Task<MySubscriptionDto> PurchaseAskAiPackAsync(Guid userId, int extraRequests, decimal amount);
     Task<List<UsageCounterDto>> GetMyUsageAsync(Guid userId);
+    /// <summary>Lịch sử giao dịch subscription của user (Upgrade / AskAiPack đã Paid|Pending|Failed).</summary>
+    Task<List<PaymentHistoryItemDto>> ListMyPaymentHistoryAsync(Guid userId, int take = 50);
 }
 
 public class SubscriptionService : ISubscriptionService
@@ -107,6 +109,76 @@ public class SubscriptionService : ISubscriptionService
         var sub = await _metering.GetOrThrowSubscriptionAsync(userId);
         return await BuildMyDtoAsync(sub);
     }
+
+    public async Task<List<PaymentHistoryItemDto>> ListMyPaymentHistoryAsync(Guid userId, int take = 50)
+    {
+        var sub = await _metering.GetOrThrowSubscriptionAsync(userId);
+        var rows = await _txRepo.ListBySubscriptionAsync(sub.Id, take);
+
+        // Chỉ hiện giao dịch có ý nghĩa tiền / upgrade — bỏ Cancel (log nghiệp vụ, không phải hóa đơn).
+        var monetaryTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            SubscriptionTransactionTypes.Upgrade,
+            SubscriptionTransactionTypes.AskAiPack
+        };
+
+        return rows
+            .Where(t => monetaryTypes.Contains(t.Type))
+            .Where(t => t.Status is SubscriptionTransactionStatus.Paid
+                or SubscriptionTransactionStatus.Pending
+                or SubscriptionTransactionStatus.Failed)
+            .Select(ToPaymentHistoryItemDto)
+            .ToList();
+    }
+
+    private static PaymentHistoryItemDto ToPaymentHistoryItemDto(SubscriptionTransaction t)
+    {
+        var invoiceId = !string.IsNullOrWhiteSpace(t.OrderCode)
+            ? t.OrderCode!
+            : t.Id.ToString("N")[..12].ToUpperInvariant();
+
+        var planName = t.Type switch
+        {
+            SubscriptionTransactionTypes.AskAiPack => "Ask AI Pack",
+            SubscriptionTransactionTypes.Upgrade =>
+                t.Subscription?.Plan?.Name
+                ?? (string.Equals(t.Subscription?.Plan?.Audience, SubscriptionAudience.Candidate, StringComparison.OrdinalIgnoreCase)
+                    ? "Candidate Premium"
+                    : "HR Premium"),
+            _ => t.Subscription?.Plan?.Name ?? t.Type
+        };
+
+        // Pending upgrade: gói hiện tại có thể vẫn Free — nhãn rõ hơn
+        if (t.Type == SubscriptionTransactionTypes.Upgrade
+            && t.Status == SubscriptionTransactionStatus.Pending
+            && t.Subscription?.Plan?.Code is { } code
+            && (code.Contains("FREE", StringComparison.OrdinalIgnoreCase)))
+        {
+            planName = string.Equals(t.Subscription.Plan.Audience, SubscriptionAudience.Candidate, StringComparison.OrdinalIgnoreCase)
+                ? "Candidate Premium"
+                : "HR Premium";
+        }
+
+        return new PaymentHistoryItemDto
+        {
+            InvoiceId = invoiceId,
+            PlanName = planName,
+            Amount = t.Amount,
+            Currency = string.IsNullOrWhiteSpace(t.Currency) ? "VND" : t.Currency,
+            Status = MapPaymentHistoryStatus(t.Status),
+            PaymentDate = t.ConfirmedAt ?? t.CreatedAt,
+            ReceiptUrl = null,
+            Type = t.Type,
+            Provider = t.Provider
+        };
+    }
+
+    private static string MapPaymentHistoryStatus(string status) => status switch
+    {
+        SubscriptionTransactionStatus.Paid => "PAID",
+        SubscriptionTransactionStatus.Pending => "PENDING",
+        _ => "FAILED"
+    };
 
     public async Task<UpgradePaymentIntentDto> CreateUpgradePaymentAsync(Guid userId)
     {

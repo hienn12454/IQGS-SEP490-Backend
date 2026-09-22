@@ -40,4 +40,9 @@ public class CandidateAnswerRepository : ICandidateAnswerRepository
             .AsNoTracking()
             .Where(a => a.PracticeSessionId == practiceSessionId)
             .ToListAsync();
+
+    public Task<int> CountBySessionAsync(Guid practiceSessionId)
+        => _context.CandidateAnswers
+            .AsNoTracking()
+            .CountAsync(a => a.PracticeSessionId == practiceSessionId);
 }

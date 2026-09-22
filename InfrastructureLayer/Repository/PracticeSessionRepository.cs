@@ -32,6 +32,7 @@ public class PracticeSessionRepository : IPracticeSessionRepository
         => _context.PracticeSessions.FirstOrDefaultAsync(s =>
             s.CandidateUserId == candidateUserId &&
             s.QuestionSetId == questionSetId &&
+            s.IsActive &&
             s.Status == PracticeSessionStatus.InProgress);
 
     public Task<bool> HasCompletedSessionAsync(Guid candidateUserId, Guid questionSetId)
@@ -358,6 +359,7 @@ public class PracticeSessionRepository : IPracticeSessionRepository
                 SeniorityLevel = x.p.SeniorityLevel,
                 QuestionSetId = x.qs.Id,
                 QuestionSetTitle = x.qs.Title ?? string.Empty,
+                IsHiringAssessment = x.qs.IsHiringAssessment,
                 SessionStatus = x.s.Status,
                 OverallScore = x.s.OverallScore,
                 StartedAt = x.s.StartedAt,

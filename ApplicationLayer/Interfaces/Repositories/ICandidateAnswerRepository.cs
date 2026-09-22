@@ -11,4 +11,7 @@ public interface ICandidateAnswerRepository
 
     /// <summary>Toàn bộ answer entity của session — dùng khi build feedback response (SCRUM-282).</summary>
     Task<IReadOnlyList<CandidateAnswer>> GetEntitiesBySessionIdAsync(Guid practiceSessionId);
+
+    /// <summary>Số câu đã trả lời trong phiên — dùng soft-delete empty abandon.</summary>
+    Task<int> CountBySessionAsync(Guid practiceSessionId);
 }

@@ -22,6 +22,8 @@ public class HrTalentItemDto
     public string? SeniorityLevel { get; set; }
     public Guid QuestionSetId { get; set; }
     public string QuestionSetTitle { get; set; } = string.Empty;
+    /// <summary>true = bộ Tuyển dụng; false = bộ Luyện tập.</summary>
+    public bool IsHiringAssessment { get; set; }
     public string SessionStatus { get; set; } = string.Empty;
     public double? OverallScore { get; set; }
     public DateTime? StartedAt { get; set; }
@@ -41,6 +43,7 @@ public class HrTalentRow
     public string? SeniorityLevel { get; set; }
     public Guid QuestionSetId { get; set; }
     public string QuestionSetTitle { get; set; } = string.Empty;
+    public bool IsHiringAssessment { get; set; }
     public string SessionStatus { get; set; } = string.Empty;
     public double? OverallScore { get; set; }
     public DateTime? StartedAt { get; set; }
