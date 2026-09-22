@@ -42,6 +42,7 @@ public class HrTalentService : IHrTalentService
                 SeniorityLevel = r.SeniorityLevel,
                 QuestionSetId = r.QuestionSetId,
                 QuestionSetTitle = r.QuestionSetTitle,
+                IsHiringAssessment = r.IsHiringAssessment,
                 SessionStatus = r.SessionStatus,
                 OverallScore = r.OverallScore,
                 StartedAt = r.StartedAt,
