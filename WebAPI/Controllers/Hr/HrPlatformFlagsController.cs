@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace WebAPI.Controllers.Hr;
 
-/// <summary>SCRUM-464: cờ nền tảng đọc-only cho HR (không dùng admin API).</summary>
+/// <summary>SCRUM-464: cờ nền tảng đọc-only cho HR (anti-cheat + min câu publish).</summary>
 [ApiController]
 [Route("api/hr/platform-flags")]
 [Authorize(Roles = "HR")]
@@ -18,7 +18,10 @@ public class HrPlatformFlagsController : ControllerBase
         _platformSettings = platformSettings;
     }
 
-    /// <summary>Công tắc anti-cheat toàn hệ thống (Admin) — HR dùng để enable/disable toggle trên bộ Tuyển.</summary>
+    /// <summary>
+    /// Cờ nền tảng đọc-only cho HR (không dùng admin API).
+    /// Gồm anti-cheat + số câu tối thiểu để publish (Admin cấu hình runtime).
+    /// </summary>
     [HttpGet]
     public async Task<IActionResult> Get()
     {
@@ -26,7 +29,8 @@ public class HrPlatformFlagsController : ControllerBase
         return SuccessResp.Ok(new
         {
             antiCheatEnabled = settings.AntiCheatEnabled,
-            antiCheatMaxTabLeaves = settings.AntiCheatMaxTabLeaves
+            antiCheatMaxTabLeaves = settings.AntiCheatMaxTabLeaves,
+            minQuestionsToPublish = settings.MinQuestionsToPublish
         });
     }
 }
