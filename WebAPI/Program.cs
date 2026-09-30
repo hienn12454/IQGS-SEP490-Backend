@@ -376,6 +376,7 @@ public class Program
         builder.Services.AddScoped<ICompetencyProfileService, CompetencyProfileService>();
         builder.Services.AddScoped<IRoadmapRecommendationService, RoadmapRecommendationService>();
         builder.Services.AddScoped<IRoadmapNodeImportService, RoadmapNodeImportService>();
+        builder.Services.AddScoped<ICoachKnowledgeViewService, CoachKnowledgeViewService>();
         builder.Services.AddScoped<ICompetencyPolicyAdminService, CompetencyPolicyAdminService>();
         builder.Services.AddScoped<ICandidateBookmarkService, CandidateBookmarkService>();
         builder.Services.AddScoped<ICandidatePracticeSessionService, CandidatePracticeSessionService>();

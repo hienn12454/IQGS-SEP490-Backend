@@ -103,12 +103,25 @@ public static class PracticeSessionFeedbackMapper
             overall = PracticeOverallScoreCalculator.Compute(succeededScores, questions.Count);
         }
 
+        // SCRUM-479: Premium + còn answer chưa Succeeded → FE hiện nút chấm full
+        var needsFullEvaluation = false;
+        if (!lockTeaser)
+        {
+            needsFullEvaluation = answers.Any(a =>
+            {
+                if (!feedbackByAnswerId.TryGetValue(a.Id, out var fb))
+                    return true;
+                return fb.EvaluationStatus != AiFeedbackEvaluationStatus.Succeeded;
+            });
+        }
+
         return new PracticeSessionFeedbackDto
         {
             SessionId = session.Id,
             OverallScore = overall,
             Status = session.Status,
             AccessLevel = lockTeaser ? PracticeFeedbackAccessLevel.FreeTeaser : PracticeFeedbackAccessLevel.Full,
+            NeedsFullEvaluation = needsFullEvaluation,
             AiInsight = lockTeaser ? null : MapAiInsight(session),
             Items = items
         };

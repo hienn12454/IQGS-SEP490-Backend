@@ -107,11 +107,14 @@ public class EmailService : IEmailService
     public async Task SendCandidateOfferEmailAsync(string toEmail, string toName, string hrCompanyName, string offerMessage, string acceptLink)
     {
         var fromName = _config["EmailSettings:FromName"] ?? "HireGen AI";
-        var fromAddress = _config["EmailSettings:FromAddress"] ?? "noreply@iqgs.com";
         var smtpHost = _config["EmailSettings:SmtpHost"];
         var smtpPort = int.Parse(_config["EmailSettings:SmtpPort"] ?? "587");
         var username = _config["EmailSettings:Username"];
         var password = _config["EmailSettings:Password"];
+        // Gmail SMTP từ chối From khác account đăng nhập — dùng username làm From.
+        var fromAddress = !string.IsNullOrWhiteSpace(username)
+            ? username
+            : (_config["EmailSettings:FromAddress"] ?? "noreply@iqgs.com");
 
         if (string.IsNullOrWhiteSpace(smtpHost) || string.IsNullOrWhiteSpace(username))
         {
@@ -188,6 +191,54 @@ public class EmailService : IEmailService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Gửi email báo candidate chấp nhận offer thất bại.\nTo: {Email}", hrEmail);
+        }
+    }
+
+    public async Task SendCandidateOfferRejectedNotificationAsync(
+        string hrEmail, string hrName,
+        string candidateName, string candidateEmail,
+        string? targetRole, string? seniorityLevel, IReadOnlyList<string> techStack,
+        string appLink)
+    {
+        var fromName = _config["EmailSettings:FromName"] ?? "HireGen AI";
+        var smtpHost = _config["EmailSettings:SmtpHost"];
+        var smtpPort = int.Parse(_config["EmailSettings:SmtpPort"] ?? "587");
+        var username = _config["EmailSettings:Username"];
+        var password = _config["EmailSettings:Password"];
+        var fromAddress = !string.IsNullOrWhiteSpace(username)
+            ? username
+            : (_config["EmailSettings:FromAddress"] ?? "noreply@iqgs.com");
+
+        if (string.IsNullOrWhiteSpace(smtpHost) || string.IsNullOrWhiteSpace(username))
+        {
+            _logger.LogWarning(
+                "[DEV] Offer rejected notification (chưa cấu hình SMTP).\nTo: {Email}\nCandidate: {CandidateName} <{CandidateEmail}>",
+                hrEmail, candidateName, candidateEmail);
+            return;
+        }
+
+        var message = new MimeMessage();
+        message.From.Add(new MailboxAddress(fromName, fromAddress));
+        message.To.Add(new MailboxAddress(hrName, hrEmail));
+        message.Subject = $"[HireGen AI] {candidateName} đã từ chối lời đề nghị phỏng vấn";
+        message.Body = new TextPart("html")
+        {
+            Text = BuildCandidateOfferRejectedNotificationHtml(
+                hrName, candidateName, candidateEmail, targetRole, seniorityLevel, techStack, appLink)
+        };
+
+        try
+        {
+            using var client = new SmtpClient();
+            await client.ConnectAsync(smtpHost, smtpPort, SecureSocketOptions.StartTls);
+            await client.AuthenticateAsync(username, password);
+            await client.SendAsync(message);
+            await client.DisconnectAsync(quit: true);
+            _logger.LogInformation("Đã gửi email báo candidate từ chối offer đến {Email}.", hrEmail);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Gửi email báo candidate từ chối offer thất bại.\nTo: {Email}", hrEmail);
         }
     }
 
@@ -537,6 +588,80 @@ public class EmailService : IEmailService
                   <td style="padding:12px 32px 0">
                     <p style="margin:0;color:#475569;font-size:14px;line-height:22px">
                       Candidate dưới đây vừa chấp nhận lời đề nghị phỏng vấn bạn gửi qua HireGen AI:
+                    </p>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:16px 32px 0">
+                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
+                           style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:16px">
+                      {{rowsHtml}}
+                    </table>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:28px 32px 8px" align="center">
+                    <a href="{{appLink}}"
+                       style="background-color:#6d28d9;background-image:linear-gradient(135deg,#8b5cf6,#4f46e5);color:#ffffff;
+                              padding:13px 36px;border-radius:8px;text-decoration:none;font-size:15px;font-weight:600;display:inline-block">
+                      Xem trong HireGen AI
+                    </a>
+                  </td>
+                </tr>
+                <tr><td style="padding:28px 32px 0"><hr style="border:none;border-top:1px solid #e2e8f0;margin:0"/></td></tr>
+                <tr>
+                  <td style="padding:16px 32px 28px" align="center">
+                    <p style="margin:0;color:#cbd5e1;font-size:11.5px">© {{DateTime.UtcNow.Year}} HireGen AI — AI-Powered Interview Question Generator</p>
+                  </td>
+                </tr>
+              </table>
+            </td></tr>
+          </table>
+        </body>
+        </html>
+        """;
+    }
+
+    private static string BuildCandidateOfferRejectedNotificationHtml(
+        string hrName, string candidateName, string candidateEmail,
+        string? targetRole, string? seniorityLevel, IReadOnlyList<string> techStack,
+        string appLink)
+    {
+        var rowsHtml = string.Join("", BuildFieldRows(candidateName, candidateEmail, targetRole, seniorityLevel, techStack, null)
+            .Select(row => $"""
+                <tr>
+                  <td style="padding:6px 0;color:#94a3b8;font-size:13px;width:120px;vertical-align:top">{row.Label}</td>
+                  <td style="padding:6px 0;color:#0f172a;font-size:13px;font-weight:600">{WebUtility.HtmlEncode(row.Value)}</td>
+                </tr>
+                """));
+
+        return $$"""
+        <!DOCTYPE html>
+        <html lang="vi">
+        <head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/></head>
+        <body style="margin:0;padding:0;background:#f1f5f9;font-family:Segoe UI,Helvetica,Arial,sans-serif">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f1f5f9;padding:32px 16px">
+            <tr><td align="center">
+              <table role="presentation" width="480" cellpadding="0" cellspacing="0"
+                     style="background:#ffffff;border-radius:16px;overflow:hidden;max-width:480px;width:100%;box-shadow:0 1px 3px rgba(0,0,0,0.08)">
+                <tr>
+                  <td style="height:6px;background-color:#64748b;background-image:linear-gradient(90deg,#94a3b8,#64748b);font-size:0;line-height:0">&nbsp;</td>
+                </tr>
+                <tr>
+                  <td style="padding:24px 32px;border-bottom:1px solid #f1f5f9">
+                    {{LogoHtml}}
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:32px 32px 8px">
+                    <h1 style="margin:0 0 4px;font-size:20px;color:#0f172a">Candidate đã từ chối</h1>
+                    <p style="margin:0;color:#64748b;font-size:14px">Xin chào <strong style="color:#0f172a">{{WebUtility.HtmlEncode(hrName)}}</strong>,</p>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:12px 32px 0">
+                    <p style="margin:0;color:#475569;font-size:14px;line-height:22px">
+                      Candidate dưới đây vừa từ chối lời đề nghị phỏng vấn bạn gửi qua HireGen AI:
                     </p>
                   </td>
                 </tr>

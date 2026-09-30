@@ -3,6 +3,7 @@ using ApplicationLayer.DTOs.Coach;
 using ApplicationLayer.Interfaces.Repositories;
 using DomainLayer.Constants;
 using DomainLayer.Entities;
+using DomainLayer.Exceptions;
 
 namespace ApplicationLayer.Services.Coach;
 
@@ -12,6 +13,10 @@ public interface IRoadmapNodeImportService
     Task<RoadmapNodeImportResultDto> ImportJsonlAsync(string jsonl);
     Task<List<RoadmapNodeAdminDto>> ListAsync();
     Task DeleteAsync(Guid id);
+    /// <summary>SCRUM-486: gắn/gỡ KnowledgeDocumentId cho một node.</summary>
+    Task<RoadmapNodeAdminDto> UpdateLinkAsync(Guid id, UpdateRoadmapNodeLinkDto dto);
+    /// <summary>SCRUM-486: gắn doc theo FileName khớp SourceUrl.</summary>
+    Task<LinkRoadmapNodesByFilenameResultDto> LinkByFilenameAsync(LinkRoadmapNodesByFilenameDto dto);
 }
 
 public class RoadmapNodeImportService : IRoadmapNodeImportService
@@ -22,8 +27,13 @@ public class RoadmapNodeImportService : IRoadmapNodeImportService
     };
 
     private readonly IRoadmapNodeRepository _nodes;
+    private readonly IKnowledgeDocumentRepository _docs;
 
-    public RoadmapNodeImportService(IRoadmapNodeRepository nodes) => _nodes = nodes;
+    public RoadmapNodeImportService(IRoadmapNodeRepository nodes, IKnowledgeDocumentRepository docs)
+    {
+        _nodes = nodes;
+        _docs = docs;
+    }
 
     public async Task<RoadmapNodeImportResultDto> ImportAsync(RoadmapNodeImportRequestDto payload)
     {
@@ -71,6 +81,7 @@ public class RoadmapNodeImportService : IRoadmapNodeImportService
                 SourceTitle = row.SourceTitle,
                 SourceUrl = row.SourceUrl,
                 SourceVersion = row.SourceVersion,
+                KnowledgeDocumentId = row.KnowledgeDocumentId,
                 SortOrder = row.SortOrder > 0 ? row.SortOrder : i
             });
         }
@@ -119,21 +130,59 @@ public class RoadmapNodeImportService : IRoadmapNodeImportService
     public async Task<List<RoadmapNodeAdminDto>> ListAsync()
     {
         var rows = await _nodes.ListAllAsync();
-        return rows.Select(n => new RoadmapNodeAdminDto
-        {
-            Id = n.Id,
-            RoleKey = n.RoleKey,
-            Technology = n.Technology,
-            Level = n.Level,
-            Skill = n.Skill,
-            Topic = n.Topic,
-            Subtopic = n.Subtopic,
-            Importance = n.Importance,
-            SourceTitle = n.SourceTitle,
-            SourceUrl = n.SourceUrl,
-            SortOrder = n.SortOrder
-        }).ToList();
+        return rows.Select(MapAdmin).ToList();
     }
 
     public Task DeleteAsync(Guid id) => _nodes.DeleteAsync(id);
+
+    public async Task<RoadmapNodeAdminDto> UpdateLinkAsync(Guid id, UpdateRoadmapNodeLinkDto dto)
+    {
+        var node = await _nodes.GetByIdAsync(id)
+            ?? throw new NotFoundException("Roadmap node không tồn tại.");
+
+        if (dto.ClearKnowledgeDocumentId)
+            node.KnowledgeDocumentId = null;
+        else if (dto.KnowledgeDocumentId.HasValue)
+        {
+            var doc = await _docs.GetByIdAsync(dto.KnowledgeDocumentId.Value)
+                ?? throw new NotFoundException("Knowledge document không tồn tại.");
+            if (!string.Equals(doc.Scope, KnowledgeDocumentScope.System, StringComparison.OrdinalIgnoreCase))
+                throw new BadRequestException("Chỉ gắn tài liệu SYSTEM vào roadmap node.");
+            node.KnowledgeDocumentId = doc.Id;
+        }
+
+        await _nodes.UpdateAsync(node);
+        return MapAdmin(node);
+    }
+
+    public async Task<LinkRoadmapNodesByFilenameResultDto> LinkByFilenameAsync(LinkRoadmapNodesByFilenameDto dto)
+    {
+        var doc = await _docs.GetByIdAsync(dto.KnowledgeDocumentId)
+            ?? throw new NotFoundException("Knowledge document không tồn tại.");
+        if (!string.Equals(doc.Scope, KnowledgeDocumentScope.System, StringComparison.OrdinalIgnoreCase))
+            throw new BadRequestException("Chỉ gắn tài liệu SYSTEM.");
+
+        var linked = await _nodes.LinkByFilenameAsync(doc.Id, doc.FileName);
+        return new LinkRoadmapNodesByFilenameResultDto
+        {
+            LinkedCount = linked.Count,
+            LinkedNodeIds = linked
+        };
+    }
+
+    private static RoadmapNodeAdminDto MapAdmin(RoadmapNode n) => new()
+    {
+        Id = n.Id,
+        RoleKey = n.RoleKey,
+        Technology = n.Technology,
+        Level = n.Level,
+        Skill = n.Skill,
+        Topic = n.Topic,
+        Subtopic = n.Subtopic,
+        Importance = n.Importance,
+        SourceTitle = n.SourceTitle,
+        SourceUrl = n.SourceUrl,
+        SortOrder = n.SortOrder,
+        KnowledgeDocumentId = n.KnowledgeDocumentId
+    };
 }

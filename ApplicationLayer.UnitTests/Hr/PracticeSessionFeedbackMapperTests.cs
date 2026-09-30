@@ -37,6 +37,46 @@ public class PracticeSessionFeedbackMapperTests
         Assert.All(dto.Items, i => Assert.False(i.IsLocked));
         Assert.Equal(81, dto.Items.First(i => i.QuestionId == questions[0].Id).Score);
         Assert.Equal("hello", dto.Items.First(i => i.QuestionId == questions[0].Id).AnswerText);
+        // Còn 1 answer chưa Succeeded → Premium cần nút chấm full
+        Assert.True(dto.NeedsFullEvaluation);
+    }
+
+    [Fact]
+    public void PremiumFull_AllSucceeded_NeedsFullEvaluationFalse()
+    {
+        var session = NewSession();
+        var questions = NewQuestions();
+        var a1 = Guid.NewGuid();
+        var a2 = Guid.NewGuid();
+        var answers = new List<CandidateAnswer>
+        {
+            new() { Id = a1, QuestionSetQuestionId = questions[0].Id, AnswerText = "hello" },
+            new() { Id = a2, QuestionSetQuestionId = questions[1].Id, AnswerText = "world" }
+        };
+        var feedbacks = new List<AiFeedback>
+        {
+            new()
+            {
+                CandidateAnswerId = a1,
+                Score = 81,
+                EvaluationStatus = AiFeedbackEvaluationStatus.Succeeded,
+                StrengthsJson = "[\"clear\"]",
+                ImprovementsJson = "[]"
+            },
+            new()
+            {
+                CandidateAnswerId = a2,
+                Score = 70,
+                EvaluationStatus = AiFeedbackEvaluationStatus.Succeeded,
+                StrengthsJson = "[]",
+                ImprovementsJson = "[]"
+            }
+        };
+
+        var dto = PracticeSessionFeedbackMapper.Map(session, questions, answers, feedbacks, lockTeaser: false);
+
+        Assert.Equal(PracticeFeedbackAccessLevel.Full, dto.AccessLevel);
+        Assert.False(dto.NeedsFullEvaluation);
     }
 
     [Fact]
@@ -65,6 +105,7 @@ public class PracticeSessionFeedbackMapperTests
         var dto = PracticeSessionFeedbackMapper.Map(session, questions, answers, feedbacks, lockTeaser: true);
 
         Assert.Equal(PracticeFeedbackAccessLevel.FreeTeaser, dto.AccessLevel);
+        Assert.False(dto.NeedsFullEvaluation);
         var scored = dto.Items.First(i => i.QuestionId == questions[0].Id);
         var other = dto.Items.First(i => i.QuestionId == questions[1].Id);
         Assert.False(scored.IsLocked);

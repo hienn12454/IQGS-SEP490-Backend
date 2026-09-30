@@ -75,6 +75,15 @@ public class CandidatePracticeSessionsController : ControllerBase
         return SuccessResp.Ok(result);
     }
 
+    /// <summary>SCRUM-479: Premium chấm AI đầy đủ on-demand (bù session Free chỉ teaser). Free → 403.</summary>
+    /// <param name="id">Id phiên luyện tập đã COMPLETED.</param>
+    [HttpPost("{id:guid}/feedback/evaluate-full")]
+    public async Task<IActionResult> EvaluateFullFeedback(Guid id)
+    {
+        var result = await _service.EvaluateFullFeedbackAsync(id, User.GetUserId());
+        return SuccessResp.Ok(result);
+    }
+
     /// <summary>Lưu câu trả lời cho 1 câu hỏi, sau đó gọi RAG evaluate sync và lưu ai_feedbacks (SCRUM-282).</summary>
     /// <remarks>
     /// Upsert answer. Câu trả lời trống / quá ngắn / "không biết" / spam → score=0, evaluationStatus=Succeeded, không gọi AI.

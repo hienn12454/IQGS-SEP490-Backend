@@ -198,19 +198,50 @@ public static class DiagnosticBlueprintBuilder
     }
 
     /// <summary>
-    /// Blueprint drill: độ khó theo competency hiện tại của skill, không theo level cố định.
-    /// Skill đã đạt target vẫn luyện được (band cao -> câu nâng cao).
+    /// SCRUM-488: blueprint drill với số câu adaptive + khó theo band.
     /// </summary>
-    public static object BuildDrill(string skill, string topic, double? currentScore, double targetScore)
+    public static object BuildDrill(
+        string skill,
+        string topic,
+        double? currentScore,
+        double targetScore,
+        int questionCount,
+        double weakBandRatio = 0.6)
     {
+        var count = Math.Clamp(questionCount, 5, 40);
         var band = currentScore ?? 0;
-        string[] diffs;
-        if (band < targetScore * 0.6)
-            diffs = [QuestionDifficultyLevel.Easy, QuestionDifficultyLevel.Easy, QuestionDifficultyLevel.Medium];
-        else if (band < targetScore)
-            diffs = [QuestionDifficultyLevel.Easy, QuestionDifficultyLevel.Medium, QuestionDifficultyLevel.Medium, QuestionDifficultyLevel.Hard];
-        else
-            diffs = [QuestionDifficultyLevel.Medium, QuestionDifficultyLevel.Hard, QuestionDifficultyLevel.Hard];
+        var target = targetScore > 0 ? targetScore : 70;
+        var ratio = weakBandRatio is > 0 and <= 1 ? weakBandRatio : 0.6;
+
+        // Ramp difficulty theo band — phân bổ đều trên `count` câu
+        var diffs = new string[count];
+        for (var i = 0; i < count; i++)
+        {
+            var t = count == 1 ? 0.5 : (double)i / (count - 1);
+            if (band < target * ratio)
+            {
+                // Weak: chủ yếu easy → medium
+                diffs[i] = t < 0.55
+                    ? QuestionDifficultyLevel.Easy
+                    : QuestionDifficultyLevel.Medium;
+            }
+            else if (band < target)
+            {
+                // Mid: easy / medium / hard
+                diffs[i] = t < 0.25
+                    ? QuestionDifficultyLevel.Easy
+                    : t < 0.7
+                        ? QuestionDifficultyLevel.Medium
+                        : QuestionDifficultyLevel.Hard;
+            }
+            else
+            {
+                // Strong: medium → hard
+                diffs[i] = t < 0.35
+                    ? QuestionDifficultyLevel.Medium
+                    : QuestionDifficultyLevel.Hard;
+            }
+        }
 
         var outline = diffs
             .Select((d, i) => (object)new
@@ -245,7 +276,7 @@ public static class DiagnosticBlueprintBuilder
                 .ToList(),
             recommendedQuestionOutline = outline,
             notes = $"Chỉ hỏi skill \"{skill}\", tập trung topic \"{topic}\". "
-                    + "Sinh ĐÚNG số câu theo outline, không lặp đề cũ, không bịa JD."
+                    + $"Sinh ĐÚNG {count} câu theo outline, không lặp đề cũ, không bịa JD."
         };
     }
 

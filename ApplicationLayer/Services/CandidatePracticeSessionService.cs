@@ -324,6 +324,33 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
             session, questions, answers, feedbacks, lockTeaser: !canDetailed);
     }
 
+    /// <summary>SCRUM-479: Premium on-demand chấm full AI cho session Free cũ.</summary>
+    public async Task<PracticeSessionFeedbackDto> EvaluateFullFeedbackAsync(Guid sessionId, Guid candidateUserId)
+    {
+        var session = await GetOwnedSessionAsync(sessionId, candidateUserId);
+
+        if (session.Status != PracticeSessionStatus.Completed)
+            throw new BadRequestException("Chỉ chấm AI đầy đủ được cho phiên đã hoàn thành.");
+
+        var canDetailed = await _subscriptionGate.CanDetailedAiFeedbackAsync(candidateUserId);
+        if (!canDetailed)
+        {
+            throw new SubscriptionGateException(
+                SubscriptionErrorCodes.FeatureRequiresPremium,
+                "Chấm AI feedback đầy đủ chỉ dành cho gói Premium.");
+        }
+
+        // Tái dùng evaluate — Premium → mọi answer chưa Succeeded; idempotent với câu đã chấm
+        await EvaluateAnswersForSessionAsync(session);
+
+        session.OverallScore = await ComputeSessionOverallScoreAsync(session);
+        await TryGenerateAiInsightAsync(session);
+        await _sessionRepository.UpdateAsync(session);
+        await TryGenerateRecommendationAsync(session);
+
+        return await GetFeedbackAsync(sessionId, candidateUserId);
+    }
+
     public async Task<PagedResultDto<PracticeSessionListItemDto>> ListAsync(
         Guid candidateUserId, PracticeSessionListQueryDto query)
     {
@@ -576,20 +603,27 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
         var xpRewards = await EvaluateAnswersForSessionAsync(session);
 
         var canDetailed = await _subscriptionGate.CanDetailedAiFeedbackAsync(session.CandidateUserId);
+        var (isHiringSet, _) = await _sessionRepository.GetHiringFlagsAsync(session.QuestionSetId);
+
         if (canDetailed)
         {
             session.OverallScore = await ComputeSessionOverallScoreAsync(session);
             await TryGenerateAiInsightAsync(session);
-            await _sessionRepository.UpdateAsync(session);
-            await TryGenerateRecommendationAsync(session);
+        }
+        else if (isHiringSet)
+        {
+            // Free + bộ Tuyển: đã chấm đủ câu ở Evaluate → overall đầy đủ để gợi ý HR công bằng.
+            session.OverallScore = await ComputeSessionOverallScoreAsync(session);
         }
         else
         {
-            // Free: overall = điểm câu teaser (không chia cho N câu — tránh điểm bị kéo thấp giả tạo)
+            // Free + Practice: overall = điểm câu teaser (không chia cho N câu — tránh điểm bị kéo thấp giả tạo)
             session.OverallScore = await ComputeTeaserOverallScoreAsync(session);
-            await _sessionRepository.UpdateAsync(session);
-            // Free không sinh insight đầy đủ / không persist recommendation HR
         }
+
+        await _sessionRepository.UpdateAsync(session);
+        // Free + Premium đều tạo recommendation (chỉ bộ Tuyển — gate trong RecommendationService).
+        await TryGenerateRecommendationAsync(session);
 
         // Coach diagnostic/reassessment/drill phải ghi competency + roadmap kể cả khi teaser gate tắt detailed feedback.
         await TryUpsertCoachPlanAsync(session);
@@ -697,7 +731,8 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
     }
 
     /// <summary>
-    /// Premium: chấm mọi answer. Free: chỉ chấm FreeTeaserFeedbackCount câu (ưu tiên answer dài nhất).
+    /// Premium / bộ Tuyển: chấm mọi answer.
+    /// Free + Practice: chỉ chấm FreeTeaserFeedbackCount câu (ưu tiên answer dài nhất).
     /// Idempotent nếu đã có Succeeded feedback. Với mỗi câu có kết quả AI chấm Succeeded (kể cả câu đã chấm
     /// từ lần gọi trước — retry-safe) thử award Gamification XP; câu bị skip-gate (rỗng/spam, auto score 0)
     /// KHÔNG được coi là hoạt động luyện tập có ý nghĩa nên không award XP.
@@ -717,9 +752,11 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
         var feedbackByAnswerId = feedbacks.ToDictionary(f => f.CandidateAnswerId);
 
         var canDetailed = await _subscriptionGate.CanDetailedAiFeedbackAsync(session.CandidateUserId);
+        var (isHiringAssessment, _) = await _sessionRepository.GetHiringFlagsAsync(session.QuestionSetId);
         IEnumerable<CandidateAnswer> toEvaluate = answers;
 
-        if (!canDetailed)
+        // Bộ Tuyển: Free cũng chấm đủ để OverallScore / recommendation không bị teaser làm ảo.
+        if (!canDetailed && !isHiringAssessment)
         {
             var teaserCount = await _subscriptionGate.GetFreeTeaserFeedbackCountAsync(session.CandidateUserId);
             // Ưu tiên câu có nội dung dài nhất (meaningful) — fallback Order nếu bằng nhau

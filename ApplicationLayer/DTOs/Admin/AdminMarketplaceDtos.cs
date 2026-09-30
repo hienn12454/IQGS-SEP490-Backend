@@ -24,10 +24,11 @@ public class AdminMarketplaceListItemDto
     public string Title { get; set; } = string.Empty;
     public string? Description { get; set; }
     public Guid HrUserId { get; set; }
-    public string HrName { get; set; } = string.Empty;
-    public string HrEmail { get; set; } = string.Empty;
-    public Guid CompanyId { get; set; }
-    public string CompanyName { get; set; } = string.Empty;
+    /// <summary>SCRUM-480: null khi owner/user thiếu (LEFT JOIN).</summary>
+    public string? HrName { get; set; }
+    public string? HrEmail { get; set; }
+    public Guid? CompanyId { get; set; }
+    public string? CompanyName { get; set; }
     public string? CompanyLogo { get; set; }
     public string Difficulty { get; set; } = "Medium";
     public List<string> Skills { get; set; } = new();
@@ -51,10 +52,10 @@ public class AdminMarketplaceDetailDto
     public string Title { get; set; } = string.Empty;
     public string? Description { get; set; }
     public Guid HrUserId { get; set; }
-    public string HrName { get; set; } = string.Empty;
-    public string HrEmail { get; set; } = string.Empty;
-    public Guid CompanyId { get; set; }
-    public string CompanyName { get; set; } = string.Empty;
+    public string? HrName { get; set; }
+    public string? HrEmail { get; set; }
+    public Guid? CompanyId { get; set; }
+    public string? CompanyName { get; set; }
     public string? CompanyLogo { get; set; }
     public int TotalQuestions { get; set; }
     public int AttemptCount { get; set; }
@@ -118,10 +119,10 @@ public class AdminMarketplaceSetRow
     public string? Title { get; set; }
     public string? Description { get; set; }
     public Guid HrUserId { get; set; }
-    public string HrName { get; set; } = string.Empty;
-    public string HrEmail { get; set; } = string.Empty;
-    public Guid CompanyId { get; set; }
-    public string CompanyName { get; set; } = string.Empty;
+    public string? HrName { get; set; }
+    public string? HrEmail { get; set; }
+    public Guid? CompanyId { get; set; }
+    public string? CompanyName { get; set; }
     public string? CompanyLogo { get; set; }
     public string? CompanyWebsite { get; set; }
     public string Difficulty { get; set; } = "medium";

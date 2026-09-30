@@ -1,5 +1,7 @@
 namespace DomainLayer.Constants;
 
+using DomainLayer.Entities;
+
 /// <summary>SCRUM — loại / trạng thái assessment Coach competency.</summary>
 public static class CandidateAssessmentKind
 {
@@ -34,6 +36,40 @@ public static class CandidateRoadmapItemStatus
     public const string InProgress = "InProgress";
     public const string Completed = "Completed";
     public const string ReadyForReassessment = "ReadyForReassessment";
+}
+
+/// <summary>
+/// SCRUM-487/488: drill topic chỉ Completed khi OverallScore &gt; ngưỡng (không phải ≥).
+/// Ngưỡng lấy từ CompetencyScoringPolicy.DrillPassScoreExclusiveMin (Admin cấu hình).
+/// </summary>
+public static class CoachDrillPassPolicy
+{
+    public const double DefaultPassScoreExclusiveMin = 70;
+
+    public static bool IsPassing(double? overallScore, double exclusiveMin = DefaultPassScoreExclusiveMin)
+        => overallScore is double s && s > exclusiveMin;
+
+    /// <summary>SCRUM-488: số câu drill theo band competency hiện tại.</summary>
+    public static int ResolveQuestionCount(
+        CompetencyScoringPolicy policy, double? currentScore, double targetScore)
+    {
+        var band = currentScore ?? 0;
+        var target = targetScore > 0 ? targetScore : 70;
+        var weakRatio = policy.DrillWeakBandRatio is > 0 and <= 1
+            ? policy.DrillWeakBandRatio
+            : 0.6;
+        int count;
+        if (band < target * weakRatio)
+            count = policy.DrillQuestionCountWeak;
+        else if (band < target)
+            count = policy.DrillQuestionCountMid;
+        else
+            count = policy.DrillQuestionCountStrong;
+
+        if (count < 5) count = 5;
+        if (count > 40) count = 40;
+        return count;
+    }
 }
 
 public static class CandidateRoadmapStatus

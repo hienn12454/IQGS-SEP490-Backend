@@ -1,3 +1,4 @@
+using ApplicationLayer.DTOs.Admin;
 using ApplicationLayer.DTOs.Company;
 using ApplicationLayer.Interfaces.Services;
 using ApplicationLayer.Interfaces.Repositories;
@@ -22,6 +23,22 @@ public class CompanyService : ICompanyService
     {
         var companies = await _companyRepo.SearchAsync(keyword);
         return companies.Select(MapToDto).ToList();
+    }
+
+    /// <summary>SCRUM-480: Admin phân trang công ty.</summary>
+    public async Task<PagedResultDto<CompanyDto>> SearchPagedAsync(string? keyword, int page, int pageSize)
+    {
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 100);
+
+        var (items, totalCount) = await _companyRepo.SearchPagedAsync(keyword, page, pageSize);
+        return new PagedResultDto<CompanyDto>
+        {
+            Items = items.Select(MapToDto).ToList(),
+            TotalCount = totalCount,
+            Page = page,
+            PageSize = pageSize
+        };
     }
 
     public async Task<CompanyDto?> GetByIdAsync(Guid id)

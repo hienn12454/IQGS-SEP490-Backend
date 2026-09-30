@@ -49,6 +49,8 @@ public class CompetencyPolicyAdminService : ICompetencyPolicyAdminService
         if (!string.IsNullOrWhiteSpace(dto.TargetScoreByLevelJson))
             ValidateTargetScoreJson(dto.TargetScoreByLevelJson);
 
+        ValidateDrillPolicy(dto);
+
         var entity = new CompetencyScoringPolicy
         {
             CorrectnessWeight = dto.CorrectnessWeight,
@@ -64,7 +66,15 @@ public class CompetencyPolicyAdminService : ICompetencyPolicyAdminService
             OverallReadyThreshold = dto.OverallReadyThreshold,
             TargetScoreByLevelJson = string.IsNullOrWhiteSpace(dto.TargetScoreByLevelJson)
                 ? null
-                : dto.TargetScoreByLevelJson.Trim()
+                : dto.TargetScoreByLevelJson.Trim(),
+            DrillPassScoreExclusiveMin = dto.DrillPassScoreExclusiveMin,
+            DrillQuestionCountWeak = dto.DrillQuestionCountWeak,
+            DrillQuestionCountMid = dto.DrillQuestionCountMid,
+            DrillQuestionCountStrong = dto.DrillQuestionCountStrong,
+            DrillWeakBandRatio = dto.DrillWeakBandRatio,
+            DrillRemixEnabled = dto.DrillRemixEnabled,
+            DrillRemixRatio = dto.DrillRemixRatio,
+            DrillWeakAnswerScoreMaxExclusive = dto.DrillWeakAnswerScoreMaxExclusive
         };
         await _frameworks.SavePolicyAsync(entity);
         return MapPolicy(await _frameworks.GetPolicyAsync());
@@ -145,8 +155,35 @@ public class CompetencyPolicyAdminService : ICompetencyPolicyAdminService
         ReadyMaxExclusive = p.ReadyMaxExclusive,
         JuniorReadyCoreSkillRatio = p.JuniorReadyCoreSkillRatio,
         OverallReadyThreshold = p.OverallReadyThreshold,
-        TargetScoreByLevelJson = p.TargetScoreByLevelJson
+        TargetScoreByLevelJson = p.TargetScoreByLevelJson,
+        DrillPassScoreExclusiveMin = p.DrillPassScoreExclusiveMin,
+        DrillQuestionCountWeak = p.DrillQuestionCountWeak,
+        DrillQuestionCountMid = p.DrillQuestionCountMid,
+        DrillQuestionCountStrong = p.DrillQuestionCountStrong,
+        DrillWeakBandRatio = p.DrillWeakBandRatio,
+        DrillRemixEnabled = p.DrillRemixEnabled,
+        DrillRemixRatio = p.DrillRemixRatio,
+        DrillWeakAnswerScoreMaxExclusive = p.DrillWeakAnswerScoreMaxExclusive
     };
+
+    /// <summary>SCRUM-488: validate drill counts / ratios / pass threshold.</summary>
+    private static void ValidateDrillPolicy(CompetencyScoringPolicyDto dto)
+    {
+        static bool CountOk(int n) => n is >= 5 and <= 40;
+        if (!CountOk(dto.DrillQuestionCountWeak)
+            || !CountOk(dto.DrillQuestionCountMid)
+            || !CountOk(dto.DrillQuestionCountStrong))
+            throw new BadRequestException("Số câu drill phải trong [5, 40].");
+        if (dto.DrillQuestionCountWeak < dto.DrillQuestionCountMid
+            || dto.DrillQuestionCountMid < dto.DrillQuestionCountStrong)
+            throw new BadRequestException("Số câu phải Weak ≥ Mid ≥ Strong.");
+        if (dto.DrillWeakBandRatio is < 0 or > 1
+            || dto.DrillRemixRatio is < 0 or > 1)
+            throw new BadRequestException("DrillWeakBandRatio / DrillRemixRatio phải trong [0, 1].");
+        if (dto.DrillPassScoreExclusiveMin is <= 0 or >= 100
+            || dto.DrillWeakAnswerScoreMaxExclusive is <= 0 or >= 100)
+            throw new BadRequestException("Ngưỡng điểm drill phải trong (0, 100).");
+    }
 
     private static CompetencyLevelRuleDto MapRule(CompetencyLevelRule r) => new()
     {

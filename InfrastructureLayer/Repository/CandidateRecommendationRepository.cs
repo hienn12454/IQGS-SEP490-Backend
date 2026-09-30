@@ -167,9 +167,10 @@ public class CandidateRecommendationRepository : ICandidateRecommendationReposit
     private IQueryable<CandidateRecommendation> BuildHrScopedQuery(
         Guid hrOwnerId, string? status, Guid? questionSetId, double? minScore, bool unviewed = false)
     {
+        // Chỉ hiện đề xuất từ bộ Tuyển — bản ghi gắn bộ Practice (nếu còn) không vào Candidate Recommendations.
         var query = _context.CandidateRecommendations
             .AsNoTracking()
-            .Where(r => r.HrOwnerId == hrOwnerId && r.IsActive);
+            .Where(r => r.HrOwnerId == hrOwnerId && r.IsActive && r.QuestionSet.IsHiringAssessment);
 
         if (!string.IsNullOrWhiteSpace(status))
             query = query.Where(r => r.Status == status);

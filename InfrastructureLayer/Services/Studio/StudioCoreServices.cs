@@ -989,8 +989,9 @@ public sealed class InterviewPlanService(
             mapped = StudioRagPlanMapper.MapFromRagPlanObject(ragResult.Plan, numberOfQuestions, preferredMinutes);
             // SCRUM-434: bổ sung đủ skill JD vào focus + sync coverage (không tin LLM một mình)
             mapped = StudioPlanFocusJdCompleter.EnsureAllJdSkills(mapped, skills, numberOfQuestions);
-            // SCRUM-435: gán skill outline theo % focus (Live Preview khớp ngay sau tạo plan)
-            mapped = StudioOutlineFocusRedistributor.ApplyFocusWeightsToOutline(mapped);
+            // SCRUM-435 + HG01: chia slot kỹ thuật theo % focus, nhưng đổi skill là đổi CẢ slot
+            // (goal + nguồn) — không để Domain một nẻo, Why ask một nẻo như trước
+            mapped = StudioOutlineFocusRedistributor.ApplyFocusWeightsToOutline(mapped, outputLanguage);
             // HR đã chọn số câu trên cột phải — luôn giữ đúng, không để LLM/schema mẫu (10) ghi đè
             if (mapped.TotalQuestions != numberOfQuestions)
             {
@@ -1007,6 +1008,13 @@ public sealed class InterviewPlanService(
         {
             throw new StudioBusinessException("RAG_PLAN_MAP_FAILED", StatusCodes.Status502BadGateway,
                 $"Không map được plan RAG: {ex.Message}");
+        }
+
+        // HG01: slot vừa đổi skill đã bỏ nguồn cũ → gắn lại JD/SYSTEM theo skill mới (soft-fail như Apply)
+        if (StudioOutlineFocusRedistributor.HasRelabeledSlots(mapped.SourcePlanJson))
+        {
+            mapped = await TryRebindOutlineSourcesAsync(
+                projectId, userId, mapped, StudioRagPlanMapper.ExtractOutlineItems(mapped.SourcePlanJson), ct);
         }
 
         if (settingsSnapshot is not null)
@@ -1758,7 +1766,8 @@ public sealed class InterviewPlanService(
                 types,
                 canonicalDistribution,
                 request.OutlineItems,
-                string.IsNullOrWhiteSpace(settings.ContentMode) ? "Mixed" : settings.ContentMode.Trim());
+                string.IsNullOrWhiteSpace(settings.ContentMode) ? "Mixed" : settings.ContentMode.Trim(),
+                settings.Language ?? source.Language);
         }
         catch (Exception ex)
         {
@@ -1790,8 +1799,10 @@ public sealed class InterviewPlanService(
         // SCRUM-426: rebind citations nếu slot thiếu JD lock (vd. HR đổi skill trên Live Preview)
         if (request.OutlineItems is { Count: > 0 })
         {
+            // HG01: rebind theo outline ĐÃ patch (goal mới + plannedSkill), không theo payload thô của FE —
+            // nếu dùng payload FE thì goal vừa viết lại cho slot đổi skill sẽ bị ghi đè bằng goal rỗng
             mapped = await TryRebindOutlineSourcesAsync(
-                projectId, userId, mapped, request.OutlineItems, ct);
+                projectId, userId, mapped, StudioRagPlanMapper.ExtractOutlineItems(mapped.SourcePlanJson), ct);
         }
 
         if (source.Status is InterviewPlanStatus.AwaitingApproval or InterviewPlanStatus.Draft or InterviewPlanStatus.Rejected)
@@ -1913,7 +1924,10 @@ public sealed class InterviewPlanService(
                 focusArea = o.FocusArea,
                 goal = o.Goal,
                 answerMethod = o.AnswerMethod,
-                citations = o.Citations
+                citations = o.Citations,
+                // HG01: RAG trả lại nguyên 2 dấu này để Live Preview vẫn biết slot nào vừa đổi skill
+                plannedSkill = o.PlannedSkill,
+                relabeled = o.Relabeled
             }).ToList();
 
             var bind = await ragService.BindOutlineSourcesAsync(new BindOutlineSourcesRequest
@@ -2296,10 +2310,19 @@ public sealed class QuestionGenerationService(
         if (busy)
             throw new StudioBusinessException("GENERATION_IN_PROGRESS", 409, "Đang có job sinh câu hỏi cho plan này.");
 
+        // HG01 chốt chặn cuối: slot nào skill ≠ goal/nguồn (plan sửa tay, refine...) thì đổi cả slot
+        // trước khi gửi RAG; có sửa thì lưu luôn để Live Preview / regen từng câu thấy cùng một goal.
+        var coherentPlanJson = StudioOutlineCoherenceGuard.Apply(plan.SourcePlanJson, plan.Language, out var fixedSlots);
+        if (fixedSlots > 0)
+        {
+            plan.SourcePlanJson = coherentPlanJson;
+            plan.UpdatedAt = DateTime.UtcNow;
+        }
+
         object approvedPlan;
         try
         {
-            approvedPlan = JsonSerializer.Deserialize<object>(plan.SourcePlanJson)
+            approvedPlan = JsonSerializer.Deserialize<object>(coherentPlanJson)
                 ?? throw new InvalidOperationException("SourcePlanJson rỗng.");
         }
         catch (Exception ex)
@@ -2674,12 +2697,14 @@ public sealed class QuestionGenerationService(
                 .ToListAsync(ct);
         }
 
+        // SCRUM-496: AVOID gồm câu đang regen (đầu list) + siblings — tránh paraphrase câu cũ
         var siblingContents = await dbContext.InterviewQuestions.AsNoTracking()
             .Where(x => x.ProjectId == projectId && x.InterviewPlanId == plan.Id && x.IsActive && x.Id != questionId)
             .OrderBy(x => x.OrderIndex)
             .Select(x => x.Content)
             .ToListAsync(ct);
-        var avoidNote = StudioQuestionRegenHelper.BuildAvoidQuestionsNote(siblingContents);
+        var avoidContents = StudioQuestionRegenHelper.MergeAvoidContents(q.Content, siblingContents);
+        var avoidNote = StudioQuestionRegenHelper.BuildAvoidQuestionsNote(avoidContents);
 
         var slot = StudioQuestionRegenHelper.ResolveSlot(q, plan.SourcePlanJson);
         var miniPlan = StudioQuestionRegenHelper.BuildSingleSlotApprovedPlan(plan.SourcePlanJson, slot);

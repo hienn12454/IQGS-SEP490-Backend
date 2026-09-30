@@ -26,4 +26,10 @@ public interface IAiFeedbackRepository
         Guid candidateUserId, Guid questionSetQuestionId, Guid excludePracticeSessionId);
 
     Task<IReadOnlyList<SkillScoreDto>> GetSkillAveragesBySessionAsync(Guid practiceSessionId);
+
+    /// <summary>
+    /// SCRUM-488: text câu hỏi mà candidate từng trả lời yếu (Score &lt; maxExclusive) theo skill.
+    /// </summary>
+    Task<IReadOnlyList<string>> ListWeakQuestionTextsAsync(
+        Guid candidateUserId, string skill, double maxScoreExclusive, int take);
 }

@@ -7,6 +7,7 @@ public interface IUserService
 {
     // ── Admin operations ──────────────────────────────────────────────
     Task<PagedResultDto<UserListItemDto>> GetUsersAsync(UserQueryDto query);
+    Task<AdminUserStatsDto> GetUserStatsAsync();
     Task<UserDetailDto> GetUserDetailAsync(Guid userId);
     Task UpdateUserStatusAsync(Guid userId, bool isActive);
 

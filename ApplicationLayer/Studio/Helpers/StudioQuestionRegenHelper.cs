@@ -149,7 +149,24 @@ public static class StudioQuestionRegenHelper
         return note;
     }
 
-    /// <summary>SCRUM-429: tóm tắt câu khác để LLM tránh trùng ý.</summary>
+    /// <summary>SCRUM-496: current đứng đầu + siblings — LLM tránh paraphrase câu đang regen.</summary>
+    public static IReadOnlyList<string> MergeAvoidContents(string? currentContent, IEnumerable<string>? siblingContents)
+    {
+        var list = new List<string>();
+        if (!string.IsNullOrWhiteSpace(currentContent))
+            list.Add(currentContent);
+        if (siblingContents is not null)
+        {
+            foreach (var s in siblingContents)
+            {
+                if (!string.IsNullOrWhiteSpace(s))
+                    list.Add(s);
+            }
+        }
+        return list;
+    }
+
+    /// <summary>SCRUM-429: tóm tắt câu khác để LLM tránh trùng ý. SCRUM-496: gồm cả câu đang regen.</summary>
     public static string? BuildAvoidQuestionsNote(IEnumerable<string> otherQuestionContents, int maxItems = 12, int maxLenEach = 120)
     {
         var parts = new List<string>();
@@ -180,8 +197,7 @@ public static class StudioQuestionRegenHelper
         var existingMeta = StudioRagQuestionMapper.ParseMeta(target.TagsJson);
         var blobPath = existingMeta.AttachedImageBlobPath;
 
-        var type = StudioRagPlanMapper.MapQuestionType(
-            string.IsNullOrWhiteSpace(rag.QuestionType) ? slot.Type : rag.QuestionType);
+        var type = StudioRagPlanMapper.MapQuestionType(slot.Type);
         var difficulty = StudioRagPlanMapper.MapDifficulty(
             string.IsNullOrWhiteSpace(rag.Difficulty) ? slot.Difficulty : rag.Difficulty);
 
@@ -201,10 +217,11 @@ public static class StudioQuestionRegenHelper
             ? CitationsToObjects(slot.Citations)
             : rag.Citations ?? new List<object>();
 
+        // SCRUM-495: luôn khóa skill/focus/type từ slot HR; clear flag sau regen
         var meta = new StudioRagQuestionMapper.QuestionMeta
         {
-            Skill = string.IsNullOrWhiteSpace(rag.Skill) ? slot.Skill : rag.Skill.Trim(),
-            FocusArea = string.IsNullOrWhiteSpace(rag.FocusArea) ? slot.FocusArea : rag.FocusArea.Trim(),
+            Skill = string.IsNullOrWhiteSpace(slot.Skill) ? null : slot.Skill.Trim(),
+            FocusArea = string.IsNullOrWhiteSpace(slot.FocusArea) ? null : slot.FocusArea.Trim(),
             Rationale = rationale,
             CodeTemplateType = string.IsNullOrWhiteSpace(rag.CodeTemplateType) ? null : rag.CodeTemplateType.Trim(),
             CodeSnippet = string.IsNullOrWhiteSpace(rag.CodeSnippet) ? null : rag.CodeSnippet.Trim(),
@@ -214,8 +231,17 @@ public static class StudioQuestionRegenHelper
             Citations = citations,
             SourceProvenance = rag.SourceProvenance,
             MissingAdminWarning = rag.MissingAdminWarning,
-            AttachedImageBlobPath = blobPath
+            AttachedImageBlobPath = blobPath,
+            NeedsReview = rag.NeedsReview,
+            MismatchReasons = rag.MismatchReasons?.Where(r => !string.IsNullOrWhiteSpace(r)).Select(r => r.Trim()).ToList()
+                ?? new List<string>()
         };
+        // Regen thành công từ slot HR → mặc định clear flag trừ khi RAG vẫn báo NeedsReview
+        if (!rag.NeedsReview)
+        {
+            meta.NeedsReview = false;
+            meta.MismatchReasons = new List<string>();
+        }
         StudioRagQuestionMapper.ApplyRubricToMeta(meta, rubricDoc);
 
         target.Content = rag.Question.Trim();

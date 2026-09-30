@@ -91,10 +91,15 @@ public sealed class StudioFocusWeightOutlineTests
 
         var outline = StudioRagPlanMapper.ExtractOutlineItems(mapped.SourcePlanJson);
         Assert.Equal(15, outline.Count);
+        // HG01: 50% tính trên 10 slot kỹ thuật (không phải cả 15) — slot behavioral không nhận skill kỹ thuật
         var csharp = outline.Count(o =>
             string.Equals(o.Skill, "C#", StringComparison.OrdinalIgnoreCase)
             || string.Equals(o.FocusArea, "C#", StringComparison.OrdinalIgnoreCase));
-        Assert.InRange(csharp, 7, 8);
+        Assert.Equal(5, csharp);
+        var focusNames = new[] { "C#", "SQL", "React", "Git" };
+        Assert.All(
+            outline.Where(o => o.Type == "behavioral"),
+            o => Assert.DoesNotContain(o.Skill, focusNames));
     }
 
     [Fact]

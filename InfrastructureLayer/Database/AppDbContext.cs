@@ -253,6 +253,8 @@ public class AppDbContext : DbContext
             entity.Property(d => d.ErrorMessage).HasColumnName("error_message").HasMaxLength(2000);
             entity.Property(d => d.AdminNote).HasColumnName("admin_note").HasMaxLength(2000);
             entity.Property(d => d.Folder).HasColumnName("folder").HasMaxLength(64);
+            // SCRUM-486: candidate xem file gốc chỉ khi Admin bật cờ này
+            entity.Property(d => d.AllowCandidateView).HasColumnName("allow_candidate_view").HasDefaultValue(false);
             entity.Property(d => d.CreatedAt).HasColumnName("created_at");
             entity.Property(d => d.UpdatedAt).HasColumnName("updated_at");
             entity.Property(d => d.IsActive).HasColumnName("is_active");
@@ -408,6 +410,7 @@ public class AppDbContext : DbContext
             entity.HasKey(f => f.Id);
             entity.Property(f => f.FamilyKey).IsRequired().HasMaxLength(80);
             entity.Property(f => f.DisplayName).IsRequired().HasMaxLength(200);
+            entity.Property(f => f.GroupName).HasMaxLength(80);
             entity.Property(f => f.Status).IsRequired().HasMaxLength(20);
             entity.Property(f => f.Description).HasMaxLength(1000);
             entity.HasIndex(f => f.FamilyKey).IsUnique();
@@ -538,6 +541,8 @@ public class AppDbContext : DbContext
                   .OnDelete(DeleteBehavior.SetNull);
             entity.Property(r => r.SourceMode).IsRequired().HasMaxLength(20);
             entity.Property(r => r.AcceptedAt);
+            // SCRUM-484: thứ tự luyện skill trong preview (mặc định 0).
+            entity.Property(r => r.DisplayOrder).IsRequired().HasDefaultValue(0);
             entity.HasOne(r => r.Framework)
                   .WithMany()
                   .HasForeignKey(r => r.FrameworkId)

@@ -25,6 +25,28 @@ public class CompanyRepository : BaseRepository<Company>, ICompanyRepository
         return await q.OrderBy(c => c.Name).Take(limit).ToListAsync();
     }
 
+    /// <summary>SCRUM-480: phân trang cho Admin — khác Search public (limit 50).</summary>
+    public async Task<(List<Company> Items, int TotalCount)> SearchPagedAsync(
+        string? keyword, int page, int pageSize)
+    {
+        var q = _dbSet.Where(c => c.IsActive);
+
+        if (!string.IsNullOrWhiteSpace(keyword))
+        {
+            var term = $"%{keyword.Trim()}%";
+            q = q.Where(c => EF.Functions.ILike(c.Name, term));
+        }
+
+        var totalCount = await q.CountAsync();
+        var items = await q
+            .OrderBy(c => c.Name)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync();
+
+        return (items, totalCount);
+    }
+
     public async Task AddRangeAsync(IReadOnlyList<Company> companies)
     {
         await _dbSet.AddRangeAsync(companies);

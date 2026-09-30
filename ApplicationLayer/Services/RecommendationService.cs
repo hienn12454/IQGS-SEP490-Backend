@@ -51,7 +51,6 @@ public class RecommendationService : IRecommendationService
     private readonly IHrCompanyInfoService _hrCompanyInfoService;
     private readonly IBlobStorageService _blobStorage;
     private readonly BlobStorageSettings _blobSettings;
-    private readonly ISubscriptionGateService _subscriptionGate;
 
     public RecommendationService(
         ICandidateRecommendationRepository recommendationRepository,
@@ -62,8 +61,7 @@ public class RecommendationService : IRecommendationService
         IAiFeedbackRepository aiFeedbackRepository,
         IHrCompanyInfoService hrCompanyInfoService,
         IBlobStorageService blobStorage,
-        IOptions<BlobStorageSettings> blobSettings,
-        ISubscriptionGateService subscriptionGate)
+        IOptions<BlobStorageSettings> blobSettings)
     {
         _recommendationRepository = recommendationRepository;
         _invitationRepository = invitationRepository;
@@ -74,7 +72,6 @@ public class RecommendationService : IRecommendationService
         _hrCompanyInfoService = hrCompanyInfoService;
         _blobStorage = blobStorage;
         _blobSettings = blobSettings.Value;
-        _subscriptionGate = subscriptionGate;
     }
 
     public async Task GenerateForCompletedSessionAsync(PracticeSession session)
@@ -82,10 +79,7 @@ public class RecommendationService : IRecommendationService
         if (session.Status != PracticeSessionStatus.Completed)
             return;
 
-        // SCRUM-382: Free soft paywall — không ghi data gợi ý HR
-        if (!await _subscriptionGate.CanPersistHrRecommendationAsync(session.CandidateUserId))
-            return;
-
+        // Free + Premium đều được gợi ý HR (bộ Tuyển). Paywall soft còn ở insight/feedback chi tiết.
         var profile = await _profileRepository.GetByUserIdAsync(session.CandidateUserId);
         if (profile is null || !profile.AllowRecruiterRecommendation)
             return;
@@ -100,8 +94,12 @@ public class RecommendationService : IRecommendationService
         if (!questionSet.AutoRecommendEnabled)
             return;
 
+        // Ứng viên tiềm năng chỉ lấy từ bộ Tuyển — bộ Practice chỉ hiện ở Kho ứng viên.
+        if (!questionSet.IsHiringAssessment)
+            return;
+
         // SCRUM-464: bộ Tuyển chỉ ghi lịch sử từ phiên official (lần complete đầu).
-        if (questionSet.IsHiringAssessment && !session.IsOfficialTest)
+        if (!session.IsOfficialTest)
             return;
 
         var minScore = ResolveIntakeMinScore(questionSet.RecommendationMinScore);
@@ -124,18 +122,8 @@ public class RecommendationService : IRecommendationService
             return;
         }
 
-        // SCRUM-464: bộ Tuyển — không đè bản test bằng lần luyện lại.
-        if (questionSet.IsHiringAssessment)
-            return;
-
-        // Practice: làm lại nhiều lần — chỉ giữ điểm cao nhất, không reset trạng thái HR đã xử lý.
-        if (score > existing.OverallScore)
-        {
-            existing.OverallScore = score;
-            existing.PracticeSessionId = session.Id;
-            existing.UpdatedAt = DateTime.UtcNow;
-            await _recommendationRepository.UpdateAsync(existing);
-        }
+        // SCRUM-464: bộ Tuyển — không đè bản test official bằng lần làm lại.
+        return;
     }
 
     /// <summary>SCRUM-424: dùng ngưỡng trên QuestionSet; fallback constant nếu ngoài [50, 95].</summary>
@@ -619,7 +607,8 @@ public class RecommendationService : IRecommendationService
         invitation.ScheduledAtUtc = dto.ScheduledAtUtc;
         invitation.TimeZoneId = string.IsNullOrWhiteSpace(dto.TimeZoneId) ? null : dto.TimeZoneId.Trim();
         invitation.MeetingMode = mode;
-        invitation.MeetingLink = string.IsNullOrWhiteSpace(dto.MeetingLink) ? null : dto.MeetingLink.Trim();
+        // SCRUM-482: lưu absolute URL để candidate FE không bị prepend origin khi thiếu https://
+        invitation.MeetingLink = RecommendationP1Rules.NormalizeMeetingLink(dto.MeetingLink);
         invitation.Location = string.IsNullOrWhiteSpace(dto.Location) ? null : dto.Location.Trim();
     }
 }

@@ -44,6 +44,12 @@ public class SubscriptionGateService : ISubscriptionGateService
     public async Task CheckGenerateSetAsync(Guid userId)
     {
         var sub = await _metering.GetOrThrowSubscriptionAsync(userId);
+        // Quyền gen theo gói đang active — không chỉ tin snapshot (giống Coach SCRUM-414).
+        // Admin grant / sync lệch có thể để Plan=HR_PREMIUM nhưng snapshot vẫn Free.
+        // GetOrThrow đã hạ Free nếu hết CurrentPeriodEnd.
+        if (IsHrPremium(sub))
+            return;
+
         var limits = SubscriptionLimitsHelper.Deserialize(sub.LimitsSnapshotJson);
 
         if (limits.GenerateUnlimited)
@@ -99,6 +105,10 @@ public class SubscriptionGateService : ISubscriptionGateService
     public async Task CheckQuestionRegenAsync(Guid userId, Guid planId)
     {
         var sub = await _metering.GetOrThrowSubscriptionAsync(userId);
+        // HR Premium (theo Plan.Code) → regen không giới hạn, kể cả snapshot Free lệch.
+        if (IsHrPremium(sub))
+            return;
+
         var limits = SubscriptionLimitsHelper.Deserialize(sub.LimitsSnapshotJson);
 
         // Premium unlimited generate → regen câu không giới hạn.
@@ -250,6 +260,9 @@ public class SubscriptionGateService : ISubscriptionGateService
 
     private static bool IsCandidatePremium(Subscription sub)
         => sub.Plan?.Code == SubscriptionPlanCodes.CandidatePremium;
+
+    private static bool IsHrPremium(Subscription sub)
+        => sub.Plan?.Code == SubscriptionPlanCodes.HrPremium;
 
     private static string FormatRemain(TimeSpan remain)
     {

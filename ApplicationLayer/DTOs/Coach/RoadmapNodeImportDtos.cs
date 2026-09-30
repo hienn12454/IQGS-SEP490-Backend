@@ -15,6 +15,8 @@ public class RoadmapNodeImportDto
     public string? SourceUrl { get; set; }
     public string? SourceVersion { get; set; }
     public int SortOrder { get; set; }
+    /// <summary>SCRUM-486: gắn KB document làm nguồn xem cho Candidate.</summary>
+    public Guid? KnowledgeDocumentId { get; set; }
 }
 
 public class RoadmapNodeImportRequestDto
@@ -43,4 +45,26 @@ public class RoadmapNodeAdminDto
     public string? SourceTitle { get; set; }
     public string? SourceUrl { get; set; }
     public int SortOrder { get; set; }
+    /// <summary>SCRUM-486</summary>
+    public Guid? KnowledgeDocumentId { get; set; }
+}
+
+/// <summary>SCRUM-486: PATCH gắn KnowledgeDocumentId cho một node.</summary>
+public class UpdateRoadmapNodeLinkDto
+{
+    public Guid? KnowledgeDocumentId { get; set; }
+    /// <summary>true = gỡ link (set null).</summary>
+    public bool ClearKnowledgeDocumentId { get; set; }
+}
+
+/// <summary>SCRUM-486: gắn doc theo FileName khớp cuối SourceUrl của nodes.</summary>
+public class LinkRoadmapNodesByFilenameDto
+{
+    public Guid KnowledgeDocumentId { get; set; }
+}
+
+public class LinkRoadmapNodesByFilenameResultDto
+{
+    public int LinkedCount { get; set; }
+    public List<Guid> LinkedNodeIds { get; set; } = new();
 }

@@ -8,7 +8,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace InfrastructureLayer.Repository;
 
-/// <summary>SCRUM-404: query Marketplace cho Admin (owner HR + practice aggregates).</summary>
+/// <summary>SCRUM-404 / SCRUM-480: query Marketplace cho Admin (owner HR + practice aggregates).</summary>
 public class AdminMarketplaceRepository : IAdminMarketplaceRepository
 {
     private readonly Database.AppDbContext _context;
@@ -18,30 +18,42 @@ public class AdminMarketplaceRepository : IAdminMarketplaceRepository
         _context = context;
     }
 
+    /// <summary>
+    /// SCRUM-480: LEFT JOIN Users / HRProfiles / Companies — set orphan vẫn hiện trong list
+    /// để TotalPublished (stats) khớp totalCount danh sách.
+    /// Chỉ Kind=Marketplace — loại Personal (AI Coaching diagnostic/drill/reassessment),
+    /// gồm cả bộ cũ đã Published với Kind=Personal.
+    /// </summary>
     private IQueryable<AdminMarketplaceJoin> PublishedJoinQuery()
-        => _context.QuestionSets
-            .AsNoTracking()
-            .Where(qs => qs.Status == QuestionSetStatus.Published && qs.IsActive)
-            .Join(_context.Users.AsNoTracking(),
-                qs => qs.OwnerId, u => u.Id,
-                (qs, u) => new { qs, u })
-            .Join(_context.HRProfiles.AsNoTracking(),
-                x => x.qs.OwnerId, hr => hr.UserId,
-                (x, hr) => new { x.qs, x.u, hr })
-            .Join(_context.Companies.AsNoTracking(),
-                x => x.hr.CompanyId, c => c.Id,
-                (x, company) => new AdminMarketplaceJoin
-                {
-                    QuestionSet = x.qs,
-                    HrUser = x.u,
-                    Company = company
-                });
+        => from qs in _context.QuestionSets.AsNoTracking()
+           where qs.Status == QuestionSetStatus.Published
+                 && qs.IsActive
+                 && qs.Kind == QuestionSetKind.Marketplace
+           join u in _context.Users.AsNoTracking() on qs.OwnerId equals u.Id into ug
+           from u in ug.DefaultIfEmpty()
+           join hr in _context.HRProfiles.AsNoTracking() on qs.OwnerId equals hr.UserId into hrg
+           from hr in hrg.DefaultIfEmpty()
+           join c in _context.Companies.AsNoTracking() on hr.CompanyId equals c.Id into cg
+           from c in cg.DefaultIfEmpty()
+           select new AdminMarketplaceJoin
+           {
+               QuestionSet = qs,
+               HrUser = u,
+               Company = c
+           };
+
+    /// <summary>Bộ HR publish trên Marketplace — không gồm Personal/Coach.</summary>
+    private IQueryable<QuestionSet> MarketplacePublishedQuery()
+        => _context.QuestionSets.AsNoTracking()
+            .Where(qs => qs.IsActive
+                         && qs.Status == QuestionSetStatus.Published
+                         && qs.Kind == QuestionSetKind.Marketplace);
 
     private sealed class AdminMarketplaceJoin
     {
         public QuestionSet QuestionSet { get; set; } = null!;
-        public User HrUser { get; set; } = null!;
-        public Company Company { get; set; } = null!;
+        public User? HrUser { get; set; }
+        public Company? Company { get; set; }
     }
 
     private IQueryable<AdminMarketplaceSetRow> ProjectRows(IQueryable<AdminMarketplaceJoin> query)
@@ -54,13 +66,13 @@ public class AdminMarketplaceRepository : IAdminMarketplaceRepository
                     || EF.Functions.ILike(x.QuestionSet.HrNote, MarketplaceDescriptionHelper.StudioMirrorPrefix + "%"))
                 ? null
                 : x.QuestionSet.HrNote,
-            HrUserId = x.HrUser.Id,
-            HrName = x.HrUser.FullName,
-            HrEmail = x.HrUser.Email,
-            CompanyId = x.Company.Id,
-            CompanyName = x.Company.Name,
-            CompanyLogo = x.Company.LogoUrl,
-            CompanyWebsite = x.Company.WebsiteUrl,
+            HrUserId = x.QuestionSet.OwnerId,
+            HrName = x.HrUser != null ? x.HrUser.FullName : null,
+            HrEmail = x.HrUser != null ? x.HrUser.Email : null,
+            CompanyId = x.Company != null ? x.Company.Id : null,
+            CompanyName = x.Company != null ? x.Company.Name : null,
+            CompanyLogo = x.Company != null ? x.Company.LogoUrl : null,
+            CompanyWebsite = x.Company != null ? x.Company.WebsiteUrl : null,
             Difficulty = x.QuestionSet.Questions
                 .Where(q => q.IsActive && q.Difficulty != null && q.Difficulty != "")
                 .Select(q => q.Difficulty)
@@ -128,16 +140,17 @@ public class AdminMarketplaceRepository : IAdminMarketplaceRepository
                     && !EF.Functions.ILike(x.QuestionSet.HrNote, MarketplaceDescriptionHelper.StudioSavePrefix + "%")
                     && !EF.Functions.ILike(x.QuestionSet.HrNote, MarketplaceDescriptionHelper.StudioMirrorPrefix + "%")
                     && EF.Functions.ILike(x.QuestionSet.HrNote, term)) ||
-                EF.Functions.ILike(x.HrUser.FullName, term) ||
-                EF.Functions.ILike(x.HrUser.Email, term) ||
-                EF.Functions.ILike(x.Company.Name, term));
+                (x.HrUser != null && (
+                    EF.Functions.ILike(x.HrUser.FullName, term) ||
+                    EF.Functions.ILike(x.HrUser.Email, term))) ||
+                (x.Company != null && EF.Functions.ILike(x.Company.Name, term)));
         }
 
         if (companyId.HasValue)
-            query = query.Where(x => x.Company.Id == companyId.Value);
+            query = query.Where(x => x.Company != null && x.Company.Id == companyId.Value);
 
         if (hrUserId.HasValue)
-            query = query.Where(x => x.HrUser.Id == hrUserId.Value);
+            query = query.Where(x => x.QuestionSet.OwnerId == hrUserId.Value);
 
         // SCRUM-472: lọc theo chế độ Practice / Tuyển
         if (isHiringAssessment.HasValue)
@@ -216,28 +229,33 @@ public class AdminMarketplaceRepository : IAdminMarketplaceRepository
 
     public Task<int> CountPinnedAsync()
         => _context.QuestionSets.CountAsync(qs =>
-            qs.IsActive && qs.Status == QuestionSetStatus.Published && qs.IsPinned);
+            qs.IsActive
+            && qs.Status == QuestionSetStatus.Published
+            && qs.Kind == QuestionSetKind.Marketplace
+            && qs.IsPinned);
 
     public async Task<AdminMarketplaceStatsDto> GetStatsAsync()
     {
         var since = DateTime.UtcNow.AddDays(-7);
 
-        var totalPublished = await _context.QuestionSets
-            .CountAsync(qs => qs.IsActive && qs.Status == QuestionSetStatus.Published);
+        var totalPublished = await MarketplacePublishedQuery().CountAsync();
 
-        var practicesLast7Days = await _context.PracticeSessions
-            .CountAsync(ps => ps.IsActive && ps.StartedAt >= since);
+        // Phiên trên bộ Marketplace (kể cả đã unpublish) — loại AI Coaching Personal
+        var practicesLast7Days = await (
+            from ps in _context.PracticeSessions.AsNoTracking()
+            join qs in _context.QuestionSets.AsNoTracking() on ps.QuestionSetId equals qs.Id
+            where ps.IsActive
+                  && ps.StartedAt >= since
+                  && qs.Kind == QuestionSetKind.Marketplace
+            select ps
+        ).CountAsync();
 
         var pinnedCount = await CountPinnedAsync();
 
-        var publishedSetIds = _context.QuestionSets
-            .AsNoTracking()
-            .Where(qs => qs.IsActive && qs.Status == QuestionSetStatus.Published)
-            .Select(qs => qs.Id);
+        var publishedSetIds = MarketplacePublishedQuery().Select(qs => qs.Id);
 
-        var topHrs = await _context.QuestionSets
-            .AsNoTracking()
-            .Where(qs => qs.IsActive && qs.Status == QuestionSetStatus.Published)
+        // TopHrs: giữ INNER JOIN — chỉ HR có profile + company thật
+        var topHrs = await MarketplacePublishedQuery()
             .GroupBy(qs => qs.OwnerId)
             .Select(g => new
             {

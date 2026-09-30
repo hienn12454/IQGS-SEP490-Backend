@@ -42,4 +42,7 @@ public interface ICoachCompetencyService
     /// để FE hiện CTA mở bài khi item đang InProgress.
     /// </summary>
     Task AttachQuestionSetToRoadmapItemAsync(Guid candidateUserId, Guid roadmapItemId, Guid questionSetId);
+
+    /// <summary>SCRUM-486: xem tài liệu nguồn KB gắn roadmap item.</summary>
+    Task<CoachKnowledgeViewDto> GetKnowledgeSourceViewAsync(Guid candidateUserId, Guid documentId, CancellationToken ct = default);
 }

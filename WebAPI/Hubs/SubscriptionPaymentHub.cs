@@ -13,6 +13,8 @@ public class SubscriptionPaymentHub : Hub
 {
     public const string HubPath = "/hubs/subscription-payments";
     public const string PaymentPaidEvent = "PaymentPaid";
+    /// <summary>Admin grant / extend / revoke — FE refresh subscription ngay.</summary>
+    public const string SubscriptionChangedEvent = "SubscriptionChanged";
 
     public static string UserGroup(Guid userId) => $"user:{userId:D}";
 

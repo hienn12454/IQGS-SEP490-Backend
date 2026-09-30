@@ -44,4 +44,7 @@ public interface IKnowledgeDocumentRepository
 
     /// <summary>SCRUM-451: gán Folder cho danh sách documentIds (cùng scope).</summary>
     Task<int> MoveDocumentsAsync(string scope, IReadOnlyList<Guid> documentIds, string? toFolder);
+
+    /// <summary>SCRUM-486: map documentId → AllowCandidateView (SYSTEM active).</summary>
+    Task<IReadOnlyDictionary<Guid, bool>> GetAllowCandidateViewMapAsync(IReadOnlyCollection<Guid> documentIds);
 }

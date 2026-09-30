@@ -94,6 +94,40 @@ public sealed class StudioQuestionRegenHelperTests
     }
 
     [Fact]
+    public void ApplyRagResult_LocksSkillTypeFromSlot_ClearsNeedsReview()
+    {
+        var target = new InterviewQuestion
+        {
+            Content = "old",
+            OrderIndex = 1,
+            Type = QuestionType.Behavioral,
+            Difficulty = QuestionDifficulty.Easy,
+            TagsJson = """{"skill":"HTML","needsReview":true,"mismatchReasons":["content_mismatch_skill:HTML"]}"""
+        };
+        var slot = new PlanOutlineItemDto(1, "technical", "medium", "Node.js", "Backend", "So sánh runtime", "Text");
+        var rag = new RagGeneratedQuestionDto
+        {
+            Question = "So sánh Node.js và ASP.NET Core?",
+            QuestionType = "behavioral",
+            Difficulty = "easy",
+            Skill = "React.js",
+            FocusArea = "Hooks",
+            Rationale = "LLM khác",
+            NeedsReview = false
+        };
+
+        StudioQuestionRegenHelper.ApplyRagResultToQuestion(target, rag, slot, true, true);
+
+        Assert.Equal(QuestionType.Technical, target.Type);
+        var meta = StudioRagQuestionMapper.ParseMeta(target.TagsJson);
+        Assert.Equal("Node.js", meta.Skill);
+        Assert.Equal("Backend", meta.FocusArea);
+        Assert.Equal("So sánh runtime", meta.Rationale);
+        Assert.False(meta.NeedsReview);
+        Assert.Empty(meta.MismatchReasons);
+    }
+
+    [Fact]
     public void NormalizeInstruction_TrimsAndFlattens()
     {
         Assert.Null(StudioQuestionRegenHelper.NormalizeInstruction("  "));
@@ -123,6 +157,33 @@ public sealed class StudioQuestionRegenHelperTests
     {
         Assert.Null(StudioQuestionRegenHelper.BuildAvoidQuestionsNote([]));
         Assert.Null(StudioQuestionRegenHelper.BuildAvoidQuestionsNote(["  ", "\n"]));
+    }
+
+    /// <summary>SCRUM-496: current đứng đầu trước siblings.</summary>
+    [Fact]
+    public void MergeAvoidContents_CurrentFirst()
+    {
+        var merged = StudioQuestionRegenHelper.MergeAvoidContents(
+            "Câu đang regen",
+            ["Sibling A", "  ", "Sibling B"]);
+
+        Assert.Equal(3, merged.Count);
+        Assert.Equal("Câu đang regen", merged[0]);
+        Assert.Equal("Sibling A", merged[1]);
+        Assert.Equal("Sibling B", merged[2]);
+    }
+
+    [Fact]
+    public void MergeAvoidContents_OnlyCurrent_WhenNoSiblings()
+    {
+        var merged = StudioQuestionRegenHelper.MergeAvoidContents("Current only", null);
+        Assert.Single(merged);
+        Assert.Equal("Current only", merged[0]);
+
+        var note = StudioQuestionRegenHelper.BuildAvoidQuestionsNote(merged);
+        Assert.NotNull(note);
+        Assert.StartsWith("AVOID_QUESTIONS=", note);
+        Assert.Contains("Current only", note);
     }
 
     [Fact]

@@ -868,6 +868,12 @@ namespace InfrastructureLayer.Migrations
                         .HasColumnType("character varying(64)")
                         .HasColumnName("folder");
 
+                    b.Property<bool>("AllowCandidateView")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("allow_candidate_view");
+
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean")
                         .HasColumnName("is_active");

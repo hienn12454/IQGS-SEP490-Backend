@@ -79,6 +79,7 @@ public class KnowledgeDocumentInternalService : IKnowledgeDocumentInternalServic
             DocumentType = KnowledgeDocumentType.FromSection(document.Section),
             AdminNote = document.AdminNote,
             Folder = document.Folder,
+            AllowCandidateView = document.AllowCandidateView,
             BlobPath = document.BlobPath
         };
     }

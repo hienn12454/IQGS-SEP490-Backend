@@ -112,6 +112,7 @@ public sealed class CoachResetRunTests
             profiles.Object,
             frameworks.Object,
             frameworkResolver.Object,
+            Mock.Of<ICompetencyRoleFamilyRepository>(),
             competencyResolver.Object,
             Mock.Of<IAdaptiveBlueprintBuilder>(),
             assessments,
@@ -120,10 +121,12 @@ public sealed class CoachResetRunTests
             Mock.Of<IAiFeedbackRepository>(),
             Mock.Of<ICandidateAnswerRepository>(),
             Mock.Of<ICandidateMarketplaceRepository>(),
+            Mock.Of<IPracticeSessionRepository>(),
             Mock.Of<ISubscriptionGateService>(),
             Mock.Of<IJobScheduler>(),
             Mock.Of<ICompetencyProfileService>(),
-            Mock.Of<IRoadmapRecommendationService>());
+            Mock.Of<IRoadmapRecommendationService>(),
+            Mock.Of<ICoachKnowledgeViewService>());
 
         var ctx = await svc.ResetCoachRunAsync(UserId);
 

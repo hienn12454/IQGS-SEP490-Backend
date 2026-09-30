@@ -6,7 +6,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace WebAPI.Controllers.Admin;
 
-/// <summary>SCRUM-455: import curated roadmap nodes. Thêm role mới = thêm JSONL, không sửa scoring.</summary>
+/// <summary>SCRUM-455/486: import curated roadmap nodes + gắn KnowledgeDocument.</summary>
 [ApiController]
 [Route("api/admin/roadmap-nodes")]
 [Authorize(Roles = "Admin")]
@@ -39,6 +39,24 @@ public class AdminRoadmapNodeController : ControllerBase
         var result = await _import.ImportJsonlAsync(text);
         if (!result.Success)
             return BadRequest(new { Code = 400, Error = "Roadmap JSONL không hợp lệ.", Data = result });
+        return SuccessResp.Ok(result);
+    }
+
+    /// <summary>SCRUM-486: gắn/gỡ KnowledgeDocumentId.</summary>
+    [HttpPatch("{id:guid}")]
+    public async Task<IActionResult> UpdateLink(Guid id, [FromBody] UpdateRoadmapNodeLinkDto body)
+    {
+        var result = await _import.UpdateLinkAsync(id, body);
+        return SuccessResp.Ok(result);
+    }
+
+    /// <summary>SCRUM-486: gắn doc vào nodes có SourceUrl khớp FileName.</summary>
+    [HttpPost("link-by-filename")]
+    public async Task<IActionResult> LinkByFilename([FromBody] LinkRoadmapNodesByFilenameDto body)
+    {
+        if (body.KnowledgeDocumentId == Guid.Empty)
+            return BadRequest(new { Code = 400, Error = "KnowledgeDocumentId là bắt buộc." });
+        var result = await _import.LinkByFilenameAsync(body);
         return SuccessResp.Ok(result);
     }
 

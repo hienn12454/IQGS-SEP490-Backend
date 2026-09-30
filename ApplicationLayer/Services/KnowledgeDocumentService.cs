@@ -319,7 +319,8 @@ public class KnowledgeDocumentService : IKnowledgeDocumentService
         string? adminNote,
         string? folder = null,
         bool updateFolder = false,
-        Guid? ownerIdFilter = null)
+        Guid? ownerIdFilter = null,
+        bool? allowCandidateView = null)
     {
         var document = await GetDocumentWithOwnership(id, ownerIdFilter);
         if (!string.IsNullOrWhiteSpace(documentType))
@@ -336,6 +337,14 @@ public class KnowledgeDocumentService : IKnowledgeDocumentService
         // SCRUM-450: đổi folder metadata (không move Blob)
         if (updateFolder)
             document.Folder = KnowledgeFolderHelper.Normalize(folder);
+
+        // SCRUM-486: chỉ SYSTEM mới được bật Candidate view; HR luôn false
+        if (allowCandidateView.HasValue)
+        {
+            if (!string.Equals(document.Scope, KnowledgeDocumentScope.System, StringComparison.OrdinalIgnoreCase))
+                throw new BadRequestException("Chỉ tài liệu SYSTEM mới cho phép Candidate xem.");
+            document.AllowCandidateView = allowCandidateView.Value;
+        }
 
         await _repository.UpdateAsync(document);
         return KnowledgeDocumentInternalService.MapToDto(document);

@@ -16,6 +16,13 @@ public interface ICandidatePracticeSessionService
 
     Task<PracticeSessionResponseDto> AbandonAsync(Guid sessionId, Guid candidateUserId);
     Task<PracticeSessionFeedbackDto> GetFeedbackAsync(Guid sessionId, Guid candidateUserId);
+
+    /// <summary>
+    /// SCRUM-479: Premium chấm AI đầy đủ on-demand cho session Completed (bù câu Free chỉ teaser).
+    /// Free → SubscriptionGateException. Không award QuestionSetCompleted XP lại.
+    /// </summary>
+    Task<PracticeSessionFeedbackDto> EvaluateFullFeedbackAsync(Guid sessionId, Guid candidateUserId);
+
     Task<PagedResultDto<PracticeSessionListItemDto>> ListAsync(Guid candidateUserId, PracticeSessionListQueryDto query);
     Task<PracticeSessionStatsDto> GetStatsAsync(Guid candidateUserId, PracticeSessionStatsQueryDto query);
     Task<IReadOnlyList<CandidateSkillStatDto>> GetSkillStatsAsync(Guid candidateUserId);

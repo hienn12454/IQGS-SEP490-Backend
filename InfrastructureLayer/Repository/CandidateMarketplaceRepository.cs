@@ -123,10 +123,12 @@ public class CandidateMarketplaceRepository : ICandidateMarketplaceRepository
 
         if (!string.IsNullOrWhiteSpace(keyword))
         {
+            // Tìm theo title, mô tả (HrNote), tên công ty — giống Admin marketplace
             var term = $"%{keyword.Trim()}%";
             var searchPublicJd = isHiringAssessment == true;
             query = query.Where(x =>
                 EF.Functions.ILike(x.QuestionSet.Title ?? "", term) ||
+                EF.Functions.ILike(x.Company.Name, term) ||
                 (x.QuestionSet.HrNote != null
                     && !EF.Functions.ILike(x.QuestionSet.HrNote, MarketplaceDescriptionHelper.StudioSavePrefix + "%")
                     && !EF.Functions.ILike(x.QuestionSet.HrNote, MarketplaceDescriptionHelper.StudioMirrorPrefix + "%")

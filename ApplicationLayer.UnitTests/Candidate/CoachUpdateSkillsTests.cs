@@ -1,4 +1,5 @@
 using ApplicationLayer.DTOs.Candidate;
+using ApplicationLayer.Helpers;
 using ApplicationLayer.Interfaces.Jobs;
 using ApplicationLayer.Interfaces.Repositories;
 using ApplicationLayer.Interfaces.Services;
@@ -48,6 +49,7 @@ public sealed class CoachUpdateSkillsTests
             profiles.Object,
             Mock.Of<ICompetencyFrameworkRepository>(),
             fwResolver.Object,
+            Mock.Of<ICompetencyRoleFamilyRepository>(),
             resolver.Object,
             Mock.Of<IAdaptiveBlueprintBuilder>(),
             Mock.Of<ICandidateAssessmentRepository>(),
@@ -56,10 +58,12 @@ public sealed class CoachUpdateSkillsTests
             Mock.Of<IAiFeedbackRepository>(),
             Mock.Of<ICandidateAnswerRepository>(),
             Mock.Of<ICandidateMarketplaceRepository>(),
+            Mock.Of<IPracticeSessionRepository>(),
             Mock.Of<ISubscriptionGateService>(),
             Mock.Of<IJobScheduler>(),
             Mock.Of<ICompetencyProfileService>(),
-            Mock.Of<IRoadmapRecommendationService>());
+            Mock.Of<IRoadmapRecommendationService>(),
+            Mock.Of<ICoachKnowledgeViewService>());
     }
 
     [Fact]
@@ -68,6 +72,77 @@ public sealed class CoachUpdateSkillsTests
         var result = CoachCompetencyService.NormalizeCoachSkills(
             new[] { "  React ", "react", "TypeScript", "TYPESCRIPT", "" });
         Assert.Equal(new[] { "React", "TypeScript" }, result);
+    }
+
+    [Fact]
+    public void Sanitize_ServerDrivenUiWithEnDashAndParens_Passes()
+    {
+        // U+2013 en-dash như LLM hay trả về
+        var raw = "Server\u2013Driven UI (SDUI)";
+        var cleaned = CoachSkillFormat.Sanitize(raw);
+        Assert.Equal("Server-Driven UI (SDUI)", cleaned);
+        Assert.Null(CoachSkillFormat.Validate(raw));
+
+        var list = CoachCompetencyService.NormalizeCoachSkills(new[] { raw, "React" });
+        Assert.Contains("Server-Driven UI (SDUI)", list);
+        CoachCompetencyService.EnsureCoachSkillFormats(list);
+    }
+
+    [Fact]
+    public void Sanitize_DropsMarketing_KeepsSalesforce()
+    {
+        Assert.Null(CoachSkillFormat.Sanitize("marketing"));
+        Assert.Equal("Salesforce", CoachSkillFormat.Sanitize("Salesforce"));
+    }
+
+    [Fact]
+    public void EnsureCoachSkillFormats_RejectsEmojiAndTooShort()
+    {
+        Assert.Throws<BadRequestException>(() =>
+            CoachCompetencyService.EnsureCoachSkillFormats(new[] { "React", "🔥" }));
+        Assert.Throws<BadRequestException>(() =>
+            CoachCompetencyService.EnsureCoachSkillFormats(new[] { "a" }));
+    }
+
+    [Fact]
+    public void EnsureCoachSkillFormats_RejectsMarketing_AllowsSalesforce()
+    {
+        Assert.Throws<BadRequestException>(() =>
+            CoachCompetencyService.EnsureCoachSkillFormats(new[] { "React", "marketing" }));
+        Assert.Throws<BadRequestException>(() =>
+            CoachCompetencyService.EnsureCoachSkillFormats(new[] { "marketting" }));
+        // Salesforce không bị nhầm với "sales"
+        CoachCompetencyService.EnsureCoachSkillFormats(new[] { "Salesforce", "SignalR" });
+    }
+
+    [Fact]
+    public void EnsureCoachSkillFormats_AllowsFreeTextTech()
+    {
+        CoachCompetencyService.EnsureCoachSkillFormats(new[] { "SignalR", "ASP.NET Core", "C#" });
+    }
+
+    [Fact]
+    public async Task UpdateCoachSkills_RejectsWhenAllSkillsSanitizeAway()
+    {
+        var profile = new CandidateProfile
+        {
+            UserId = UserId,
+            TechStack = new[] { "React" },
+            CvEvaluationJson = """{"skills":["React"],"summary":"x"}""",
+            CoachContextConfirmed = false,
+            SuggestedRole = "Frontend Developer"
+        };
+        var profiles = new Mock<ICandidateProfileRepository>();
+        profiles.Setup(p => p.GetByUserIdAsync(UserId)).ReturnsAsync(profile);
+
+        var svc = CreateService(profiles);
+        // SCRUM-493: char thuần / emoji / non-IT bị drop hết → list rỗng → BadRequest
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            svc.UpdateCoachSkillsAsync(UserId, new UpdateCoachSkillsDto
+            {
+                Skills = new List<string> { "@@@", "🔥", "12", "marketing" }
+            }));
+        profiles.Verify(p => p.UpdateAsync(It.IsAny<CandidateProfile>()), Times.Never);
     }
 
     [Fact]

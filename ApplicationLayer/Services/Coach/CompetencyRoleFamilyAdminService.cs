@@ -62,6 +62,7 @@ public class CompetencyRoleFamilyAdminService : ICompetencyRoleFamilyAdminServic
         {
             FamilyKey = key,
             DisplayName = dto.DisplayName.Trim(),
+            GroupName = string.IsNullOrWhiteSpace(dto.GroupName) ? null : dto.GroupName.Trim(),
             Status = status,
             SortOrder = dto.SortOrder,
             Description = string.IsNullOrWhiteSpace(dto.Description) ? null : dto.Description.Trim()
@@ -76,6 +77,7 @@ public class CompetencyRoleFamilyAdminService : ICompetencyRoleFamilyAdminServic
         Id = f.Id,
         FamilyKey = f.FamilyKey,
         DisplayName = f.DisplayName,
+        GroupName = f.GroupName,
         Status = f.Status,
         SortOrder = f.SortOrder,
         Description = f.Description,

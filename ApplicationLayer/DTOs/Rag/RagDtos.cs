@@ -312,6 +312,16 @@ public class RagGeneratedQuestionDto
     public object? SourceProvenance { get; set; }
     /// <summary>SCRUM-421: Cảnh báo thiếu tài liệu Admin (soft_llm).</summary>
     public bool MissingAdminWarning { get; set; }
+    /// <summary>SCRUM-495 / HG01: câu lệch skill/type/rationale — chỉ đánh dấu.</summary>
+    public bool NeedsReview { get; set; }
+    /// <summary>SCRUM-495: lý do lệch (content_mismatch_skill, type_mismatch, …).</summary>
+    public List<string> MismatchReasons { get; set; } = new();
+}
+
+public class RagFlaggedQuestionDto
+{
+    public int Order { get; set; }
+    public List<string> Reasons { get; set; } = new();
 }
 
 public class GenerateQuestionsFromPlanResult
@@ -322,6 +332,10 @@ public class GenerateQuestionsFromPlanResult
     public string? Error { get; set; }
     /// <summary>Coach: system | inferred.</summary>
     public string? KbSource { get; set; }
+    /// <summary>SCRUM-495: câu cần HR xem/regen (không chặn lưu).</summary>
+    public List<RagFlaggedQuestionDto> FlaggedQuestions { get; set; } = new();
+    /// <summary>SCRUM-495 / HG02: phân bổ có khớp plan không.</summary>
+    public bool? DistributionMatch { get; set; }
 }
 
 /// <summary>Request gọi RAG evaluate-answer (SCRUM-281/282).</summary>

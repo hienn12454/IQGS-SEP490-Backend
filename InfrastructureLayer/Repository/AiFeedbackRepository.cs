@@ -89,4 +89,42 @@ public class AiFeedbackRepository : IAiFeedbackRepository
             .OrderBy(x => x.Skill)
             .ToListAsync();
     }
+
+    public async Task<IReadOnlyList<string>> ListWeakQuestionTextsAsync(
+        Guid candidateUserId, string skill, double maxScoreExclusive, int take)
+    {
+        if (take <= 0) return Array.Empty<string>();
+        var key = (skill ?? "").Trim().ToLowerInvariant();
+        var rows = await _context.AiFeedbacks
+            .AsNoTracking()
+            .Where(f =>
+                f.EvaluationStatus == AiFeedbackEvaluationStatus.Succeeded
+                && f.Score != null
+                && f.Score < maxScoreExclusive
+                && f.CandidateAnswer.PracticeSession.CandidateUserId == candidateUserId
+                && f.CandidateAnswer.PracticeSession.Status == PracticeSessionStatus.Completed
+                && f.CandidateAnswer.QuestionSetQuestion.Skill != null
+                && f.CandidateAnswer.QuestionSetQuestion.Skill != "")
+            .OrderByDescending(f => f.CandidateAnswer.PracticeSession.CompletedAt)
+            .Select(f => new
+            {
+                Skill = f.CandidateAnswer.QuestionSetQuestion.Skill!,
+                Text = f.CandidateAnswer.QuestionSetQuestion.Question
+            })
+            .Take(Math.Max(take * 4, 20))
+            .ToListAsync();
+
+        return rows
+            .Where(r => r.Skill.Trim().ToLowerInvariant() == key || r.Skill.Trim().ToLowerInvariant().Contains(key) || key.Contains(r.Skill.Trim().ToLowerInvariant()))
+            .Select(r =>
+            {
+                var t = (r.Text ?? "").Trim();
+                if (t.Length > 240) t = t[..240];
+                return t;
+            })
+            .Where(t => t.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(take)
+            .ToList();
+    }
 }

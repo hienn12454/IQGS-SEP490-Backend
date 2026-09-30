@@ -27,4 +27,18 @@ public class CompetencyScoringPolicy : BaseEntity
     /// Adaptive TargetScore đi qua CompetencyTargetScorePolicy.Resolve — không đổi scoring engine.
     /// </summary>
     public string? TargetScoreByLevelJson { get; set; }
+
+    // ── SCRUM-488: Admin Coach drill policy ──────────────────────────────────
+    /// <summary>Qua topic khi OverallScore &gt; giá trị này.</summary>
+    public double DrillPassScoreExclusiveMin { get; set; } = 70;
+    public int DrillQuestionCountWeak { get; set; } = 20;
+    public int DrillQuestionCountMid { get; set; } = 15;
+    public int DrillQuestionCountStrong { get; set; } = 10;
+    /// <summary>current &lt; target * ratio → band weak.</summary>
+    public double DrillWeakBandRatio { get; set; } = 0.6;
+    public bool DrillRemixEnabled { get; set; } = true;
+    /// <summary>Tỉ lệ slot remixed trong outline [0, 1].</summary>
+    public double DrillRemixRatio { get; set; } = 0.35;
+    /// <summary>Câu có AiFeedback.Score &lt; ngưỡng được coi là yếu.</summary>
+    public double DrillWeakAnswerScoreMaxExclusive { get; set; } = 50;
 }

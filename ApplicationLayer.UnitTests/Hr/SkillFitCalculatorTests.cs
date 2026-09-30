@@ -71,6 +71,22 @@ public sealed class RecommendationP1RulesTests
         Assert.Throws<BadRequestException>(() =>
             RecommendationP1Rules.EnsureInviteSchedule(null, null, "ONLINE", null, null));
     }
+
+    [Theory]
+    [InlineData("meet.google.com/abc-defg-hij", "https://meet.google.com/abc-defg-hij")]
+    [InlineData("https://zoom.us/j/123", "https://zoom.us/j/123")]
+    [InlineData("http://example.com/room", "http://example.com/room")]
+    public void NormalizeMeetingLink_PrependsHttps_WhenMissingScheme(string input, string expected)
+    {
+        Assert.Equal(expected, RecommendationP1Rules.NormalizeMeetingLink(input));
+    }
+
+    [Fact]
+    public void NormalizeMeetingLink_RejectsJavascriptScheme()
+    {
+        Assert.Throws<BadRequestException>(() =>
+            RecommendationP1Rules.NormalizeMeetingLink("javascript:alert(1)"));
+    }
 }
 
 public sealed class RecommendationIntakeScoreTests

@@ -69,6 +69,13 @@ public interface IPracticeSessionRepository
 
     Task<IReadOnlyList<SetLastScoreDto>> ListLatestCompletedScoresAsync(Guid candidateUserId, IReadOnlyList<Guid> questionSetIds);
 
+    /// <summary>
+    /// SCRUM-489: mọi session COMPLETED của candidate trên các set — CompletedAt asc.
+    /// Tối đa 20 phiên / questionSetId (cắt sau khi sort).
+    /// </summary>
+    Task<IReadOnlyList<DrillSessionAttemptRow>> ListCompletedByQuestionSetIdsAsync(
+        Guid candidateUserId, IReadOnlyList<Guid> questionSetIds);
+
     Task<IReadOnlyList<SetAvgDurationDto>> ListAverageCompletionMinutesAsync(IReadOnlyList<Guid> questionSetIds);
 
     Task<IReadOnlyList<CandidateSkillStatDto>> ListSkillStatsAsync(Guid candidateUserId);

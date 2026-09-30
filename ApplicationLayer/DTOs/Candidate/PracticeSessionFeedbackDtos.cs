@@ -10,6 +10,12 @@ public class PracticeSessionFeedbackDto
     /// <summary>FreeTeaser | Full — FE blur/upsell theo flag server (không tin client).</summary>
     public string AccessLevel { get; set; } = string.Empty;
 
+    /// <summary>
+    /// SCRUM-479: Premium còn câu chưa AI Succeeded (session Free cũ) — FE hiện nút chấm full on-demand.
+    /// FreeTeaser luôn false.
+    /// </summary>
+    public bool NeedsFullEvaluation { get; set; }
+
     /// <summary>AI Insight tổng quan + kỹ năng cần cải thiện (SCRUM-305). Free teaser thường null.</summary>
     public PracticeAiInsightDto? AiInsight { get; set; }
 

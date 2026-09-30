@@ -452,6 +452,39 @@ public class PracticeSessionRepository : IPracticeSessionRepository
             .ToList();
     }
 
+    public async Task<IReadOnlyList<DrillSessionAttemptRow>> ListCompletedByQuestionSetIdsAsync(
+        Guid candidateUserId, IReadOnlyList<Guid> questionSetIds)
+    {
+        if (questionSetIds.Count == 0)
+            return Array.Empty<DrillSessionAttemptRow>();
+
+        const int maxPerSet = 20;
+        var rows = await _context.PracticeSessions.AsNoTracking()
+            .Where(s =>
+                s.CandidateUserId == candidateUserId
+                && s.IsActive
+                && s.Status == PracticeSessionStatus.Completed
+                && questionSetIds.Contains(s.QuestionSetId))
+            .Select(s => new DrillSessionAttemptRow
+            {
+                SessionId = s.Id,
+                QuestionSetId = s.QuestionSetId,
+                Score = s.OverallScore,
+                CompletedAt = s.CompletedAt
+            })
+            .ToListAsync();
+
+        return rows
+            .GroupBy(r => r.QuestionSetId)
+            .SelectMany(g => g
+                .OrderBy(x => x.CompletedAt ?? DateTime.MinValue)
+                .ThenBy(x => x.SessionId)
+                .Take(maxPerSet))
+            .OrderBy(r => r.QuestionSetId)
+            .ThenBy(r => r.CompletedAt ?? DateTime.MinValue)
+            .ToList();
+    }
+
     public async Task<IReadOnlyList<SetAvgDurationDto>> ListAverageCompletionMinutesAsync(
         IReadOnlyList<Guid> questionSetIds)
     {

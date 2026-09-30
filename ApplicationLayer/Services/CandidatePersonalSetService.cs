@@ -436,9 +436,12 @@ public class CandidatePersonalSetService : ICandidatePersonalSetService
     {
         var profile = await _profiles.GetByUserIdAsync(candidateUserId)
             ?? throw new BadRequestException("Chưa có hồ sơ ứng viên.");
+        // SCRUM-483: bắt buộc file CV — không vào Coach/personal set bằng TechStack thuần
+        if (string.IsNullOrWhiteSpace(profile.CvBlobPath))
+            throw new BadRequestException("Hãy upload CV trước khi dùng AI Coach.");
         var cvSkills = SkillMatchHelper.UnionCvSkills(profile.TechStack, profile.CvEvaluationJson);
         if (cvSkills.Count == 0)
-            throw new BadRequestException("Hãy upload CV (hoặc thêm TechStack) trước khi dùng AI Coach.");
+            throw new BadRequestException("CV chưa có kỹ năng để đánh giá. Hãy upload lại CV hoặc chỉnh skills sau khi phân tích.");
         return profile;
     }
 
@@ -463,8 +466,13 @@ public class CandidatePersonalSetService : ICandidatePersonalSetService
         profile ??= await _profiles.GetByUserIdAsync(candidateUserId)
             ?? throw new BadRequestException("Chưa có hồ sơ ứng viên.");
         var cvSkills = (cvSkillsOverride ?? SkillMatchHelper.UnionCvSkills(profile.TechStack, profile.CvEvaluationJson)).ToList();
+        if (isCoach && string.IsNullOrWhiteSpace(profile.CvBlobPath))
+            throw new BadRequestException("Hãy upload CV trước khi dùng AI Coach.");
         if (cvSkills.Count == 0)
-            throw new BadRequestException("Hãy upload CV (hoặc thêm TechStack) trước khi sinh bộ câu hỏi.");
+            throw new BadRequestException(
+                isCoach
+                    ? "CV chưa có kỹ năng để đánh giá. Hãy upload lại CV hoặc chỉnh skills sau khi phân tích."
+                    : "Hãy upload CV trước khi sinh bộ câu hỏi.");
 
         var job = new CandidatePersonalSetJob
         {
@@ -572,7 +580,10 @@ public class CandidatePersonalSetService : ICandidatePersonalSetService
         {
             var skill = focusSkills.FirstOrDefault() ?? "skill";
             var drillSkills = focusSkills.Count > 0 ? focusSkills : cvSkills.Take(1).ToList();
-            return (4, drillSkills, CvCoachPromptBuilder.DrillHrNote(skill),
+            // SCRUM-488: ưu tiên totalQuestions từ PlanJson (BuildDrill); fallback 15 (mid default)
+            var fromPlan = TryReadTotalQuestions(job.PlanJson);
+            var count = fromPlan is > 0 ? fromPlan.Value : 15;
+            return (count, drillSkills, CvCoachPromptBuilder.DrillHrNote(skill),
                 CvCoachPromptBuilder.DrillHrNote(skill), $"Drill — {skill}");
         }
 
@@ -608,6 +619,30 @@ public class CandidatePersonalSetService : ICandidatePersonalSetService
     }
 
     private static int ClampCount(int n) => Math.Clamp(n <= 0 ? 10 : n, 8, 12);
+
+    /// <summary>SCRUM-488: đọc totalQuestions từ PlanJson BuildDrill.</summary>
+    private static int? TryReadTotalQuestions(string? planJson)
+    {
+        if (string.IsNullOrWhiteSpace(planJson)) return null;
+        try
+        {
+            using var doc = JsonDocument.Parse(planJson);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object) return null;
+            if (doc.RootElement.TryGetProperty("totalQuestions", out var tq) && tq.TryGetInt32(out var n) && n > 0)
+                return n;
+            if (doc.RootElement.TryGetProperty("TotalQuestions", out var tq2) && tq2.TryGetInt32(out var n2) && n2 > 0)
+                return n2;
+            if (doc.RootElement.TryGetProperty("recommendedQuestionOutline", out var outline)
+                && outline.ValueKind == JsonValueKind.Array
+                && outline.GetArrayLength() > 0)
+                return outline.GetArrayLength();
+        }
+        catch (JsonException)
+        {
+            /* ignore */
+        }
+        return null;
+    }
 
     private static CandidatePersonalSetJobDto MapJob(CandidatePersonalSetJob job)
     {

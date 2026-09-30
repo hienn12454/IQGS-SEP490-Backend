@@ -22,6 +22,9 @@ public class KnowledgeDocumentResponseDto
     /// <summary>SCRUM-450: nhóm folder UI (null = unsorted).</summary>
     public string? Folder { get; set; }
 
+    /// <summary>SCRUM-486: Candidate được xem file gốc khi true (SYSTEM).</summary>
+    public bool AllowCandidateView { get; set; }
+
     /// <summary>Đường dẫn blob (để FE hiển thị path ảo, không list container).</summary>
     public string? BlobPath { get; set; }
 

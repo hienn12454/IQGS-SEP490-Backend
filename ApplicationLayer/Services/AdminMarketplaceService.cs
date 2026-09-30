@@ -63,14 +63,14 @@ public class AdminMarketplaceService : IAdminMarketplaceService
         return new AdminMarketplaceDetailDto
         {
             Id = row.Id,
-            Title = PublishedQuestionSetMapper.ResolveTitle(row.Title, row.CompanyName),
+            Title = PublishedQuestionSetMapper.ResolveTitle(row.Title, row.CompanyName ?? string.Empty),
             Description = row.Description,
             HrUserId = row.HrUserId,
             HrName = row.HrName,
             HrEmail = row.HrEmail,
             CompanyId = row.CompanyId,
             CompanyName = row.CompanyName,
-            CompanyLogo = CompanyLogoResolver.Resolve(row.CompanyLogo, row.CompanyWebsite, row.CompanyName),
+            CompanyLogo = CompanyLogoResolver.Resolve(row.CompanyLogo, row.CompanyWebsite, row.CompanyName ?? string.Empty),
             TotalQuestions = row.TotalQuestions,
             AttemptCount = row.AttemptCount,
             UniqueCandidateCount = row.UniqueCandidateCount,
@@ -101,6 +101,8 @@ public class AdminMarketplaceService : IAdminMarketplaceService
     {
         var questionSet = await _repository.GetByIdForUpdateAsync(id)
             ?? throw new NotFoundException("Bộ câu hỏi không tồn tại.");
+
+        EnsureMarketplaceKind(questionSet);
 
         if (questionSet.Status != QuestionSetStatus.Published)
             throw new ConflictException("Chỉ được ghim bộ câu hỏi đang PUBLISHED trên Marketplace.");
@@ -136,6 +138,8 @@ public class AdminMarketplaceService : IAdminMarketplaceService
         var questionSet = await _repository.GetByIdForUpdateAsync(id)
             ?? throw new NotFoundException("Bộ câu hỏi không tồn tại.");
 
+        EnsureMarketplaceKind(questionSet);
+
         if (!questionSet.IsPinned)
             return new AdminMarketplacePinResultDto
             {
@@ -156,11 +160,13 @@ public class AdminMarketplaceService : IAdminMarketplaceService
         };
     }
 
-    /// <summary>UC65: copy rule HR unpublish nhưng không check owner — Admin được gỡ mọi bộ PUBLISHED.</summary>
+    /// <summary>UC65: copy rule HR unpublish nhưng không check owner — Admin được gỡ mọi bộ Marketplace PUBLISHED.</summary>
     public async Task<QuestionSetActionResponseDto> UnpublishAsync(Guid id)
     {
         var questionSet = await _repository.GetByIdForUpdateAsync(id)
             ?? throw new NotFoundException("Bộ câu hỏi không tồn tại.");
+
+        EnsureMarketplaceKind(questionSet);
 
         if (questionSet.Status != QuestionSetStatus.Published)
             throw new ConflictException("Bộ câu hỏi hiện không ở trạng thái PUBLISHED.");
@@ -198,17 +204,27 @@ public class AdminMarketplaceService : IAdminMarketplaceService
         return value.ToLowerInvariant();
     }
 
+    /// <summary>
+    /// Bộ Personal (AI Coaching) không thuộc Admin Marketplace — kể cả khi Status=Published
+    /// để candidate luyện. Không cho pin/unpin/unpublish qua API admin.
+    /// </summary>
+    private static void EnsureMarketplaceKind(DomainLayer.Entities.QuestionSet questionSet)
+    {
+        if (!string.Equals(questionSet.Kind, QuestionSetKind.Marketplace, StringComparison.OrdinalIgnoreCase))
+            throw new NotFoundException("Bộ câu hỏi không tồn tại hoặc chưa được publish.");
+    }
+
     private static AdminMarketplaceListItemDto MapListItem(AdminMarketplaceSetRow row, int minAttemptsForTrending) => new()
     {
         Id = row.Id,
-        Title = PublishedQuestionSetMapper.ResolveTitle(row.Title, row.CompanyName),
+        Title = PublishedQuestionSetMapper.ResolveTitle(row.Title, row.CompanyName ?? string.Empty),
         Description = row.Description,
         HrUserId = row.HrUserId,
         HrName = row.HrName,
         HrEmail = row.HrEmail,
         CompanyId = row.CompanyId,
         CompanyName = row.CompanyName,
-        CompanyLogo = CompanyLogoResolver.Resolve(row.CompanyLogo, row.CompanyWebsite, row.CompanyName),
+        CompanyLogo = CompanyLogoResolver.Resolve(row.CompanyLogo, row.CompanyWebsite, row.CompanyName ?? string.Empty),
         Difficulty = NormalizeDifficultyLabel(row.Difficulty),
         Skills = row.Skills,
         TotalQuestions = row.TotalQuestions,

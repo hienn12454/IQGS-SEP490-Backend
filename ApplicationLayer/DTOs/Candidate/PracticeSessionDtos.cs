@@ -164,6 +164,15 @@ public class SetLastScoreDto
     public DateTime? CompletedAt { get; set; }
 }
 
+/// <summary>SCRUM-489: session COMPLETED theo question set — hydrate DrillAttempts trên roadmap.</summary>
+public class DrillSessionAttemptRow
+{
+    public Guid SessionId { get; set; }
+    public Guid QuestionSetId { get; set; }
+    public double? Score { get; set; }
+    public DateTime? CompletedAt { get; set; }
+}
+
 public class SetAvgDurationDto
 {
     public Guid QuestionSetId { get; set; }

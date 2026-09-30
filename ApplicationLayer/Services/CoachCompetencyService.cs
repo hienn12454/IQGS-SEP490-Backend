@@ -26,6 +26,7 @@ public class CoachCompetencyService : ICoachCompetencyService
     private readonly ICandidateProfileRepository _profiles;
     private readonly ICompetencyFrameworkRepository _frameworks;
     private readonly ICompetencyFrameworkResolver _frameworkResolver;
+    private readonly ICompetencyRoleFamilyRepository _roleFamilies;
     private readonly ICompetencyResolver _competencyResolver;
     private readonly IAdaptiveBlueprintBuilder _adaptiveBlueprints;
     private readonly ICandidateAssessmentRepository _assessments;
@@ -34,16 +35,19 @@ public class CoachCompetencyService : ICoachCompetencyService
     private readonly IAiFeedbackRepository _feedbacks;
     private readonly ICandidateAnswerRepository _answers;
     private readonly ICandidateMarketplaceRepository _marketplace;
+    private readonly IPracticeSessionRepository _practiceSessions;
     private readonly ISubscriptionGateService _gate;
     private readonly IJobScheduler _scheduler;
     private readonly ICompetencyProfileService _profile;
     private readonly IRoadmapRecommendationService _roadmapRecommendations;
+    private readonly ICoachKnowledgeViewService _knowledgeView;
     private readonly ILogger<CoachCompetencyService> _logger;
 
     public CoachCompetencyService(
         ICandidateProfileRepository profiles,
         ICompetencyFrameworkRepository frameworks,
         ICompetencyFrameworkResolver frameworkResolver,
+        ICompetencyRoleFamilyRepository roleFamilies,
         ICompetencyResolver competencyResolver,
         IAdaptiveBlueprintBuilder adaptiveBlueprints,
         ICandidateAssessmentRepository assessments,
@@ -52,15 +56,18 @@ public class CoachCompetencyService : ICoachCompetencyService
         IAiFeedbackRepository feedbacks,
         ICandidateAnswerRepository answers,
         ICandidateMarketplaceRepository marketplace,
+        IPracticeSessionRepository practiceSessions,
         ISubscriptionGateService gate,
         IJobScheduler scheduler,
         ICompetencyProfileService profile,
         IRoadmapRecommendationService roadmapRecommendations,
+        ICoachKnowledgeViewService knowledgeView,
         ILogger<CoachCompetencyService>? logger = null)
     {
         _profiles = profiles;
         _frameworks = frameworks;
         _frameworkResolver = frameworkResolver;
+        _roleFamilies = roleFamilies;
         _competencyResolver = competencyResolver;
         _adaptiveBlueprints = adaptiveBlueprints;
         _assessments = assessments;
@@ -69,10 +76,12 @@ public class CoachCompetencyService : ICoachCompetencyService
         _feedbacks = feedbacks;
         _answers = answers;
         _marketplace = marketplace;
+        _practiceSessions = practiceSessions;
         _gate = gate;
         _scheduler = scheduler;
         _profile = profile;
         _roadmapRecommendations = roadmapRecommendations;
+        _knowledgeView = knowledgeView;
         _logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<CoachCompetencyService>.Instance;
     }
 
@@ -90,6 +99,7 @@ public class CoachCompetencyService : ICoachCompetencyService
             skills);
         var fw = resolution.Framework;
         var catalog = await GetFrameworkCatalogAsync();
+        var roleFamilies = await GetRoleFamilyCatalogAsync();
 
         return new CoachContextDto
         {
@@ -103,6 +113,7 @@ public class CoachCompetencyService : ICoachCompetencyService
             ResolutionConfidence = resolution.Confidence,
             ResolutionReason = resolution.Reason,
             SupportedRoles = resolution.SupportedRoles,
+            AvailableRoleFamilies = roleFamilies,
             DetectedSkills = resolution.DetectedSkills,
             SuggestedRole = profile.SuggestedRole,
             TargetRole = profile.TargetRole ?? profile.SuggestedRole,
@@ -114,7 +125,8 @@ public class CoachCompetencyService : ICoachCompetencyService
             Skills = skills,
             ContextConfirmed = profile.CoachContextConfirmed,
             ContextConfirmedAt = profile.CoachContextConfirmedAt,
-            HasCv = !string.IsNullOrWhiteSpace(profile.CvBlobPath) || skills.Count > 0,
+            // SCRUM-483: chỉ coi đã có CV khi có file thật — không fallback TechStack/skills
+            HasCv = !string.IsNullOrWhiteSpace(profile.CvBlobPath),
             MatchedFrameworkId = fw?.Id,
             MatchedFrameworkRole = fw?.DisplayRole ?? (resolution.IsAdaptive ? resolution.NormalizedRole : null),
             MatchedFrameworkLevel = fw?.TargetLevel ?? (resolution.IsUnsupported ? null : resolution.TargetLevel)
@@ -130,8 +142,12 @@ public class CoachCompetencyService : ICoachCompetencyService
         ValidateLevel(dto.TargetLevel, nameof(dto.TargetLevel));
         ValidateLevelOrder(dto.SelfAssessedLevel, dto.TargetLevel);
 
+        // SCRUM-494: TargetRole phải thuộc Role Family catalog (DisplayName hoặc FamilyKey)
         if (!string.IsNullOrWhiteSpace(dto.TargetRole))
-            profile.TargetRole = dto.TargetRole.Trim();
+        {
+            var normalizedDisplay = await ResolveCatalogTargetRoleDisplayAsync(dto.TargetRole.Trim());
+            profile.TargetRole = normalizedDisplay;
+        }
         if (!string.IsNullOrWhiteSpace(dto.SelfAssessedLevel))
             profile.SelfAssessedLevel = dto.SelfAssessedLevel.Trim();
         if (!string.IsNullOrWhiteSpace(dto.TargetLevel))
@@ -160,6 +176,9 @@ public class CoachCompetencyService : ICoachCompetencyService
         if (normalized.Count > 40)
             throw new BadRequestException("Tối đa 40 công nghệ.");
 
+        // SCRUM-491: format từng skill (hybrid — không whitelist cứng)
+        EnsureCoachSkillFormats(normalized);
+
         // SCRUM-466: skill set phải nghiêng IT
         CoachItDomainGate.EnsureItSkills(
             normalized,
@@ -175,20 +194,25 @@ public class CoachCompetencyService : ICoachCompetencyService
         return await GetContextAsync(candidateUserId);
     }
 
-    /// <summary>Trim, dedupe case-insensitive (giữ casing đầu), cắt max 80 ký tự / skill.</summary>
+    /// <summary>SCRUM-493: sanitize + dedupe (giữ casing đầu) trước khi lưu / validate.</summary>
     public static List<string> NormalizeCoachSkills(IEnumerable<string>? skills)
+        => CoachSkillFormat.SanitizeList(skills);
+
+    /// <summary>SCRUM-491: reject nếu bất kỳ skill nào sai format.</summary>
+    public static void EnsureCoachSkillFormats(IReadOnlyList<string> skills)
     {
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var list = new List<string>();
-        foreach (var raw in skills ?? Enumerable.Empty<string>())
+        var invalid = new List<string>();
+        string? firstMsg = null;
+        foreach (var s in skills)
         {
-            var trimmed = (raw ?? string.Empty).Trim();
-            if (trimmed.Length == 0) continue;
-            if (trimmed.Length > 80) trimmed = trimmed[..80];
-            if (!seen.Add(trimmed)) continue;
-            list.Add(trimmed);
+            var err = CoachSkillFormat.Validate(s);
+            if (err is null) continue;
+            firstMsg ??= err;
+            invalid.Add(s);
         }
-        return list;
+        if (invalid.Count == 0) return;
+        throw new BadRequestException(
+            $"{firstMsg} Không hợp lệ: {string.Join(", ", invalid.Take(5))}.");
     }
 
     /// <summary>Cập nhật mảng skills trong CvEvaluationJson, giữ summary / suggestedRole / field khác.</summary>
@@ -263,9 +287,12 @@ public class CoachCompetencyService : ICoachCompetencyService
     {
         await _gate.CheckCoachGenerationAsync(candidateUserId);
         var profile = await RequireConfirmedContextAsync(candidateUserId);
+        // SCRUM-483: bắt buộc file CV trước diagnostic — không cho vào bằng TechStack thủ công
+        if (string.IsNullOrWhiteSpace(profile.CvBlobPath))
+            throw new BadRequestException("Hãy upload CV trước khi dùng AI Coach.");
         var skills = SkillMatchHelper.UnionCvSkills(profile.TechStack, profile.CvEvaluationJson).ToList();
         if (skills.Count == 0)
-            throw new BadRequestException("Hãy upload CV (hoặc thêm TechStack) trước khi dùng AI Coach.");
+            throw new BadRequestException("CV chưa có kỹ năng để đánh giá. Hãy upload lại CV hoặc chỉnh skills sau khi phân tích.");
 
         // SCRUM-466: skills + summary + role phải thuộc IT
         var summary = SkillMatchHelper.ParseEvaluationSummary(profile.CvEvaluationJson);
@@ -365,17 +392,75 @@ public class CoachCompetencyService : ICoachCompetencyService
         if (!item.IsIncluded)
             throw new BadRequestException("Topic này đã tắt khỏi lộ trình — không thể drill.");
 
+        // SCRUM-485: đã có bộ drill chưa làm xong → trả job/set hiện có, không sinh mới
+        if (item.DrillQuestionSetId is Guid existingSetId
+            && item.Status == CandidateRoadmapItemStatus.InProgress
+            && item.DrillSessionId is null)
+        {
+            var existingJob = await _jobs.GetByQuestionSetIdIncludingInactiveAsync(existingSetId);
+            if (existingJob is null || existingJob.CandidateUserId != candidateUserId)
+            {
+                existingJob = (await _jobs.ListByCandidateAsync(candidateUserId))
+                    .Where(j =>
+                        j.RoadmapItemId == item.Id
+                        && j.QuestionSetId == existingSetId)
+                    .OrderByDescending(j => j.UpdatedAt ?? j.CreatedAt)
+                    .FirstOrDefault();
+            }
+
+            if (existingJob is not null
+                && existingJob.CandidateUserId == candidateUserId
+                && existingJob.Status == CandidatePersonalSetJobStatus.Completed)
+                return MapJob(existingJob);
+
+            // Set đã gắn — trả payload Completed để FE/API mở practice, không enqueue job mới
+            return new CandidatePersonalSetJobDto
+            {
+                Id = existingJob?.Id ?? existingSetId,
+                Status = CandidatePersonalSetJobStatus.Completed,
+                Purpose = CandidatePersonalSetPurpose.CvDrill,
+                QuestionSetId = existingSetId,
+                CreatedAt = existingJob?.CreatedAt ?? DateTime.UtcNow
+            };
+        }
+
         // Idempotent retry: fail job treo gắn item này rồi chạy lại
         await FailJobsForRoadmapItemAsync(candidateUserId, item.Id, "Đã thay thế bởi drill mới.");
 
         var profile = await RequireConfirmedContextAsync(candidateUserId);
+        var policy = await _frameworks.GetPolicyAsync()
+            ?? new CompetencyScoringPolicy { Id = CompetencyScoringPolicy.SingletonId };
         var focus = new[] { roadmap.Skill };
         var jd = CvCoachPromptBuilder.BuildSyntheticJd(
             profile.TargetRole, profile.TargetLevel, null, focus);
         jd += $"\nFocus topic: {item.Topic}. Current competency context score: {roadmap.CurrentScore ?? 0}.";
 
+        // SCRUM-488: số câu theo band + remix câu yếu
+        var questionCount = CoachDrillPassPolicy.ResolveQuestionCount(
+            policy, roadmap.CurrentScore, roadmap.TargetScore);
+        if (policy.DrillRemixEnabled && policy.DrillRemixRatio > 0)
+        {
+            var weakTexts = await _feedbacks.ListWeakQuestionTextsAsync(
+                candidateUserId,
+                roadmap.Skill,
+                policy.DrillWeakAnswerScoreMaxExclusive,
+                Math.Max(3, (int)Math.Ceiling(questionCount * policy.DrillRemixRatio)));
+            if (weakTexts.Count > 0)
+            {
+                var pct = (int)Math.Round(policy.DrillRemixRatio * 100);
+                jd += $"\nAbout {pct}% of questions MUST be conceptual variants of these weak prior answers "
+                      + "(same skill/topic idea, DIFFERENT wording/scenario — do not copy):\n- "
+                      + string.Join("\n- ", weakTexts);
+            }
+        }
+
         var plan = DiagnosticBlueprintBuilder.BuildDrill(
-            roadmap.Skill, item.Topic, roadmap.CurrentScore, roadmap.TargetScore);
+            roadmap.Skill,
+            item.Topic,
+            roadmap.CurrentScore,
+            roadmap.TargetScore,
+            questionCount,
+            policy.DrillWeakBandRatio);
         var job = new CandidatePersonalSetJob
         {
             CandidateUserId = candidateUserId,
@@ -562,8 +647,13 @@ public class CoachCompetencyService : ICoachCompetencyService
     {
         var rows = await _roadmaps.ListByCandidateAsync(candidateUserId);
         var assessments = await _assessments.ListByCandidateAsync(candidateUserId);
-        var result = new List<CoachRoadmapDto>(rows.Count);
-        foreach (var row in rows)
+        // SCRUM-484: DisplayOrder (candidate sắp xếp) rồi PriorityScore.
+        var ordered = rows
+            .OrderBy(r => r.DisplayOrder)
+            .ThenByDescending(r => r.PriorityScore)
+            .ToList();
+        var result = new List<CoachRoadmapDto>(ordered.Count);
+        foreach (var row in ordered)
             result.Add(await MapRoadmapHydratedAsync(row, assessments));
         return result;
     }
@@ -590,11 +680,13 @@ public class CoachCompetencyService : ICoachCompetencyService
         return await MapRoadmapHydratedAsync(roadmap, await _assessments.ListByCandidateAsync(candidateUserId));
     }
 
-    /// <summary>SCRUM-462: cập nhật toggle topic trên draft Suggested chưa Accept.</summary>
+    /// <summary>SCRUM-462 / SCRUM-484: toggle + reorder topic/skill trên draft Suggested chưa Accept.</summary>
     public async Task<IReadOnlyList<CoachRoadmapDto>> UpdateRoadmapDraftAsync(
         Guid candidateUserId, UpdateRoadmapDraftDto dto)
     {
-        if (dto.Items.Count == 0)
+        var hasItemPatches = dto.Items.Count > 0;
+        var hasRoadmapPatches = dto.Roadmaps.Count > 0;
+        if (!hasItemPatches && !hasRoadmapPatches)
             return await ListRoadmapsAsync(candidateUserId);
 
         var roadmaps = await _roadmaps.ListByCandidateAsync(candidateUserId);
@@ -604,6 +696,7 @@ public class CoachCompetencyService : ICoachCompetencyService
         if (drafts.Count == 0)
             throw new BadRequestException("Không có lộ trình draft để chỉnh. Hãy Accept hoặc làm diagnostic lại.");
 
+        var draftById = drafts.ToDictionary(r => r.Id);
         var itemMap = drafts
             .SelectMany(r => r.Items.Select(i => (Roadmap: r, Item: i)))
             .ToDictionary(x => x.Item.Id, x => x);
@@ -614,12 +707,35 @@ public class CoachCompetencyService : ICoachCompetencyService
                 throw new BadRequestException($"Item {patch.ItemId} không thuộc lộ trình draft của bạn.");
             if (pair.Item.IsReassessmentGate)
             {
-                if (!patch.IsIncluded)
+                // Gate luôn included; không cho reorder.
+                if (patch.IsIncluded == false)
                     throw new BadRequestException("Không thể tắt cổng Re-assessment.");
                 pair.Item.IsIncluded = true;
                 continue;
             }
-            pair.Item.IsIncluded = patch.IsIncluded;
+            if (patch.IsIncluded is bool included)
+                pair.Item.IsIncluded = included;
+            if (patch.SortOrder is int sortOrder)
+                pair.Item.SortOrder = sortOrder;
+        }
+
+        // Gate luôn đứng cuối mỗi skill sau khi reorder topic.
+        foreach (var roadmap in drafts)
+        {
+            var learnMax = roadmap.Items
+                .Where(i => !i.IsReassessmentGate)
+                .Select(i => i.SortOrder)
+                .DefaultIfEmpty(0)
+                .Max();
+            foreach (var gate in roadmap.Items.Where(i => i.IsReassessmentGate))
+                gate.SortOrder = Math.Max(gate.SortOrder, learnMax + 1);
+        }
+
+        foreach (var patch in dto.Roadmaps)
+        {
+            if (!draftById.TryGetValue(patch.RoadmapId, out var roadmap))
+                throw new BadRequestException($"Roadmap {patch.RoadmapId} không thuộc lộ trình draft của bạn.");
+            roadmap.DisplayOrder = patch.DisplayOrder;
         }
 
         foreach (var roadmap in drafts)
@@ -919,6 +1035,20 @@ public class CoachCompetencyService : ICoachCompetencyService
         item.DrillSessionId = session.Id;
         item.DrillQuestionSetId = session.QuestionSetId;
         item.DrillScore = session.OverallScore;
+
+        // SCRUM-487/488: chỉ qua topic khi điểm > ngưỡng Admin (DrillPassScoreExclusiveMin)
+        var policy = await _frameworks.GetPolicyAsync()
+            ?? new CompetencyScoringPolicy { Id = CompetencyScoringPolicy.SingletonId };
+        var passMin = policy.DrillPassScoreExclusiveMin > 0
+            ? policy.DrillPassScoreExclusiveMin
+            : CoachDrillPassPolicy.DefaultPassScoreExclusiveMin;
+        if (!CoachDrillPassPolicy.IsPassing(session.OverallScore, passMin))
+        {
+            item.Status = CandidateRoadmapItemStatus.InProgress;
+            await _roadmaps.UpdateAsync(roadmap);
+            return;
+        }
+
         item.Status = CandidateRoadmapItemStatus.Completed;
 
         var remaining = roadmap.Items.Where(i => !i.IsReassessmentGate && i.IsIncluded).ToList();
@@ -1298,6 +1428,39 @@ public class CoachCompetencyService : ICoachCompetencyService
 
     public Task<List<CoachFrameworkOptionDto>> ListFrameworkCatalogAsync() => GetFrameworkCatalogAsync();
 
+    /// <summary>SCRUM-494: catalog Role Family cho FE dropdown.</summary>
+    private async Task<List<CoachRoleFamilyOptionDto>> GetRoleFamilyCatalogAsync()
+    {
+        var families = await _roleFamilies.ListActiveAsync() ?? new List<CompetencyRoleFamily>();
+        return families.Select(f => new CoachRoleFamilyOptionDto
+        {
+            FamilyKey = f.FamilyKey,
+            DisplayName = f.DisplayName,
+            GroupName = f.GroupName
+        }).ToList();
+    }
+
+    /// <summary>
+    /// Map TargetRole (FamilyKey hoặc DisplayName) → DisplayName catalog.
+    /// Throw nếu không thuộc catalog Active.
+    /// </summary>
+    private async Task<string> ResolveCatalogTargetRoleDisplayAsync(string raw)
+    {
+        var families = await _roleFamilies.ListActiveAsync() ?? new List<CompetencyRoleFamily>();
+        if (families.Count == 0)
+            throw new BadRequestException(
+                "Chưa cấu hình catalog vai trò (Role Family). Liên hệ Admin seed trước khi xác nhận mục tiêu.");
+
+        var match = families.FirstOrDefault(f =>
+            string.Equals(f.DisplayName, raw, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(f.FamilyKey, raw, StringComparison.OrdinalIgnoreCase));
+        if (match is null)
+            throw new BadRequestException(
+                "Vị trí mục tiêu phải chọn từ catalog vai trò được hỗ trợ (không nhập tự do).");
+
+        return match.DisplayName;
+    }
+
     /// <summary>Catalog framework để FE gợi ý Target Role và để message lỗi không hardcode stack.</summary>
     private async Task<List<CoachFrameworkOptionDto>> GetFrameworkCatalogAsync()
     {
@@ -1462,16 +1625,25 @@ public class CoachCompetencyService : ICoachCompetencyService
             dto.ReadinessStatus = rs.GetString();
     }
 
-    private static CoachRoadmapDto MapRoadmap(CandidateRoadmap r) => MapRoadmapCore(r);
+    private static CoachRoadmapDto MapRoadmap(CandidateRoadmap r) => MapRoadmapCore(r, null);
 
     /// <summary>
     /// Hydrate DrillQuestionSetId cho cổng Re-assessment đang InProgress nếu sinh đề xong
     /// nhưng chưa gắn (job cũ trước khi AttachQuestionSet). FE cần id để hiện CTA mở bài.
+    /// SCRUM-486: resolve canViewSource từ AllowCandidateView của KB doc gắn node.
     /// </summary>
-    private Task<CoachRoadmapDto> MapRoadmapHydratedAsync(
+    private async Task<CoachRoadmapDto> MapRoadmapHydratedAsync(
         CandidateRoadmap r, IReadOnlyList<CandidateAssessment> assessments)
     {
-        var dto = MapRoadmapCore(r);
+        var docIds = r.Items
+            .Select(i => i.RoadmapNode?.KnowledgeDocumentId)
+            .Where(id => id.HasValue)
+            .Select(id => id!.Value)
+            .Distinct()
+            .ToList();
+        var allowMap = await _knowledgeView.GetAllowCandidateViewMapAsync(docIds);
+
+        var dto = MapRoadmapCore(r, allowMap);
         foreach (var item in dto.Items.Where(i =>
                      i.IsReassessmentGate
                      && i.Status == CandidateRoadmapItemStatus.InProgress
@@ -1488,7 +1660,45 @@ public class CoachCompetencyService : ICoachCompetencyService
             if (ready?.QuestionSetId is Guid qid)
                 item.DrillQuestionSetId = qid;
         }
-        return Task.FromResult(dto);
+
+        // SCRUM-489: hydrate mọi phiên COMPLETED trên DrillQuestionSetId (xem lại lần 1…N)
+        var setIds = dto.Items
+            .Where(i => i.DrillQuestionSetId is Guid)
+            .Select(i => i.DrillQuestionSetId!.Value)
+            .Distinct()
+            .ToList();
+        if (setIds.Count > 0)
+        {
+            var attempts = await _practiceSessions.ListCompletedByQuestionSetIdsAsync(
+                r.CandidateUserId, setIds);
+            var bySet = attempts
+                .GroupBy(a => a.QuestionSetId)
+                .ToDictionary(
+                    g => g.Key,
+                    g => g
+                        .OrderBy(a => a.CompletedAt ?? DateTime.MinValue)
+                        .ThenBy(a => a.SessionId)
+                        .Select(a => new CoachDrillAttemptDto
+                        {
+                            SessionId = a.SessionId,
+                            Score = a.Score,
+                            CompletedAt = a.CompletedAt
+                        }).ToList());
+            foreach (var item in dto.Items)
+            {
+                if (item.DrillQuestionSetId is Guid sid
+                    && bySet.TryGetValue(sid, out var list))
+                    item.DrillAttempts = list;
+            }
+        }
+
+        // SCRUM-488: FE hiển thị hint pass theo ngưỡng Admin
+        var policy = await _frameworks.GetPolicyAsync()
+            ?? new CompetencyScoringPolicy { Id = CompetencyScoringPolicy.SingletonId };
+        dto.DrillPassScoreExclusiveMin = policy.DrillPassScoreExclusiveMin > 0
+            ? policy.DrillPassScoreExclusiveMin
+            : CoachDrillPassPolicy.DefaultPassScoreExclusiveMin;
+        return dto;
     }
 
     private static bool AssessmentMatchesRoadmapSkill(CandidateAssessment a, string skill)
@@ -1507,7 +1717,9 @@ public class CoachCompetencyService : ICoachCompetencyService
         }
     }
 
-    private static CoachRoadmapDto MapRoadmapCore(CandidateRoadmap r)
+    private static CoachRoadmapDto MapRoadmapCore(
+        CandidateRoadmap r,
+        IReadOnlyDictionary<Guid, bool>? allowViewByDocId)
     {
         var (skillSource, outsideCvReason) =
             RoadmapRecommendationService.ParseSkillProvenanceFromJson(r.ExplanationJson);
@@ -1529,28 +1741,40 @@ public class CoachCompetencyService : ICoachCompetencyService
             AcceptedAt = r.AcceptedAt,
             SkillSource = skillSource,
             OutsideCvReason = outsideCvReason,
-            Items = r.Items.OrderBy(i => i.SortOrder).Select(i => new CoachRoadmapItemDto
+            DisplayOrder = r.DisplayOrder,
+            Items = r.Items.OrderBy(i => i.SortOrder).Select(i =>
             {
-                Id = i.Id,
-                Topic = i.Topic,
-                Subtopic = i.Subtopic,
-                SortOrder = i.SortOrder,
-                Status = i.Status,
-                IsReassessmentGate = i.IsReassessmentGate,
-                IsIncluded = i.IsIncluded,
-                TopicReason = i.IsReassessmentGate
-                    ? null
-                    : (!string.IsNullOrWhiteSpace(i.SourceTitle)
-                        ? i.SourceTitle
-                        : adaptive
-                            ? $"Suy từ blueprint cho skill {r.Skill}"
-                            : $"Topic curated cho skill {r.Skill}"),
-                DrillScore = i.DrillScore,
-                DrillQuestionSetId = i.DrillQuestionSetId,
-                SourceUrl = i.SourceUrl ?? i.RoadmapNode?.SourceUrl,
-                SourceTitle = i.SourceTitle ?? i.RoadmapNode?.SourceTitle,
-                Prerequisites = ParseStringList(i.RoadmapNode?.PrerequisitesJson),
-                NextTopics = ParseStringList(i.RoadmapNode?.NextTopicsJson)
+                var docId = i.RoadmapNode?.KnowledgeDocumentId;
+                var canView = docId is Guid kid
+                    && allowViewByDocId is not null
+                    && allowViewByDocId.TryGetValue(kid, out var allowed)
+                    && allowed;
+                return new CoachRoadmapItemDto
+                {
+                    Id = i.Id,
+                    Topic = i.Topic,
+                    Subtopic = i.Subtopic,
+                    SortOrder = i.SortOrder,
+                    Status = i.Status,
+                    IsReassessmentGate = i.IsReassessmentGate,
+                    IsIncluded = i.IsIncluded,
+                    TopicReason = i.IsReassessmentGate
+                        ? null
+                        : (!string.IsNullOrWhiteSpace(i.SourceTitle)
+                            ? i.SourceTitle
+                            : adaptive
+                                ? $"Suy từ blueprint cho skill {r.Skill}"
+                                : $"Topic curated cho skill {r.Skill}"),
+                    DrillScore = i.DrillScore,
+                    DrillQuestionSetId = i.DrillQuestionSetId,
+                    DrillSessionId = i.DrillSessionId,
+                    SourceUrl = i.SourceUrl ?? i.RoadmapNode?.SourceUrl,
+                    SourceTitle = i.SourceTitle ?? i.RoadmapNode?.SourceTitle,
+                    KnowledgeDocumentId = docId,
+                    CanViewSource = canView,
+                    Prerequisites = ParseStringList(i.RoadmapNode?.PrerequisitesJson),
+                    NextTopics = ParseStringList(i.RoadmapNode?.NextTopicsJson)
+                };
             }).ToList()
         };
     }
@@ -1634,4 +1858,9 @@ public class CoachCompetencyService : ICoachCompetencyService
         KbSource = CoachDiagnosticKnowledgeFolder.ParseKbSourceFromGapSkillsJson(job.GapSkillsJson),
         CreatedAt = job.CreatedAt
     };
+
+    /// <summary>SCRUM-486: ủy quyền xem nguồn KB cho Candidate.</summary>
+    public Task<CoachKnowledgeViewDto> GetKnowledgeSourceViewAsync(
+        Guid candidateUserId, Guid documentId, CancellationToken ct = default)
+        => _knowledgeView.GetViewForCandidateAsync(candidateUserId, documentId, ct);
 }

@@ -62,6 +62,20 @@ public sealed class CoachUpdateContextTests
                 new(fw.RoleKey, fw.DisplayRole, fw.Technology, new List<string> { fw.TargetLevel }, "Provisional")
             });
 
+        var roleFamilies = new Mock<ICompetencyRoleFamilyRepository>();
+        roleFamilies.Setup(r => r.ListActiveAsync())
+            .ReturnsAsync(new List<CompetencyRoleFamily>
+            {
+                new()
+                {
+                    FamilyKey = "BACKEND_ENGINEER",
+                    DisplayName = "Backend Engineer",
+                    GroupName = "Software Development",
+                    Status = CompetencyFrameworkStatus.Active,
+                    SortOrder = 20
+                }
+            });
+
         var competencyResolver = new Mock<ICompetencyResolver>();
         competencyResolver
             .Setup(r => r.ResolveAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<IReadOnlyList<string>>()))
@@ -72,19 +86,20 @@ public sealed class CoachUpdateContextTests
                 fw.Id,
                 fw.DisplayRole,
                 fw.TargetLevel,
-                "backend",
-                "Backend Developer",
+                "BACKEND_ENGINEER",
+                "Backend Engineer",
                 new List<string> { "C#", "EF Core" },
                 0.97,
                 "Exact supported framework matched.",
                 fw,
                 false,
-                new List<string> { fw.DisplayRole }));
+                new List<string> { "Backend Engineer" }));
 
         var svc = new CoachCompetencyService(
             profiles.Object,
             frameworks.Object,
             frameworkResolver.Object,
+            roleFamilies.Object,
             competencyResolver.Object,
             Mock.Of<IAdaptiveBlueprintBuilder>(),
             Mock.Of<ICandidateAssessmentRepository>(),
@@ -93,20 +108,22 @@ public sealed class CoachUpdateContextTests
             Mock.Of<IAiFeedbackRepository>(),
             Mock.Of<ICandidateAnswerRepository>(),
             Mock.Of<ICandidateMarketplaceRepository>(),
+            Mock.Of<IPracticeSessionRepository>(),
             Mock.Of<ISubscriptionGateService>(),
             Mock.Of<IJobScheduler>(),
             Mock.Of<ICompetencyProfileService>(),
-            Mock.Of<IRoadmapRecommendationService>());
+            Mock.Of<IRoadmapRecommendationService>(),
+            Mock.Of<ICoachKnowledgeViewService>());
 
         await svc.UpdateContextAsync(UserId, new UpdateCoachContextDto
         {
-            TargetRole = ".NET Backend Developer",
+            TargetRole = "Backend Engineer",
             SelfAssessedLevel = "Middle",
             TargetLevel = "Middle",
             YearsOfExperience = 2
         });
 
-        Assert.Equal(".NET Backend Developer", profile.TargetRole);
+        Assert.Equal("Backend Engineer", profile.TargetRole);
         Assert.Equal("Middle", profile.TargetLevel);
         Assert.Equal("Middle", profile.SelfAssessedLevel);
         Assert.Equal(2, profile.YearsOfExperience);
@@ -140,6 +157,7 @@ public sealed class CoachUpdateContextTests
             profiles.Object,
             Mock.Of<ICompetencyFrameworkRepository>(),
             Mock.Of<ICompetencyFrameworkResolver>(),
+            Mock.Of<ICompetencyRoleFamilyRepository>(),
             Mock.Of<ICompetencyResolver>(),
             Mock.Of<IAdaptiveBlueprintBuilder>(),
             Mock.Of<ICandidateAssessmentRepository>(),
@@ -148,10 +166,12 @@ public sealed class CoachUpdateContextTests
             Mock.Of<IAiFeedbackRepository>(),
             Mock.Of<ICandidateAnswerRepository>(),
             Mock.Of<ICandidateMarketplaceRepository>(),
+            Mock.Of<IPracticeSessionRepository>(),
             Mock.Of<ISubscriptionGateService>(),
             Mock.Of<IJobScheduler>(),
             Mock.Of<ICompetencyProfileService>(),
-            Mock.Of<IRoadmapRecommendationService>());
+            Mock.Of<IRoadmapRecommendationService>(),
+            Mock.Of<ICoachKnowledgeViewService>());
 
         var ex = await Assert.ThrowsAsync<DomainLayer.Exceptions.BadRequestException>(() =>
             svc.UpdateContextAsync(UserId, new UpdateCoachContextDto
@@ -162,6 +182,67 @@ public sealed class CoachUpdateContextTests
             }));
 
         Assert.Contains("cao hơn", ex.Message, StringComparison.OrdinalIgnoreCase);
+        profiles.Verify(p => p.UpdateAsync(It.IsAny<CandidateProfile>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task UpdateContext_RejectsFreeTextTargetRoleOutsideCatalog()
+    {
+        var profile = new CandidateProfile
+        {
+            UserId = UserId,
+            TargetRole = "Backend Engineer",
+            TargetLevel = "Junior",
+            SelfAssessedLevel = "Junior",
+            TechStack = new[] { "C#" },
+            CvEvaluationJson = """{"skills":["C#"]}"""
+        };
+
+        var profiles = new Mock<ICandidateProfileRepository>();
+        profiles.Setup(p => p.GetByUserIdAsync(UserId)).ReturnsAsync(profile);
+
+        var roleFamilies = new Mock<ICompetencyRoleFamilyRepository>();
+        roleFamilies.Setup(r => r.ListActiveAsync())
+            .ReturnsAsync(new List<CompetencyRoleFamily>
+            {
+                new()
+                {
+                    FamilyKey = "BACKEND_ENGINEER",
+                    DisplayName = "Backend Engineer",
+                    GroupName = "Software Development",
+                    Status = CompetencyFrameworkStatus.Active
+                }
+            });
+
+        var svc = new CoachCompetencyService(
+            profiles.Object,
+            Mock.Of<ICompetencyFrameworkRepository>(),
+            Mock.Of<ICompetencyFrameworkResolver>(),
+            roleFamilies.Object,
+            Mock.Of<ICompetencyResolver>(),
+            Mock.Of<IAdaptiveBlueprintBuilder>(),
+            Mock.Of<ICandidateAssessmentRepository>(),
+            Mock.Of<ICandidateRoadmapRepository>(),
+            Mock.Of<ICandidatePersonalSetJobRepository>(),
+            Mock.Of<IAiFeedbackRepository>(),
+            Mock.Of<ICandidateAnswerRepository>(),
+            Mock.Of<ICandidateMarketplaceRepository>(),
+            Mock.Of<IPracticeSessionRepository>(),
+            Mock.Of<ISubscriptionGateService>(),
+            Mock.Of<IJobScheduler>(),
+            Mock.Of<ICompetencyProfileService>(),
+            Mock.Of<IRoadmapRecommendationService>(),
+            Mock.Of<ICoachKnowledgeViewService>());
+
+        var ex = await Assert.ThrowsAsync<DomainLayer.Exceptions.BadRequestException>(() =>
+            svc.UpdateContextAsync(UserId, new UpdateCoachContextDto
+            {
+                TargetRole = "Marketing Manager",
+                SelfAssessedLevel = "Junior",
+                TargetLevel = "Junior"
+            }));
+
+        Assert.Contains("catalog", ex.Message, StringComparison.OrdinalIgnoreCase);
         profiles.Verify(p => p.UpdateAsync(It.IsAny<CandidateProfile>()), Times.Never);
     }
 }

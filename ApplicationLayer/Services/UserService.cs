@@ -79,6 +79,10 @@ public class UserService : IUserService
         };
     }
 
+    /// <summary>SCRUM-480: KPI user toàn hệ thống.</summary>
+    public Task<AdminUserStatsDto> GetUserStatsAsync()
+        => _userRepo.GetAdminStatsAsync();
+
     // ── Admin: chi tiết user (bất kể IsActive) ───────────────────────
 
     public async Task<UserDetailDto> GetUserDetailAsync(Guid userId)

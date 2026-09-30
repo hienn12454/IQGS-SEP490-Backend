@@ -1,3 +1,4 @@
+using ApplicationLayer.DTOs.Candidate;
 using ApplicationLayer.Interfaces.Jobs;
 using ApplicationLayer.Interfaces.Repositories;
 using ApplicationLayer.Interfaces.Services;
@@ -331,6 +332,153 @@ public sealed class CoachCompetencyRetryTests
     }
 
     [Fact]
+    public void ResolveQuestionCount_UsesPolicyBands()
+    {
+        var policy = new CompetencyScoringPolicy
+        {
+            DrillQuestionCountWeak = 20,
+            DrillQuestionCountMid = 15,
+            DrillQuestionCountStrong = 10,
+            DrillWeakBandRatio = 0.6
+        };
+        Assert.Equal(20, CoachDrillPassPolicy.ResolveQuestionCount(policy, 20, 70));
+        Assert.Equal(15, CoachDrillPassPolicy.ResolveQuestionCount(policy, 50, 70));
+        Assert.Equal(10, CoachDrillPassPolicy.ResolveQuestionCount(policy, 80, 70));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(70)]
+    public async Task HandleDrillSessionCompleted_ScoreNotAbove70_KeepsInProgress(double score)
+    {
+        // SCRUM-487: điểm ≤ 70 không mở khóa topic tiếp
+        var itemId = Guid.NewGuid();
+        var setId = Guid.NewGuid();
+        var item = new CandidateRoadmapItem
+        {
+            Id = itemId,
+            Topic = "LINQ",
+            Status = CandidateRoadmapItemStatus.InProgress
+        };
+        var gate = new CandidateRoadmapItem
+        {
+            Id = Guid.NewGuid(),
+            Topic = "Gate",
+            IsReassessmentGate = true,
+            Status = CandidateRoadmapItemStatus.Pending
+        };
+        var roadmap = new CandidateRoadmap
+        {
+            Id = Guid.NewGuid(),
+            CandidateUserId = UserId,
+            FrameworkId = Guid.NewGuid(),
+            Skill = "C#",
+            Status = CandidateRoadmapStatus.Active,
+            Items = new List<CandidateRoadmapItem> { item, gate }
+        };
+        var job = new CandidatePersonalSetJob
+        {
+            Id = Guid.NewGuid(),
+            CandidateUserId = UserId,
+            Status = CandidatePersonalSetJobStatus.Completed,
+            Purpose = CandidatePersonalSetPurpose.CvDrill,
+            QuestionSetId = setId,
+            RoadmapItemId = itemId,
+            JobDescription = "drill"
+        };
+
+        var svc = CreateService(new FakeJobRepo(job), new FakeAssessmentRepo(), new FakeRoadmapRepo(roadmap));
+        await svc.HandleDrillSessionCompletedAsync(new PracticeSession
+        {
+            Id = Guid.NewGuid(),
+            CandidateUserId = UserId,
+            QuestionSetId = setId,
+            OverallScore = score,
+            Status = "COMPLETED"
+        });
+
+        Assert.Equal(CandidateRoadmapItemStatus.InProgress, item.Status);
+        Assert.Equal(score, item.DrillScore);
+        Assert.Equal(CandidateRoadmapItemStatus.Pending, gate.Status);
+    }
+
+    [Fact]
+    public async Task GetRoadmap_HydratesDrillAttempts_OrderedOldestFirst()
+    {
+        // SCRUM-489: 3 phiên COMPLETED cùng set → 3 attempts trên item
+        var setId = Guid.NewGuid();
+        var roadmapId = Guid.NewGuid();
+        var item = new CandidateRoadmapItem
+        {
+            Id = Guid.NewGuid(),
+            Topic = "Schema",
+            Status = CandidateRoadmapItemStatus.InProgress,
+            DrillQuestionSetId = setId,
+            SortOrder = 1
+        };
+        var roadmap = new CandidateRoadmap
+        {
+            Id = roadmapId,
+            CandidateUserId = UserId,
+            Skill = "SQL",
+            Status = CandidateRoadmapStatus.Active,
+            IsActive = true,
+            AcceptedAt = DateTime.UtcNow,
+            Items = new List<CandidateRoadmapItem> { item }
+        };
+
+        var s1 = Guid.NewGuid();
+        var s2 = Guid.NewGuid();
+        var s3 = Guid.NewGuid();
+        var t0 = new DateTime(2026, 9, 1, 10, 0, 0, DateTimeKind.Utc);
+        var practice = new Mock<IPracticeSessionRepository>();
+        practice
+            .Setup(p => p.ListCompletedByQuestionSetIdsAsync(UserId, It.IsAny<IReadOnlyList<Guid>>()))
+            .ReturnsAsync(new List<DrillSessionAttemptRow>
+            {
+                new() { SessionId = s2, QuestionSetId = setId, Score = 40, CompletedAt = t0.AddHours(2) },
+                new() { SessionId = s1, QuestionSetId = setId, Score = 0, CompletedAt = t0 },
+                new() { SessionId = s3, QuestionSetId = setId, Score = 55, CompletedAt = t0.AddHours(5) }
+            });
+
+        var fw = new Mock<ICompetencyFrameworkRepository>();
+        fw.Setup(f => f.GetPolicyAsync()).ReturnsAsync((CompetencyScoringPolicy?)null);
+
+        var kv = new Mock<ICoachKnowledgeViewService>();
+        kv.Setup(k => k.GetAllowCandidateViewMapAsync(It.IsAny<IReadOnlyList<Guid>>()))
+            .ReturnsAsync(new Dictionary<Guid, bool>());
+
+        var svc = new CoachCompetencyService(
+            Mock.Of<ICandidateProfileRepository>(),
+            fw.Object,
+            Mock.Of<ICompetencyFrameworkResolver>(),
+            Mock.Of<ICompetencyRoleFamilyRepository>(),
+            Mock.Of<ICompetencyResolver>(),
+            Mock.Of<IAdaptiveBlueprintBuilder>(),
+            new FakeAssessmentRepo(),
+            new FakeRoadmapRepo(roadmap),
+            new FakeJobRepo(),
+            Mock.Of<IAiFeedbackRepository>(),
+            Mock.Of<ICandidateAnswerRepository>(),
+            Mock.Of<ICandidateMarketplaceRepository>(),
+            practice.Object,
+            Mock.Of<ISubscriptionGateService>(),
+            Mock.Of<IJobScheduler>(),
+            Mock.Of<ICompetencyProfileService>(),
+            Mock.Of<IRoadmapRecommendationService>(),
+            kv.Object);
+
+        var dto = await svc.GetRoadmapAsync(UserId, roadmapId);
+        var topic = Assert.Single(dto.Items);
+        Assert.Equal(3, topic.DrillAttempts.Count);
+        Assert.Equal(s1, topic.DrillAttempts[0].SessionId);
+        Assert.Equal(s2, topic.DrillAttempts[1].SessionId);
+        Assert.Equal(s3, topic.DrillAttempts[2].SessionId);
+        Assert.Equal(0, topic.DrillAttempts[0].Score);
+        Assert.Equal(55, topic.DrillAttempts[2].Score);
+    }
+
+    [Fact]
     public async Task GetRoadmap_OtherCandidate_ThrowsForbidden()
     {
         var owner = Guid.NewGuid();
@@ -369,12 +517,14 @@ public sealed class CoachCompetencyRetryTests
         ISubscriptionGateService? gate = null,
         IJobScheduler? scheduler = null,
         ICompetencyFrameworkResolver? resolver = null,
-        ICompetencyResolver? competencyResolver = null)
+        ICompetencyResolver? competencyResolver = null,
+        IPracticeSessionRepository? practiceSessions = null)
     {
         return new CoachCompetencyService(
             profiles ?? Mock.Of<ICandidateProfileRepository>(),
             frameworks ?? Mock.Of<ICompetencyFrameworkRepository>(),
             resolver ?? Mock.Of<ICompetencyFrameworkResolver>(),
+            Mock.Of<ICompetencyRoleFamilyRepository>(),
             competencyResolver ?? Mock.Of<ICompetencyResolver>(),
             Mock.Of<IAdaptiveBlueprintBuilder>(),
             assessments,
@@ -383,10 +533,12 @@ public sealed class CoachCompetencyRetryTests
             Mock.Of<IAiFeedbackRepository>(),
             Mock.Of<ICandidateAnswerRepository>(),
             Mock.Of<ICandidateMarketplaceRepository>(),
+            practiceSessions ?? Mock.Of<IPracticeSessionRepository>(),
             gate ?? Mock.Of<ISubscriptionGateService>(),
             scheduler ?? Mock.Of<IJobScheduler>(),
             Mock.Of<ICompetencyProfileService>(),
-            Mock.Of<IRoadmapRecommendationService>());
+            Mock.Of<IRoadmapRecommendationService>(),
+            Mock.Of<ICoachKnowledgeViewService>());
     }
 
     private sealed class FakeJobRepo : ICandidatePersonalSetJobRepository

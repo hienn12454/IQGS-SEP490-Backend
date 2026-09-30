@@ -109,6 +109,27 @@ public sealed class CheckGenerateSetWindowTests
         Assert.Null(ex);
     }
 
+    /// <summary>
+    /// Plan=HR_PREMIUM nhưng snapshot vẫn Free (admin grant / sync lệch) → vẫn cho gen.
+    /// Khớp pattern Coach SCRUM-414: tin Plan.Code, không chỉ snapshot.
+    /// </summary>
+    [Fact]
+    public async Task CheckGenerate_HrPremiumPlan_WithFreeSnapshot_DoesNotThrow()
+    {
+        var freeLimits = SubscriptionPlanLimits.HrFree();
+        var sub = new DomainLayer.Entities.Subscription
+        {
+            UserId = UserId,
+            Status = SubscriptionStatus.Active,
+            LimitsSnapshotJson = SubscriptionLimitsHelper.Serialize(freeLimits),
+            LastSuccessfulGenerateAt = DateTime.UtcNow.AddHours(-1),
+            Plan = new SubscriptionPlan { Code = SubscriptionPlanCodes.HrPremium, Audience = SubscriptionAudience.HR, Name = "HR Premium" }
+        };
+        var gate = new SubscriptionGateService(new LastAwareMetering(sub, windowUsed: 1));
+        var ex = await Record.ExceptionAsync(() => gate.CheckGenerateSetAsync(UserId));
+        Assert.Null(ex);
+    }
+
     /// <summary>SCRUM-445: used >= max + Last null → vẫn chặn (khớp FE canGenerateNow).</summary>
     [Fact]
     public async Task CheckGenerate_Free_WindowFullWithoutLast_ThrowsCooldown()
@@ -155,6 +176,24 @@ public sealed class CheckGenerateSetWindowTests
             UserId = UserId,
             Status = SubscriptionStatus.Active,
             LimitsSnapshotJson = SubscriptionLimitsHelper.Serialize(limits),
+            Plan = new SubscriptionPlan { Code = SubscriptionPlanCodes.HrPremium, Audience = SubscriptionAudience.HR, Name = "HR Premium" }
+        };
+        var gate = new SubscriptionGateService(new LastAwareMetering(sub, windowUsed: 0, questionRegenUsed: 99));
+        var ex = await Record.ExceptionAsync(
+            () => gate.CheckQuestionRegenAsync(UserId, Guid.NewGuid()));
+        Assert.Null(ex);
+    }
+
+    /// <summary>Plan Premium + snapshot Free đã hết regen → vẫn cho qua theo Plan.Code.</summary>
+    [Fact]
+    public async Task CheckQuestionRegen_HrPremiumPlan_WithFreeSnapshot_DoesNotThrow()
+    {
+        var freeLimits = SubscriptionPlanLimits.HrFree();
+        var sub = new DomainLayer.Entities.Subscription
+        {
+            UserId = UserId,
+            Status = SubscriptionStatus.Active,
+            LimitsSnapshotJson = SubscriptionLimitsHelper.Serialize(freeLimits),
             Plan = new SubscriptionPlan { Code = SubscriptionPlanCodes.HrPremium, Audience = SubscriptionAudience.HR, Name = "HR Premium" }
         };
         var gate = new SubscriptionGateService(new LastAwareMetering(sub, windowUsed: 0, questionRegenUsed: 99));

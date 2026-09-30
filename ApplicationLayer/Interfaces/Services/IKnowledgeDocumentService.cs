@@ -28,14 +28,15 @@ public interface IKnowledgeDocumentService
         Guid? ownerIdFilter = null,
         bool requireHrType = true);
 
-    /// <summary>SCRUM-447/450: Admin cập nhật type, AdminNote và/hoặc Folder.</summary>
+    /// <summary>SCRUM-447/450/486: Admin cập nhật type, AdminNote, Folder và/hoặc AllowCandidateView.</summary>
     Task<KnowledgeDocumentResponseDto> UpdateDocumentMetaAsync(
         Guid id,
         string? documentType,
         string? adminNote,
         string? folder = null,
         bool updateFolder = false,
-        Guid? ownerIdFilter = null);
+        Guid? ownerIdFilter = null,
+        bool? allowCandidateView = null);
 
     /// <summary>SCRUM-444: vài chunk đầu để preview.</summary>
     Task<IReadOnlyList<KnowledgeChunkPreviewDto>> GetChunksAsync(
