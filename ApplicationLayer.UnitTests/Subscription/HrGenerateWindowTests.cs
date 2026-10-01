@@ -77,17 +77,29 @@ public sealed class CheckGenerateSetWindowTests
     [Fact]
     public async Task CheckGenerate_Free_LastWithin24h_ThrowsCooldown()
     {
-        var gate = CreateHrGate(lastSuccess: DateTime.UtcNow.AddHours(-1));
+        // Cửa sổ đã đầy (used >= max) + Last còn trong 24h → khóa
+        var gate = CreateHrGate(lastSuccess: DateTime.UtcNow.AddHours(-1), windowUsed: 1);
         var ex = await Assert.ThrowsAsync<SubscriptionGateException>(() => gate.CheckGenerateSetAsync(UserId));
         Assert.Equal(SubscriptionErrorCodes.CooldownActive, ex.ErrorCode);
         Assert.Contains("1 lần", ex.Message, StringComparison.Ordinal);
         Assert.Contains("đánh giá JD", ex.Message, StringComparison.Ordinal);
     }
 
+    /// <summary>SCRUM-510: admin tăng max sau khi đã chạm cap cũ — used &lt; max mới thì cho qua dù Last còn.</summary>
+    [Fact]
+    public async Task CheckGenerate_Free_UsedBelowMax_LastWithin24h_DoesNotThrow()
+    {
+        var limits = SubscriptionPlanLimits.HrFree();
+        limits.GeneratePerWindow = 2;
+        var gate = CreateHrGate(lastSuccess: DateTime.UtcNow.AddHours(-1), windowUsed: 1, limits: limits);
+        var ex = await Record.ExceptionAsync(() => gate.CheckGenerateSetAsync(UserId));
+        Assert.Null(ex);
+    }
+
     [Fact]
     public async Task CheckGenerate_Free_LastOlderThan24h_DoesNotThrow()
     {
-        var gate = CreateHrGate(lastSuccess: DateTime.UtcNow.AddHours(-25));
+        var gate = CreateHrGate(lastSuccess: DateTime.UtcNow.AddHours(-25), windowUsed: 1);
         var ex = await Record.ExceptionAsync(() => gate.CheckGenerateSetAsync(UserId));
         Assert.Null(ex);
     }
@@ -147,8 +159,9 @@ public sealed class CheckGenerateSetWindowTests
     }
 
     [Fact]
-    public async Task CheckQuestionRegen_Premium_DoesNotThrow()
+    public async Task CheckQuestionRegen_Premium_QuestionRegenZero_DoesNotThrow()
     {
+        // QuestionRegenPerPlan = 0 → unlimited (kể cả GenerateUnlimited)
         var limits = SubscriptionPlanLimits.HrPremium();
         var sub = new DomainLayer.Entities.Subscription
         {
@@ -160,6 +173,45 @@ public sealed class CheckGenerateSetWindowTests
         var gate = new SubscriptionGateService(new LastAwareMetering(sub, windowUsed: 0, questionRegenUsed: 99));
         var ex = await Record.ExceptionAsync(
             () => gate.CheckQuestionRegenAsync(UserId, Guid.NewGuid()));
+        Assert.Null(ex);
+    }
+
+    /// <summary>SCRUM-510: GenerateUnlimited ON nhưng QuestionRegenPerPlan=5 vẫn chặn khi used &gt;= 5.</summary>
+    [Fact]
+    public async Task CheckQuestionRegen_UnlimitedGenerate_AtCap_Throws()
+    {
+        var limits = SubscriptionPlanLimits.HrPremium();
+        limits.QuestionRegenPerPlan = 5;
+        var sub = new DomainLayer.Entities.Subscription
+        {
+            UserId = UserId,
+            Status = SubscriptionStatus.Active,
+            LimitsSnapshotJson = SubscriptionLimitsHelper.Serialize(limits),
+            Plan = new SubscriptionPlan { Code = SubscriptionPlanCodes.HrPremium, Audience = SubscriptionAudience.HR, Name = "HR Premium" }
+        };
+        var planId = Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc");
+        var gate = new SubscriptionGateService(new LastAwareMetering(sub, questionRegenUsed: 5));
+        var ex = await Assert.ThrowsAsync<SubscriptionGateException>(
+            () => gate.CheckQuestionRegenAsync(UserId, planId));
+        Assert.Equal(SubscriptionErrorCodes.QuestionRegenLimit, ex.ErrorCode);
+        Assert.Contains("5 lần", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task CheckQuestionRegen_UnlimitedGenerate_UnderCap_DoesNotThrow()
+    {
+        var limits = SubscriptionPlanLimits.HrPremium();
+        limits.QuestionRegenPerPlan = 5;
+        var sub = new DomainLayer.Entities.Subscription
+        {
+            UserId = UserId,
+            Status = SubscriptionStatus.Active,
+            LimitsSnapshotJson = SubscriptionLimitsHelper.Serialize(limits),
+            Plan = new SubscriptionPlan { Code = SubscriptionPlanCodes.HrPremium, Audience = SubscriptionAudience.HR, Name = "HR Premium" }
+        };
+        var planId = Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc");
+        var gate = new SubscriptionGateService(new LastAwareMetering(sub, questionRegenUsed: 4));
+        var ex = await Record.ExceptionAsync(() => gate.CheckQuestionRegenAsync(UserId, planId));
         Assert.Null(ex);
     }
 
@@ -183,9 +235,10 @@ public sealed class CheckGenerateSetWindowTests
     private static SubscriptionGateService CreateHrGate(
         DateTime? lastSuccess,
         int windowUsed = 0,
-        int questionRegenUsed = 0)
+        int questionRegenUsed = 0,
+        SubscriptionPlanLimits? limits = null)
     {
-        var limits = SubscriptionPlanLimits.HrFree();
+        limits ??= SubscriptionPlanLimits.HrFree();
         var sub = new DomainLayer.Entities.Subscription
         {
             UserId = UserId,

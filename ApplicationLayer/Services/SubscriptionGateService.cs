@@ -63,30 +63,32 @@ public class SubscriptionGateService : ISubscriptionGateService
         var max = HrGenerateWindow.ResolveMax(limits);
         var utcNow = DateTime.UtcNow;
 
-        // SCRUM-445: Free 1 lần / 24h — hoàn thành sinh câu hỏi hoặc đánh giá JD.
+        // SCRUM-510: chỉ khóa khi đã hết lượt trong cửa sổ. used < max vẫn cho qua
+        // dù Last còn (vd. admin tăng GeneratePerWindow sau khi đã chạm max cũ).
         var window = await _metering.GetUsageAsync(userId, UsageType.HrGenerateSet, HrGenerateWindow.ScopeKey);
         var windowFull = window.UsedCount >= max;
+        if (!windowFull)
+            return;
+
         var cooldownActive = HrGenerateWindow.IsCooldownActive(sub.LastSuccessfulGenerateAt, hours, utcNow);
 
         // used >= max nhưng cooldown đã hết → cho qua (MarkGenerateSuccess sẽ reset cửa sổ).
-        if (windowFull && sub.LastSuccessfulGenerateAt.HasValue && !cooldownActive)
+        if (sub.LastSuccessfulGenerateAt.HasValue && !cooldownActive)
             return;
 
-        if (cooldownActive || windowFull)
+        if (sub.LastSuccessfulGenerateAt.HasValue && cooldownActive)
         {
-            if (sub.LastSuccessfulGenerateAt.HasValue && cooldownActive)
-            {
-                var nextAllowed = sub.LastSuccessfulGenerateAt.Value.AddHours(hours);
-                var remain = nextAllowed - utcNow;
-                throw new SubscriptionGateException(
-                    SubscriptionErrorCodes.CooldownActive,
-                    $"Gói Free chỉ hoàn thành tạo bộ / đánh giá JD {max} lần / {hours} giờ. Thử lại sau {FormatRemain(remain)} hoặc nâng Premium.");
-            }
-
+            var nextAllowed = sub.LastSuccessfulGenerateAt.Value.AddHours(hours);
+            var remain = nextAllowed - utcNow;
             throw new SubscriptionGateException(
                 SubscriptionErrorCodes.CooldownActive,
-                $"Gói Free chỉ hoàn thành tạo bộ / đánh giá JD {max} lần / {hours} giờ. Thử lại sau hoặc nâng Premium.");
+                $"Chỉ hoàn thành tạo bộ / đánh giá JD {max} lần / {hours} giờ. Thử lại sau {FormatRemain(remain)} hoặc nâng Premium.");
         }
+
+        // used >= max, thiếu Last → vẫn khóa (khớp FE canGenerateNow).
+        throw new SubscriptionGateException(
+            SubscriptionErrorCodes.CooldownActive,
+            $"Chỉ hoàn thành tạo bộ / đánh giá JD {max} lần / {hours} giờ. Thử lại sau hoặc nâng Premium.");
     }
 
     public async Task CheckPlanRegenerateAsync(Guid userId, string draftId)
@@ -111,8 +113,9 @@ public class SubscriptionGateService : ISubscriptionGateService
         var sub = await _metering.GetOrThrowSubscriptionAsync(userId);
         var limits = SubscriptionLimitsHelper.Deserialize(sub.LimitsSnapshotJson);
 
-        // Premium unlimited generate → regen câu không giới hạn.
-        if (limits.GenerateUnlimited || limits.QuestionRegenPerPlan <= 0)
+        // SCRUM-510: chỉ field QuestionRegenPerPlan quyết định (0 = unlimited).
+        // GenerateUnlimited chỉ áp dụng tạo bộ/JD — không skip regen từng câu.
+        if (limits.QuestionRegenPerPlan <= 0)
             return;
 
         var max = limits.QuestionRegenPerPlan;
@@ -122,7 +125,7 @@ public class SubscriptionGateService : ISubscriptionGateService
         {
             throw new SubscriptionGateException(
                 SubscriptionErrorCodes.QuestionRegenLimit,
-                $"Gói Free chỉ regen câu hỏi tối đa {max} lần trên mỗi bộ. Nâng Premium để regen không giới hạn.");
+                $"Chỉ regen câu hỏi tối đa {max} lần trên mỗi bộ (tổng mọi câu). Đặt 0 trên gói để không giới hạn, hoặc đợi bộ/plan mới.");
         }
     }
 

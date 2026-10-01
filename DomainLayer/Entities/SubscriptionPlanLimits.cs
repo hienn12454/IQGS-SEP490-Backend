@@ -22,8 +22,9 @@ public class SubscriptionPlanLimits
     public int PlanRegeneratePerDraft { get; set; } = 5;
 
     /// <summary>
-    /// Free HR: số lần regen từng câu tối đa trên 1 plan đã sinh câu.
-    /// 0 = không giới hạn (Premium). Free mặc định 2.
+    /// Free/Premium HR: số lần regen từng câu (tổng) trên 1 InterviewPlan.
+    /// 0 = không giới hạn. Độc lập với GenerateUnlimited (SCRUM-510).
+    /// Free mặc định 2; Premium mặc định 0 (unlimited) trừ khi Admin đặt số &gt; 0.
     /// </summary>
     public int QuestionRegenPerPlan { get; set; } = 2;
 
