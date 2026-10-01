@@ -138,4 +138,64 @@ public sealed class StudioQuestionRegenHelperTests
         Assert.Contains("HR_REGEN_NOTE=Làm khó hơn", note);
         Assert.Contains("AVOID_QUESTIONS=Câu A|#|Câu B", note);
     }
+
+    /// <summary>Lưu ý HR phải nằm đầu hrNote (không bị cắt ở 500 ký tự) và bỏ STRICT_FOCUS.</summary>
+    [Fact]
+    public void BuildRegenHrNote_WithInstruction_PutsNoteFirst_AndDropsStrictFocus()
+    {
+        var note = StudioQuestionRegenHelper.BuildRegenHrNote(
+            Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(),
+            "Mixed", ["BUG_DETECTION"], "LANG=vi",
+            ["ASP.NET Core"], "Hỏi về OOP; tính đa hình",
+            null);
+
+        Assert.Contains("HR_REGEN_NOTE=Hỏi về OOP, tính đa hình", note);
+        Assert.True(note.IndexOf("HR_REGEN_NOTE=", StringComparison.Ordinal)
+                    < note.IndexOf("Studio project", StringComparison.Ordinal));
+        Assert.DoesNotContain("STRICT_FOCUS=1", note);
+    }
+
+    [Fact]
+    public void BuildRegenHrNote_WithoutInstruction_KeepsStrictFocus()
+    {
+        var note = StudioQuestionRegenHelper.BuildRegenHrNote(
+            Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(),
+            "Mixed", ["BUG_DETECTION"], "LANG=vi",
+            ["ASP.NET Core"], null,
+            null);
+
+        Assert.DoesNotContain("HR_REGEN_NOTE=", note);
+        Assert.Contains("STRICT_FOCUS=1", note);
+    }
+
+    [Fact]
+    public void ApplyRagResult_TopicOverridden_UsesRagSkillFocusAndRationale()
+    {
+        var target = new InterviewQuestion
+        {
+            Content = "old",
+            OrderIndex = 1,
+            Type = QuestionType.Technical,
+            Difficulty = QuestionDifficulty.Medium,
+            TagsJson = "{}"
+        };
+        var slot = new PlanOutlineItemDto(1, "technical", "medium", "ASP.NET Core", "Middleware", "Đánh giá middleware", "Text");
+        var rag = new RagGeneratedQuestionDto
+        {
+            Question = "Phân biệt overloading và overriding trong OOP?",
+            QuestionType = "technical",
+            Difficulty = "medium",
+            Skill = "OOP",
+            FocusArea = "Polymorphism",
+            Rationale = "Kiểm tra hiểu đa hình",
+            TopicOverridden = true
+        };
+
+        StudioQuestionRegenHelper.ApplyRagResultToQuestion(target, rag, slot, true, true);
+
+        var meta = StudioRagQuestionMapper.ParseMeta(target.TagsJson);
+        Assert.Equal("OOP", meta.Skill);
+        Assert.Equal("Polymorphism", meta.FocusArea);
+        Assert.Equal("Kiểm tra hiểu đa hình", meta.Rationale);
+    }
 }

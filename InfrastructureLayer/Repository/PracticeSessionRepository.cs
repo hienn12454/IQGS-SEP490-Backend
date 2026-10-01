@@ -42,6 +42,12 @@ public class PracticeSessionRepository : IPracticeSessionRepository
             s.IsActive &&
             s.Status == PracticeSessionStatus.Completed);
 
+    public Task<bool> HasIntegrityTerminatedOnSetAsync(Guid candidateUserId, Guid questionSetId)
+        => _context.PracticeSessions.AnyAsync(s =>
+            s.CandidateUserId == candidateUserId &&
+            s.QuestionSetId == questionSetId &&
+            s.IntegrityTerminated);
+
     public async Task UpdateAsync(PracticeSession session)
     {
         // Chỉ mark session Modified — DbSet.Update(graph) kéo QuestionSet/answers theo
@@ -110,7 +116,7 @@ public class PracticeSessionRepository : IPracticeSessionRepository
     {
         var query = _context.PracticeSessions
             .AsNoTracking()
-            .Where(s => s.CandidateUserId == candidateUserId);
+            .Where(s => s.CandidateUserId == candidateUserId && s.IsActive);
 
         if (!string.IsNullOrWhiteSpace(status))
             query = query.Where(s => s.Status == status);
@@ -507,5 +513,30 @@ public class PracticeSessionRepository : IPracticeSessionRepository
             })
             .OrderBy(x => x.AverageScore)
             .ToList();
+    }
+
+    /// <inheritdoc />
+    public async Task SoftDeleteOldestCompletedBeyondCapAsync(Guid candidateUserId, int maxKeep)
+    {
+        if (maxKeep <= 0)
+            return;
+
+        var completed = await _context.PracticeSessions
+            .Where(s =>
+                s.CandidateUserId == candidateUserId
+                && s.IsActive
+                && s.Status == PracticeSessionStatus.Completed)
+            .OrderBy(s => s.CompletedAt ?? s.StartedAt)
+            .ThenBy(s => s.Id)
+            .ToListAsync();
+
+        var overflow = completed.Count - maxKeep;
+        if (overflow <= 0)
+            return;
+
+        foreach (var session in completed.Take(overflow))
+            session.IsActive = false;
+
+        await _context.SaveChangesAsync();
     }
 }

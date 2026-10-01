@@ -187,7 +187,9 @@ public class QuestionSetService : IQuestionSetService
             SavedAt = qs.CreatedAt,
             PublishedAt = qs.PublishedAt,
             QuestionCount = counts.TryGetValue(qs.Id, out var c) ? c : 0,
-            IsBookmarked = bookmarkedIds.Contains(qs.Id)
+            IsBookmarked = bookmarkedIds.Contains(qs.Id),
+            // SCRUM-464: FE history filter mode=hiring|practice cần flag này trên list
+            IsHiringAssessment = qs.IsHiringAssessment
         }).ToList();
     }
 
@@ -415,7 +417,7 @@ public class QuestionSetService : IQuestionSetService
         if (request?.RecommendationMinScore is double minScore)
             questionSet.RecommendationMinScore = RecommendationService.ResolveIntakeMinScore(minScore);
 
-        // SCRUM-464: Practice vs Tuyển — null = giữ giá trị đã Save từ review
+        // SCRUM-464: Practice vs Tuyển + anti-cheat HR (null = giữ; Practice → tắt AC)
         if (request?.IsHiringAssessment is bool isHiring)
             questionSet.IsHiringAssessment = isHiring;
         if (request?.HrAntiCheatEnabled is bool hrAc)

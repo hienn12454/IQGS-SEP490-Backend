@@ -79,6 +79,15 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
         if (!await _marketplaceRepository.CanCandidateStartAsync(questionSetId, candidateUserId))
             throw new NotFoundException("Bộ câu hỏi không tồn tại hoặc chưa được publish.");
 
+        // SCRUM-497: đã bị khóa integrity trên bộ này → không cho start/resume (kể cả tab ẩn danh).
+        if (PracticeAntiCheatRules.ShouldBlockNewSessionDueToIntegrity(
+                await _sessionRepository.HasIntegrityTerminatedOnSetAsync(candidateUserId, questionSetId)))
+        {
+            throw new ConflictException(
+                "Bộ câu hỏi này đã bị khóa vì vi phạm chống gian lận.",
+                errorCode: "INTEGRITY_TERMINATED");
+        }
+
         var existingSession = await _sessionRepository.GetInProgressByQuestionSetAsync(candidateUserId, questionSetId);
         if (existingSession is not null)
         {
@@ -87,6 +96,9 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
                 return await BuildSessionResponseAsync(existingSession);
             // Phiên dở dang đã hết giờ và vừa được tự động nộp — bắt đầu phiên mới bên dưới.
         }
+
+        // SCRUM-498: chỉ trừ quota khi tạo phiên mới (resume không tốn lượt).
+        await _subscriptionGate.CheckStartPracticeAsync(candidateUserId);
 
         // SCRUM-446 + SCRUM-464: snapshot anti-cheat = Admin ∧ HR ∧ bộ Tuyển.
         var platformSettings = await _platformSettingsRepository.GetAsync();
@@ -102,9 +114,11 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
                 isHiring, hrAntiCheat, platformSettings.AntiCheatEnabled),
             AntiCheatMaxTabLeaves = PracticeAntiCheatRules.ClampMaxTabLeaves(platformSettings.AntiCheatMaxTabLeaves),
             TabLeaveCount = 0,
-            IsOfficialTest = false
+            IsOfficialTest = false,
+            IntegrityTerminated = false
         };
         await _sessionRepository.AddAsync(session);
+        await _usageMetering.IncrementAsync(candidateUserId, UsageType.CandidatePractice);
 
         return await BuildSessionResponseAsync(session);
     }
@@ -232,9 +246,8 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
         if (session.Status != PracticeSessionStatus.InProgress)
             throw new BadRequestException("Chỉ có thể huỷ phiên đang ở trạng thái IN_PROGRESS.");
 
-        // SCRUM-446: anti-cheat ON → không cho “Save & Exit / abandon rồi làm tiếp” như luyện tập thoải mái.
-        if (session.AntiCheatEnabled)
-            throw new BadRequestException("Phiên đang bật chống gian lận — không thể huỷ giữa chừng. Hãy nộp bài hoặc tiếp tục làm.");
+        // Anti-cheat ON vẫn cho abandon: thoát = huỷ phiên (ABANDONED), không phải tạm dừng rồi làm tiếp.
+        // Timer không pause; rời tab vẫn đếm / auto-submit. Candidate chủ động X = forfeit lượt này.
 
         session.Status = PracticeSessionStatus.Abandoned;
         // Empty abandon (0 câu trả lời): soft-delete để không làm đầy Kho ứng viên / history.
@@ -248,17 +261,24 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
     }
 
     /// <summary>
-    /// SCRUM-446: FE báo rời tab. Chỉ đếm khi snapshot AntiCheatEnabled;
-    /// debounce 2s; đủ AntiCheatMaxTabLeaves → tự Complete như hết giờ.
+    /// SCRUM-446 / SCRUM-497: FE báo sự kiện integrity.
+    /// - TAB_HIDDEN: đếm rời tab; đủ ngưỡng → tự Complete.
+    /// - terminated=true (đủ 3 strike webcam/focus): Abandoned + IntegrityTerminated → khóa retake bộ câu hỏi.
     /// </summary>
     public async Task<PracticeIntegrityEventResponseDto> ReportIntegrityEventAsync(
         Guid sessionId, Guid candidateUserId, PracticeIntegrityEventDto dto)
     {
         var session = await GetOwnedSessionAsync(sessionId, candidateUserId);
         var eventType = (dto.EventType ?? "TAB_HIDDEN").Trim().ToUpperInvariant();
+        var isTermination = PracticeAntiCheatRules.IsIntegrityTerminationRequest(
+            dto.Terminated, dto.IntegrityTerminated);
+
+        // SCRUM-497: đủ strike → khóa bộ câu hỏi (không phụ thuộc eventType = TAB_HIDDEN).
+        if (isTermination)
+            return await ApplyIntegrityTerminationAsync(session, eventType);
 
         if (eventType != "TAB_HIDDEN")
-            throw new BadRequestException("eventType không hợp lệ. Hiện hỗ trợ: TAB_HIDDEN.");
+            throw new BadRequestException("eventType không hợp lệ. Hiện hỗ trợ: TAB_HIDDEN (hoặc kèm terminated=true).");
 
         // Hết giờ trước → nộp theo timer, không tính thêm tab leave.
         _ = await AutoSubmitIfExpiredAsync(session, await _sessionRepository.GetTimeLimitMinutesAsync(session.QuestionSetId));
@@ -267,16 +287,7 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
         if (!PracticeAntiCheatRules.ShouldCountTabLeave(
                 session.AntiCheatEnabled, session.Status, session.LastTabLeaveAt, now, TabLeaveDebounce))
         {
-            return new PracticeIntegrityEventResponseDto
-            {
-                SessionId = session.Id,
-                Status = session.Status,
-                AntiCheatEnabled = session.AntiCheatEnabled,
-                AntiCheatMaxTabLeaves = session.AntiCheatMaxTabLeaves,
-                TabLeaveCount = session.TabLeaveCount,
-                AutoSubmitted = session.Status == PracticeSessionStatus.Completed,
-                Ignored = true
-            };
+            return BuildIntegrityResponse(session, autoSubmitted: session.Status == PracticeSessionStatus.Completed, ignored: true);
         }
 
         session.TabLeaveCount += 1;
@@ -300,17 +311,51 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
             await _sessionRepository.UpdateAsync(session);
         }
 
-        return new PracticeIntegrityEventResponseDto
+        return BuildIntegrityResponse(session, autoSubmitted: shouldAutoSubmit, ignored: false);
+    }
+
+    /// <summary>SCRUM-497: đánh dấu IntegrityTerminated + Abandoned; idempotent nếu đã khóa.</summary>
+    private async Task<PracticeIntegrityEventResponseDto> ApplyIntegrityTerminationAsync(
+        PracticeSession session, string eventType)
+    {
+        if (!session.AntiCheatEnabled)
+            return BuildIntegrityResponse(session, autoSubmitted: false, ignored: true);
+
+        if (session.IntegrityTerminated)
+            return BuildIntegrityResponse(session, autoSubmitted: false, ignored: true);
+
+        var now = DateTime.UtcNow;
+        session.IntegrityTerminated = true;
+        session.UpdatedAt = now;
+
+        // Đóng phiên đang làm — không Complete/chấm AI (disqualify), tránh FE abandon bị chặn khi anti-cheat ON.
+        if (session.Status == PracticeSessionStatus.InProgress)
+        {
+            session.Status = PracticeSessionStatus.Abandoned;
+            session.CompletedAt = null;
+        }
+
+        await _sessionRepository.UpdateAsync(session);
+        _logger.LogInformation(
+            "SCRUM-497: session {SessionId} integrity-terminated (event={EventType}) — khóa retake set {QuestionSetId}.",
+            session.Id, eventType, session.QuestionSetId);
+
+        return BuildIntegrityResponse(session, autoSubmitted: false, ignored: false);
+    }
+
+    private static PracticeIntegrityEventResponseDto BuildIntegrityResponse(
+        PracticeSession session, bool autoSubmitted, bool ignored)
+        => new()
         {
             SessionId = session.Id,
             Status = session.Status,
             AntiCheatEnabled = session.AntiCheatEnabled,
             AntiCheatMaxTabLeaves = session.AntiCheatMaxTabLeaves,
             TabLeaveCount = session.TabLeaveCount,
-            AutoSubmitted = shouldAutoSubmit,
-            Ignored = false
+            AutoSubmitted = autoSubmitted,
+            Ignored = ignored,
+            IntegrityTerminated = session.IntegrityTerminated
         };
-    }
 
     public async Task<PracticeSessionFeedbackDto> GetFeedbackAsync(Guid sessionId, Guid candidateUserId)
     {
@@ -556,10 +601,8 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
     }
 
     /// <summary>
-    /// SCRUM-332 + Teaser Freemium: evaluate answers theo entitlement, rồi overall / insight / recommendation.
-    /// Đồng thời award Gamification XP (QuestionCompleted/ScoreBonus/ImprovementBonus theo từng câu vừa chấm
-    /// AI thành công + QuestionSetCompleted khi phiên hoàn thành) — trả về mọi XpRewardDto vừa phát sinh để
-    /// CompleteAsync gộp lại trả FE. Gamification lỗi không được làm fail việc hoàn thành phiên.
+    /// SCRUM-332 + SCRUM-498: evaluate answers theo entitlement (Premium / Free lượt đầu full AI),
+    /// rồi overall / insight / recommendation. Prune history theo MaxSavedSessions.
     /// </summary>
     private async Task<List<XpRewardDto>> FinalizeCompletedSessionAsync(PracticeSession session)
     {
@@ -573,11 +616,14 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
                 session.IsOfficialTest = true;
         }
 
-        var xpRewards = await EvaluateAnswersForSessionAsync(session);
+        var grantFullAi = await _subscriptionGate.ShouldGrantFullAiFeedbackAsync(session.CandidateUserId);
+        var xpRewards = await EvaluateAnswersForSessionAsync(session, grantFullAi);
 
-        var canDetailed = await _subscriptionGate.CanDetailedAiFeedbackAsync(session.CandidateUserId);
-        if (canDetailed)
+        if (grantFullAi)
         {
+            // Free lượt đầu: trừ quota FullAiFeedback; Premium no-op.
+            await _subscriptionGate.ConsumeFullAiFeedbackQuotaAsync(session.CandidateUserId);
+
             session.OverallScore = await ComputeSessionOverallScoreAsync(session);
             await TryGenerateAiInsightAsync(session);
             await _sessionRepository.UpdateAsync(session);
@@ -585,14 +631,18 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
         }
         else
         {
-            // Free: overall = điểm câu teaser (không chia cho N câu — tránh điểm bị kéo thấp giả tạo)
+            // Free hết lượt full AI: không chấm per-question — overall null / không insight
             session.OverallScore = await ComputeTeaserOverallScoreAsync(session);
             await _sessionRepository.UpdateAsync(session);
-            // Free không sinh insight đầy đủ / không persist recommendation HR
         }
 
         // Coach diagnostic/reassessment/drill phải ghi competency + roadmap kể cả khi teaser gate tắt detailed feedback.
         await TryUpsertCoachPlanAsync(session);
+
+        // SCRUM-498: giữ tối đa MaxSavedSessions phiên COMPLETED IsActive
+        var maxSaved = await _subscriptionGate.GetMaxSavedSessionsAsync(session.CandidateUserId);
+        if (maxSaved > 0)
+            await _sessionRepository.SoftDeleteOldestCompletedBeyondCapAsync(session.CandidateUserId, maxSaved);
 
         var setReward = await TryAwardQuestionSetCompletionXpAsync(session);
         if (setReward is not null)
@@ -697,12 +747,10 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
     }
 
     /// <summary>
-    /// Premium: chấm mọi answer. Free: chỉ chấm FreeTeaserFeedbackCount câu (ưu tiên answer dài nhất).
-    /// Idempotent nếu đã có Succeeded feedback. Với mỗi câu có kết quả AI chấm Succeeded (kể cả câu đã chấm
-    /// từ lần gọi trước — retry-safe) thử award Gamification XP; câu bị skip-gate (rỗng/spam, auto score 0)
-    /// KHÔNG được coi là hoạt động luyện tập có ý nghĩa nên không award XP.
+    /// SCRUM-498: Premium / Free còn FullAiFeedback → chấm mọi answer.
+    /// Free hết lượt → không chấm per-question (toEvaluate rỗng).
     /// </summary>
-    private async Task<List<XpRewardDto>> EvaluateAnswersForSessionAsync(PracticeSession session)
+    private async Task<List<XpRewardDto>> EvaluateAnswersForSessionAsync(PracticeSession session, bool grantFullAi)
     {
         var xpRewards = new List<XpRewardDto>();
 
@@ -716,19 +764,8 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
         var feedbacks = await _feedbackRepository.GetBySessionIdAsync(session.Id);
         var feedbackByAnswerId = feedbacks.ToDictionary(f => f.CandidateAnswerId);
 
-        var canDetailed = await _subscriptionGate.CanDetailedAiFeedbackAsync(session.CandidateUserId);
-        IEnumerable<CandidateAnswer> toEvaluate = answers;
-
-        if (!canDetailed)
-        {
-            var teaserCount = await _subscriptionGate.GetFreeTeaserFeedbackCountAsync(session.CandidateUserId);
-            // Ưu tiên câu có nội dung dài nhất (meaningful) — fallback Order nếu bằng nhau
-            toEvaluate = answers
-                .OrderByDescending(a => a.AnswerText?.Trim().Length ?? 0)
-                .ThenBy(a => questions.FindIndex(q => q.Id == a.QuestionSetQuestionId))
-                .Take(teaserCount)
-                .ToList();
-        }
+        // Không còn teaser 1 câu — Free sau lượt đầu: không evaluate per-question.
+        IEnumerable<CandidateAnswer> toEvaluate = grantFullAi ? answers : Array.Empty<CandidateAnswer>();
 
         foreach (var answer in toEvaluate)
         {

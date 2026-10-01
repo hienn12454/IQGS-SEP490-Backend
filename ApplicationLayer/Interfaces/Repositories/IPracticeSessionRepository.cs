@@ -15,6 +15,9 @@ public interface IPracticeSessionRepository
     /// <summary>Candidate đã có ít nhất 1 phiên COMPLETED trên question set này — điều kiện để được gửi feedback bộ câu hỏi.</summary>
     Task<bool> HasCompletedSessionAsync(Guid candidateUserId, Guid questionSetId);
 
+    /// <summary>SCRUM-497: candidate đã bị khóa integrity trên bộ câu hỏi này (bất kỳ phiên nào).</summary>
+    Task<bool> HasIntegrityTerminatedOnSetAsync(Guid candidateUserId, Guid questionSetId);
+
     /// <summary>SCRUM-408: unpublish — bulk IN_PROGRESS của bộ → ABANDONED. Trả về số phiên đã hủy.</summary>
     Task<int> AbandonInProgressByQuestionSetAsync(Guid questionSetId);
 
@@ -72,4 +75,9 @@ public interface IPracticeSessionRepository
     Task<IReadOnlyList<SetAvgDurationDto>> ListAverageCompletionMinutesAsync(IReadOnlyList<Guid> questionSetIds);
 
     Task<IReadOnlyList<CandidateSkillStatDto>> ListSkillStatsAsync(Guid candidateUserId);
+
+    /// <summary>
+    /// SCRUM-498: soft-delete (IsActive=false) các phiên COMPLETED cũ nhất khi vượt maxKeep.
+    /// </summary>
+    Task SoftDeleteOldestCompletedBeyondCapAsync(Guid candidateUserId, int maxKeep);
 }

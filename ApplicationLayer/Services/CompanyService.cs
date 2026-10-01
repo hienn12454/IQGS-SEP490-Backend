@@ -1,3 +1,4 @@
+using ApplicationLayer.DTOs.Admin;
 using ApplicationLayer.DTOs.Company;
 using ApplicationLayer.Interfaces.Services;
 using ApplicationLayer.Interfaces.Repositories;
@@ -22,6 +23,22 @@ public class CompanyService : ICompanyService
     {
         var companies = await _companyRepo.SearchAsync(keyword);
         return companies.Select(MapToDto).ToList();
+    }
+
+    public async Task<PagedResultDto<CompanyDto>> SearchPagedAsync(AdminCompanyListQueryDto query)
+    {
+        var page = Math.Max(1, query.Page);
+        var pageSize = Math.Clamp(query.PageSize <= 0 ? 10 : query.PageSize, 1, 100);
+
+        var (items, total) = await _companyRepo.SearchPagedAsync(query.Keyword, page, pageSize);
+
+        return new PagedResultDto<CompanyDto>
+        {
+            Items = items.Select(MapToDto).ToList(),
+            TotalCount = total,
+            Page = page,
+            PageSize = pageSize
+        };
     }
 
     public async Task<CompanyDto?> GetByIdAsync(Guid id)

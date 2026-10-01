@@ -36,4 +36,12 @@ public static class PracticeAntiCheatRules
     /// <summary>Đủ ngưỡng → tự nộp bài.</summary>
     public static bool ShouldAutoSubmit(int tabLeaveCount, int maxTabLeaves)
         => tabLeaveCount >= Math.Max(1, maxTabLeaves);
+
+    /// <summary>SCRUM-497: FE báo đủ 3 strike (terminated / integrityTerminated).</summary>
+    public static bool IsIntegrityTerminationRequest(bool terminated, bool integrityTerminated)
+        => terminated || integrityTerminated;
+
+    /// <summary>SCRUM-497: đã từng bị khóa integrity trên bộ → không cho start phiên mới.</summary>
+    public static bool ShouldBlockNewSessionDueToIntegrity(bool hasIntegrityLockOnSet)
+        => hasIntegrityLockOnSet;
 }

@@ -24,6 +24,16 @@ public interface ISubscriptionGateService
     Task CheckGeneratePersonalSetAsync(Guid userId);
     /// <summary>AI Coach (diagnostic/drill): chỉ cần Premium, không trừ hạn mức bộ JD.</summary>
     Task CheckCoachGenerationAsync(Guid userId);
+    /// <summary>SCRUM-498: Free giới hạn PracticePerMonth phiên mới / kỳ (0 = unlimited).</summary>
+    Task CheckStartPracticeAsync(Guid userId);
+    /// <summary>
+    /// SCRUM-498: Premium luôn full AI; Free còn FullAiFeedbackPerMonth trong kỳ → full cả bộ.
+    /// </summary>
+    Task<bool> ShouldGrantFullAiFeedbackAsync(Guid userId);
+    /// <summary>Trừ 1 lượt FullAiFeedback khi Free vừa nhận full AI (Premium no-op).</summary>
+    Task ConsumeFullAiFeedbackQuotaAsync(Guid userId);
+    /// <summary>MaxSavedSessions từ snapshot (0 = unlimited).</summary>
+    Task<int> GetMaxSavedSessionsAsync(Guid userId);
 }
 
 public class SubscriptionGateService : ISubscriptionGateService
@@ -246,6 +256,61 @@ public class SubscriptionGateService : ISubscriptionGateService
                 SubscriptionErrorCodes.FeatureRequiresPremium,
                 "AI Coach (kiểm tra CV / luyện skill) dành cho gói Premium.");
         }
+    }
+
+    /// <inheritdoc />
+    public async Task CheckStartPracticeAsync(Guid userId)
+    {
+        var limits = await GetLimitsAsync(userId);
+        var max = Math.Max(0, limits.PracticePerMonth);
+        // 0 = không giới hạn (Premium hoặc Admin tắt cap)
+        if (max <= 0)
+            return;
+
+        var usage = await _metering.GetUsageAsync(userId, UsageType.CandidatePractice);
+        if (usage.UsedCount >= max)
+        {
+            throw new SubscriptionGateException(
+                SubscriptionErrorCodes.QuotaExceeded,
+                $"Đã hết {max} lượt luyện tập trong kỳ này. Nâng Premium hoặc chờ kỳ tới.");
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task<bool> ShouldGrantFullAiFeedbackAsync(Guid userId)
+    {
+        // Premium / snapshot có CanDetailedAiFeedback → luôn full
+        if (await CanDetailedAiFeedbackAsync(userId))
+            return true;
+
+        var limits = await GetLimitsAsync(userId);
+        var max = Math.Max(0, limits.FullAiFeedbackPerMonth);
+        if (max <= 0)
+            return false;
+
+        var usage = await _metering.GetUsageAsync(userId, UsageType.CandidateFullAiFeedback);
+        return usage.UsedCount < max;
+    }
+
+    /// <inheritdoc />
+    public async Task ConsumeFullAiFeedbackQuotaAsync(Guid userId)
+    {
+        // Premium không meter FullAiFeedback
+        if (await CanDetailedAiFeedbackAsync(userId))
+            return;
+
+        var limits = await GetLimitsAsync(userId);
+        if (limits.FullAiFeedbackPerMonth <= 0)
+            return;
+
+        await _metering.IncrementAsync(userId, UsageType.CandidateFullAiFeedback);
+    }
+
+    /// <inheritdoc />
+    public async Task<int> GetMaxSavedSessionsAsync(Guid userId)
+    {
+        var limits = await GetLimitsAsync(userId);
+        return Math.Max(0, limits.MaxSavedSessions);
     }
 
     private static bool IsCandidatePremium(Subscription sub)

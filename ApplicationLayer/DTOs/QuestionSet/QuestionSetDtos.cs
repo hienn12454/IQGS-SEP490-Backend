@@ -36,6 +36,9 @@ public class QuestionSetListItemDto
 
     /// <summary>SCRUM-391: HR đã bookmark bộ này chưa.</summary>
     public bool IsBookmarked { get; set; }
+
+    /// <summary>SCRUM-464: true = bộ Tuyển; false = Luyện tập — FE filter history ?mode=hiring|practice.</summary>
+    public bool IsHiringAssessment { get; set; }
 }
 
 public class SaveDraftResponseDto
@@ -150,7 +153,7 @@ public class PublishQuestionSetRequestDto
     /// <summary>SCRUM-464: null = giữ cấu hình hiện tại.</summary>
     public bool? IsHiringAssessment { get; set; }
 
-    /// <summary>SCRUM-464: null = giữ; chỉ có ý nghĩa khi bộ Tuyển.</summary>
+    /// <summary>SCRUM-464: null = giữ; chỉ có hiệu lực khi IsHiringAssessment = true.</summary>
     public bool? HrAntiCheatEnabled { get; set; }
 }
 

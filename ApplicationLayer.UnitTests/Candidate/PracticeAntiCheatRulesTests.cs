@@ -91,4 +91,24 @@ public class PracticeAntiCheatRulesTests
     {
         Assert.Equal(expected, PracticeAntiCheatRules.ShouldAutoSubmit(count, max));
     }
+
+    [Theory]
+    [InlineData(true, false, true)]
+    [InlineData(false, true, true)]
+    [InlineData(true, true, true)]
+    [InlineData(false, false, false)]
+    public void IsIntegrityTerminationRequest_FromFeFlags(bool terminated, bool integrityTerminated, bool expected)
+    {
+        Assert.Equal(
+            expected,
+            PracticeAntiCheatRules.IsIntegrityTerminationRequest(terminated, integrityTerminated));
+    }
+
+    [Theory]
+    [InlineData(true, true)]
+    [InlineData(false, false)]
+    public void ShouldBlockNewSessionDueToIntegrity_MirrorsLockFlag(bool hasLock, bool expected)
+    {
+        Assert.Equal(expected, PracticeAntiCheatRules.ShouldBlockNewSessionDueToIntegrity(hasLock));
+    }
 }

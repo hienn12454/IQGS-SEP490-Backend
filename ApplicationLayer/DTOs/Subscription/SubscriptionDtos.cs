@@ -49,6 +49,14 @@ public class MySubscriptionDto
     /// <summary>Số lần generate trong cửa sổ cooldown hiện tại (HR Free 4/24h).</summary>
     public int GenerateWindowUsed { get; set; }
     public int GenerateWindowLimit { get; set; }
+    /// <summary>SCRUM-498: số phiên practice đã start mới trong kỳ.</summary>
+    public int PracticeUsed { get; set; }
+    /// <summary>0 = unlimited.</summary>
+    public int PracticeLimit { get; set; }
+    /// <summary>SCRUM-498: số phiên Free đã dùng full AI trong kỳ.</summary>
+    public int FullAiFeedbackUsed { get; set; }
+    /// <summary>0 = unlimited (Premium); Free mặc định 1.</summary>
+    public int FullAiFeedbackLimit { get; set; }
     public SubscriptionEntitlementsDto Entitlements { get; set; } = new();
 }
 

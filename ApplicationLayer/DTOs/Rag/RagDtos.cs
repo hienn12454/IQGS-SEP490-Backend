@@ -312,6 +312,18 @@ public class RagGeneratedQuestionDto
     public object? SourceProvenance { get; set; }
     /// <summary>SCRUM-421: Cảnh báo thiếu tài liệu Admin (soft_llm).</summary>
     public bool MissingAdminWarning { get; set; }
+    /// <summary>SCRUM-495 / HG01: câu lệch skill/type/rationale — chỉ đánh dấu.</summary>
+    public bool NeedsReview { get; set; }
+    /// <summary>SCRUM-495: lý do lệch (content_mismatch_skill, type_mismatch, …).</summary>
+    public List<string> MismatchReasons { get; set; } = new();
+    /// <summary>Regen có lưu ý HR và LLM đã đổi sang chủ đề mới — BE không khóa skill/focus theo slot cũ.</summary>
+    public bool TopicOverridden { get; set; }
+}
+
+public class RagFlaggedQuestionDto
+{
+    public int Order { get; set; }
+    public List<string> Reasons { get; set; } = new();
 }
 
 public class GenerateQuestionsFromPlanResult

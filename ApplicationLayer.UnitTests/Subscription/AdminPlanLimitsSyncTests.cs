@@ -62,6 +62,43 @@ public sealed class AdminPlanLimitsSyncTests
         Assert.Equal(1000, SubscriptionLimitsHelper.Deserialize(plan.LimitsJson).AskAiPerMonth);
     }
 
+    [Fact]
+    public async Task UpdateAsync_CandidatePracticeLimits_SyncsActiveSnapshots()
+    {
+        var plan = new SubscriptionPlan
+        {
+            Id = PlanId,
+            Code = SubscriptionPlanCodes.CandidateFree,
+            Audience = SubscriptionAudience.Candidate,
+            Name = "Candidate Free",
+            PriceMonthly = 0,
+            Currency = "VND",
+            IsActive = true,
+            LimitsJson = SubscriptionLimitsHelper.Serialize(SubscriptionPlanLimits.CandidateFree())
+        };
+        var planRepo = new FakePlanRepo(plan);
+        var subRepo = new FakeSubscriptionRepo();
+        var sut = CreateSut(planRepo, subRepo);
+
+        var result = await sut.UpdateAsync(PlanId, new UpdateSubscriptionPlanDto
+        {
+            Limits = new SubscriptionPlanLimits
+            {
+                PracticePerMonth = 3,
+                MaxSavedSessions = 7,
+                FullAiFeedbackPerMonth = 2,
+                FreeVisiblePercent = 100
+            }
+        });
+
+        Assert.Equal(1, subRepo.SyncCallCount);
+        var synced = SubscriptionLimitsHelper.Deserialize(subRepo.LastSyncedJson);
+        Assert.Equal(3, synced.PracticePerMonth);
+        Assert.Equal(7, synced.MaxSavedSessions);
+        Assert.Equal(2, synced.FullAiFeedbackPerMonth);
+        Assert.False(result.AppliesToExistingSubscribersFromNextPeriod);
+    }
+
     private static SubscriptionPlan CreatePremiumPlan(int askAi)
     {
         var limits = SubscriptionPlanLimits.HrPremium();

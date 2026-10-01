@@ -1026,6 +1026,11 @@ namespace InfrastructureLayer.Migrations
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
 
+                    b.Property<bool>("IntegrityTerminated")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
                     b.Property<bool>("IsOfficialTest")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
@@ -1065,6 +1070,8 @@ namespace InfrastructureLayer.Migrations
 
                     b.HasIndex("QuestionSetId");
 
+                    b.HasIndex("CandidateUserId", "QuestionSetId", "IntegrityTerminated");
+
                     b.ToTable("tbl_practice_sessions", (string)null);
                 });
 
@@ -1090,6 +1097,7 @@ namespace InfrastructureLayer.Migrations
                         .HasColumnType("character varying(2000)");
 
                     b.Property<bool>("HrAntiCheatEnabled")
+                        .IsRequired()
                         .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
                         .HasDefaultValue(false);
@@ -1098,6 +1106,7 @@ namespace InfrastructureLayer.Migrations
                         .HasColumnType("boolean");
 
                     b.Property<bool>("IsHiringAssessment")
+                        .IsRequired()
                         .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
                         .HasDefaultValue(false);
@@ -1591,7 +1600,7 @@ namespace InfrastructureLayer.Migrations
                             CreatedAt = new DateTime(2026, 7, 30, 0, 0, 0, 0, DateTimeKind.Utc),
                             Currency = "VND",
                             IsActive = true,
-                            LimitsJson = "{\"generateCooldownHours\":0,\"generateUnlimited\":false,\"planRegeneratePerDraft\":0,\"canExport\":false,\"askAiPerMonth\":0,\"canPublish\":false,\"freeVisiblePercent\":100,\"canPersistHrRecommendation\":false,\"feedbackOnlyOnVisible\":false,\"canDetailedAiFeedback\":false,\"freeTeaserFeedbackCount\":1,\"canGeneratePersonalSet\":false,\"personalSetPerMonth\":0}",
+                            LimitsJson = "{\"generateCooldownHours\":0,\"generateUnlimited\":false,\"planRegeneratePerDraft\":0,\"canExport\":false,\"askAiPerMonth\":0,\"canPublish\":false,\"freeVisiblePercent\":100,\"canPersistHrRecommendation\":false,\"feedbackOnlyOnVisible\":false,\"canDetailedAiFeedback\":false,\"freeTeaserFeedbackCount\":0,\"canGeneratePersonalSet\":false,\"personalSetPerMonth\":0,\"practicePerMonth\":5,\"maxSavedSessions\":10,\"fullAiFeedbackPerMonth\":1}",
                             Name = "Candidate Free",
                             PriceMonthly = 0m
                         },
@@ -1603,7 +1612,7 @@ namespace InfrastructureLayer.Migrations
                             CreatedAt = new DateTime(2026, 7, 30, 0, 0, 0, 0, DateTimeKind.Utc),
                             Currency = "VND",
                             IsActive = true,
-                            LimitsJson = "{\"generateCooldownHours\":0,\"generateUnlimited\":false,\"planRegeneratePerDraft\":0,\"canExport\":false,\"askAiPerMonth\":0,\"canPublish\":false,\"freeVisiblePercent\":100,\"canPersistHrRecommendation\":true,\"feedbackOnlyOnVisible\":false,\"canDetailedAiFeedback\":true,\"freeTeaserFeedbackCount\":0,\"canGeneratePersonalSet\":true,\"personalSetPerMonth\":10}",
+                            LimitsJson = "{\"generateCooldownHours\":0,\"generateUnlimited\":false,\"planRegeneratePerDraft\":0,\"canExport\":false,\"askAiPerMonth\":0,\"canPublish\":false,\"freeVisiblePercent\":100,\"canPersistHrRecommendation\":true,\"feedbackOnlyOnVisible\":false,\"canDetailedAiFeedback\":true,\"freeTeaserFeedbackCount\":0,\"canGeneratePersonalSet\":true,\"personalSetPerMonth\":10,\"practicePerMonth\":0,\"maxSavedSessions\":0,\"fullAiFeedbackPerMonth\":0}",
                             Name = "Candidate Premium",
                             PriceMonthly = 149000m
                         });

@@ -40,6 +40,10 @@ public static class UsageType
     public const string HrExport = "HrExport";
     public const string CandidateFeedback = "CandidateFeedback";
     public const string CandidatePersonalSet = "CandidatePersonalSet";
+    /// <summary>SCRUM-498: số phiên practice mới trong kỳ (StartAsync tạo mới).</summary>
+    public const string CandidatePractice = "CandidatePractice";
+    /// <summary>SCRUM-498: số phiên Free được AI feedback cả bộ trong kỳ.</summary>
+    public const string CandidateFullAiFeedback = "CandidateFullAiFeedback";
 }
 
 /// <summary>Mã lỗi feature gate subscription (HTTP 403).</summary>

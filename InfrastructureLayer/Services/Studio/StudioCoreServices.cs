@@ -2041,7 +2041,9 @@ public sealed class InterviewPlanService(
             StudioQuestionTypesHelper.ParseOrDefault(settings.QuestionTypesJson),
             StudioOutputLanguage.Normalize(settings.Language),
             string.IsNullOrWhiteSpace(settings.ContentMode) ? "Mixed" : settings.ContentMode,
-            ParseCodeTemplatesOrDefault(settings.CodeTemplatesJson));
+            ParseCodeTemplatesOrDefault(settings.CodeTemplatesJson),
+            IsHiringAssessment: settings.IsHiringAssessment,
+            HrAntiCheatEnabled: settings.HrAntiCheatEnabled);
     }
 
     private static IReadOnlyList<string> ParseCodeTemplatesOrDefault(string? json)
@@ -2682,7 +2684,11 @@ public sealed class QuestionGenerationService(
         var avoidNote = StudioQuestionRegenHelper.BuildAvoidQuestionsNote(siblingContents);
 
         var slot = StudioQuestionRegenHelper.ResolveSlot(q, plan.SourcePlanJson);
-        var miniPlan = StudioQuestionRegenHelper.BuildSingleSlotApprovedPlan(plan.SourcePlanJson, slot);
+        // HR có lưu ý regen → bỏ citation cũ của slot khỏi prompt, để LLM không bị neo vào
+        // tài liệu của chủ đề cũ khi HR muốn đổi chủ đề (vd. hỏi OOP thay vì Middleware).
+        var hasHrInstruction = StudioQuestionRegenHelper.NormalizeInstruction(request.Instruction) is not null;
+        var promptSlot = hasHrInstruction ? slot with { Citations = null } : slot;
+        var miniPlan = StudioQuestionRegenHelper.BuildSingleSlotApprovedPlan(plan.SourcePlanJson, promptSlot);
         var hrNote = StudioQuestionRegenHelper.BuildRegenHrNote(
             projectId, plan.Id, q.Id, contentMode, codeTemplates, langInstruction, focusNames,
             request.Instruction, avoidNote);
