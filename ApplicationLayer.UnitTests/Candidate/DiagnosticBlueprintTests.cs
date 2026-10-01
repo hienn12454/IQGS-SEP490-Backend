@@ -80,4 +80,32 @@ public sealed class DiagnosticBlueprintTests
         Assert.Equal("SQL", outline[1].GetProperty("skill").GetString());
         Assert.Equal("easy", outline[1].GetProperty("difficulty").GetString());
     }
+
+    [Fact]
+    public void Reassessment_HonorsQuestionsPerSkill_IndependentOfDiagnosticDefault()
+    {
+        var bp = new ApplicationLayer.DTOs.Coach.CompetencyBlueprint
+        {
+            TargetRole = "Backend",
+            TargetLevel = "Junior",
+            Competencies =
+            {
+                new ApplicationLayer.DTOs.Coach.CompetencyItem
+                {
+                    SkillName = "C#",
+                    Category = CompetencyCategory.RoleCore,
+                    Topics = { "OOP", "LINQ" },
+                    TargetScore = 70
+                }
+            }
+        };
+        var plan = DiagnosticBlueprintBuilder.BuildDiagnostic(
+            bp, new DiagnosticBlueprintBuilder.Options(QuestionsPerSkill: 5));
+        var json = System.Text.Json.JsonSerializer.Serialize(plan);
+        using var doc = System.Text.Json.JsonDocument.Parse(json);
+        Assert.Equal(5, doc.RootElement.GetProperty("totalQuestions").GetInt32());
+        Assert.Equal(3, CoachDiagnosticPolicy.ReassessmentQuestionsPerSkill(new CompetencyScoringPolicy()));
+        Assert.Equal(8, CoachDiagnosticPolicy.ReassessmentQuestionsPerSkill(
+            new CompetencyScoringPolicy { ReassessmentQuestionsPerSkill = 8 }));
+    }
 }

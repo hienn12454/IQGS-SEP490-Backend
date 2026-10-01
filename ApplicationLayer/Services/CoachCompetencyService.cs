@@ -576,7 +576,12 @@ public class CoachCompetencyService : ICoachCompetencyService
         if (practicedTopics.Count > 0 && skillBlueprint.Competencies.Count == 1)
             skillBlueprint.Competencies[0].Topics = practicedTopics;
 
-        var diagnosticPlan = DiagnosticBlueprintBuilder.BuildDiagnostic(skillBlueprint);
+        // SCRUM-508: số câu Đánh giá lại độc lập diagnostic (mặc định 3).
+        var reassessPolicy = await _frameworks.GetPolicyAsync();
+        var reassessPerSkill = CoachDiagnosticPolicy.ReassessmentQuestionsPerSkill(reassessPolicy);
+        var diagnosticPlan = DiagnosticBlueprintBuilder.BuildDiagnostic(
+            skillBlueprint,
+            new DiagnosticBlueprintBuilder.Options(QuestionsPerSkill: reassessPerSkill));
         var snapshot = JsonSerializer.Serialize(new
         {
             targetRole = profile.TargetRole,
@@ -786,6 +791,72 @@ public class CoachCompetencyService : ICoachCompetencyService
 
         _scheduler.EnqueueCandidatePersonalSet(job.Id);
         return MapJob(job);
+    }
+
+    /// <summary>SCRUM-507: tổng kết vòng Coach — chỉ đầy đủ khi mọi roadmap Accepted đã Completed.</summary>
+    public async Task<CoachWrapUpDto> GetWrapUpAsync(Guid candidateUserId, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        var profile = await _profile.GetProfileAsync(candidateUserId);
+        var planItems = profile?.Items?.ToList() ?? new List<CandidateSkillPlanItem>();
+
+        var roadmaps = await _roadmaps.ListByCandidateAsync(candidateUserId);
+        var accepted = roadmaps.Where(r => r.AcceptedAt is not null).ToList();
+
+        var policy = await _frameworks.GetPolicyAsync();
+        var passMin = policy.DrillPassScoreExclusiveMin > 0
+            ? policy.DrillPassScoreExclusiveMin
+            : CoachDrillPassPolicy.DefaultPassScoreExclusiveMin;
+
+        CoachWrapUpSnapshot? snapshot = null;
+        var latest = await _assessments.GetLatestScoredAsync(candidateUserId);
+        if (latest is not null)
+        {
+            var mapped = await MapAssessmentAsync(latest);
+            snapshot = new CoachWrapUpSnapshot(
+                mapped.OverallReadiness,
+                mapped.OverallDelta,
+                mapped.AchievedLevel,
+                mapped.TargetReadinessStatus,
+                mapped.SuggestedNextLevel,
+                mapped.SuggestedNextLevelAvailable,
+                mapped.SuggestedNextLevelMessage);
+        }
+
+        // Điểm mọi lần nộp drill theo item — dùng để nhận topic hay sai dù lần sau đã pass.
+        var attemptScoresByItemId = new Dictionary<Guid, IReadOnlyList<double>>();
+        var setIds = accepted
+            .SelectMany(r => r.Items)
+            .Where(i => !i.IsReassessmentGate && i.DrillQuestionSetId is Guid)
+            .Select(i => i.DrillQuestionSetId!.Value)
+            .Distinct()
+            .ToList();
+        if (setIds.Count > 0)
+        {
+            var attempts = await _practiceSessions.ListCompletedByQuestionSetIdsAsync(candidateUserId, setIds);
+            var bySet = attempts
+                .GroupBy(a => a.QuestionSetId)
+                .ToDictionary(
+                    g => g.Key,
+                    g => (IReadOnlyList<double>)g
+                        .Where(a => a.Score is not null)
+                        .Select(a => a.Score!.Value)
+                        .ToList());
+
+            foreach (var item in accepted.SelectMany(r => r.Items)
+                         .Where(i => !i.IsReassessmentGate && i.DrillQuestionSetId is Guid))
+            {
+                if (bySet.TryGetValue(item.DrillQuestionSetId!.Value, out var scores) && scores.Count > 0)
+                    attemptScoresByItemId[item.Id] = scores;
+            }
+        }
+
+        return CoachWrapUpBuilder.Build(
+            planItems,
+            accepted,
+            passMin,
+            snapshot,
+            attemptScoresByItemId);
     }
 
     private sealed record ScreeningContext(

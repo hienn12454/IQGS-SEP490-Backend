@@ -21,6 +21,8 @@ public interface ICoachCompetencyService
     Task<CoachScreeningPreviewDto> GetScreeningPreviewAsync(Guid candidateUserId, CancellationToken ct = default);
     /// <summary>SCRUM-506: sinh bài sàng lọc ngắn; không supersede diagnostic / không archive roadmap.</summary>
     Task<CandidatePersonalSetJobDto> StartScreeningAsync(Guid candidateUserId, CancellationToken ct = default);
+    /// <summary>SCRUM-507: tổng kết sau khi luyện xong (mọi roadmap Accepted đã Completed).</summary>
+    Task<CoachWrapUpDto> GetWrapUpAsync(Guid candidateUserId, CancellationToken ct = default);
     Task<CoachAssessmentDto?> GetLatestReportAsync(Guid candidateUserId);
     Task<IReadOnlyList<CoachAssessmentDto>> GetHistoryAsync(Guid candidateUserId);
     Task<CoachAssessmentDto?> GetAssessmentAsync(Guid candidateUserId, Guid assessmentId);

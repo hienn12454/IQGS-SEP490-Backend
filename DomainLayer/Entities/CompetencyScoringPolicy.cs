@@ -59,4 +59,7 @@ public class CompetencyScoringPolicy : BaseEntity
     public bool ScreeningEnabled { get; set; } = true;
     public int ScreeningQuestionsPerSkill { get; set; } = 1;
     public int ScreeningMaxSkills { get; set; } = 12;
+
+    /// <summary>SCRUM-508: số câu bài Đánh giá lại mỗi skill (mặc định 3 — độc lập diagnostic).</summary>
+    public int ReassessmentQuestionsPerSkill { get; set; } = 3;
 }

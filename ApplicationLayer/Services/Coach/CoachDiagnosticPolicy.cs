@@ -14,6 +14,7 @@ public static class CoachDiagnosticPolicy
     public const int DefaultMaxAdaptiveSkills = 8;
     public const int DefaultScreeningPerSkill = 1;
     public const int DefaultScreeningMaxSkills = 12;
+    public const int DefaultReassessmentPerSkill = 3;
 
     public static int QuestionsPerSkill(CompetencyScoringPolicy? p)
         => Clamp(p?.DiagnosticQuestionsPerSkill ?? 0, 2, 6, DefaultQuestionsPerSkill);
@@ -42,6 +43,10 @@ public static class CoachDiagnosticPolicy
 
     public static int ScreeningMaxSkills(CompetencyScoringPolicy? p)
         => Clamp(p?.ScreeningMaxSkills ?? 0, 1, 20, DefaultScreeningMaxSkills);
+
+    /// <summary>SCRUM-508: bài Đánh giá lại 1 skill — tối thiểu 2 câu evidence, trần 10.</summary>
+    public static int ReassessmentQuestionsPerSkill(CompetencyScoringPolicy? p)
+        => Clamp(p?.ReassessmentQuestionsPerSkill ?? 0, 2, 10, DefaultReassessmentPerSkill);
 
     /// <summary>
     /// Diagnostic cần ≥2 câu/skill để có evidence. Nếu admin bật min tổng câu

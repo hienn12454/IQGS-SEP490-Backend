@@ -271,3 +271,57 @@ public class CoachScreeningPreviewDto
     public int RemainingUnmeasured { get; set; }
     public string? Message { get; set; }
 }
+
+/// <summary>SCRUM-507: tổng kết sau khi mọi lộ trình đã Accept được reassessment.</summary>
+public class CoachWrapUpDto
+{
+    /// <summary>true khi mọi roadmap Accepted đều Completed.</summary>
+    public bool Available { get; set; }
+    public int CompletedRoadmaps { get; set; }
+    public int TotalRoadmaps { get; set; }
+    public double? OverallReadiness { get; set; }
+    public double? OverallDelta { get; set; }
+    public string? AchievedLevel { get; set; }
+    public string? TargetReadinessStatus { get; set; }
+    public string? SuggestedNextLevel { get; set; }
+    public bool SuggestedNextLevelAvailable { get; set; }
+    public string? SuggestedNextLevelMessage { get; set; }
+    public List<CoachWrapUpSkillDeltaDto> Improved { get; set; } = new();
+    public List<CoachWrapUpSkillDto> Strengths { get; set; } = new();
+    public List<CoachWrapUpWeakTopicDto> WeakTopics { get; set; } = new();
+    public List<CoachWrapUpNextSkillDto> NextSkills { get; set; } = new();
+}
+
+public class CoachWrapUpSkillDeltaDto
+{
+    public string Skill { get; set; } = string.Empty;
+    public double BaselineScore { get; set; }
+    public double CurrentScore { get; set; }
+    public double Delta { get; set; }
+}
+
+public class CoachWrapUpSkillDto
+{
+    public string Skill { get; set; } = string.Empty;
+    public double CurrentScore { get; set; }
+    public double TargetScore { get; set; }
+}
+
+public class CoachWrapUpWeakTopicDto
+{
+    public string Skill { get; set; } = string.Empty;
+    public string Topic { get; set; } = string.Empty;
+    public double LowestScore { get; set; }
+    /// <summary>true nếu sau lần điểm thấp vẫn vượt ngưỡng pass.</summary>
+    public bool Overcame { get; set; }
+}
+
+public class CoachWrapUpNextSkillDto
+{
+    public string Skill { get; set; } = string.Empty;
+    public double? CurrentScore { get; set; }
+    public double TargetScore { get; set; }
+    public double Gap { get; set; }
+    /// <summary>gap | screening</summary>
+    public string Reason { get; set; } = "gap";
+}

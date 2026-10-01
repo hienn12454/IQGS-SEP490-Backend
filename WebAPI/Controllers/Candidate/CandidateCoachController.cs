@@ -92,6 +92,14 @@ public class CandidateCoachController : ControllerBase
         return SuccessResp.Ok(result);
     }
 
+    /// <summary>SCRUM-507: tổng kết sau khi mọi lộ trình đã Accept được reassessment.</summary>
+    [HttpGet("wrap-up")]
+    public async Task<IActionResult> GetWrapUp(CancellationToken ct)
+    {
+        var result = await _coach.GetWrapUpAsync(User.GetUserId(), ct);
+        return SuccessResp.Ok(result);
+    }
+
     [HttpGet("jobs/active")]
     public async Task<IActionResult> GetActiveJob()
     {

@@ -1,0 +1,130 @@
+using ApplicationLayer.Services.Coach;
+using DomainLayer.Constants;
+using DomainLayer.Entities;
+using Xunit;
+
+namespace ApplicationLayer.UnitTests.Candidate;
+
+public sealed class CoachWrapUpBuilderTests
+{
+    [Fact]
+    public void Build_NotAvailable_WhenAcceptedRoadmapStillActive()
+    {
+        var roadmaps = new List<CandidateRoadmap>
+        {
+            Accepted("Java", CandidateRoadmapStatus.Completed),
+            Accepted("SQL", CandidateRoadmapStatus.Active)
+        };
+
+        var dto = CoachWrapUpBuilder.Build(
+            [new CandidateSkillPlanItem { Skill = "Java", BaselineScore = 40, CurrentScore = 70, TargetScore = 70 }],
+            roadmaps,
+            drillPassExclusiveMin: 70);
+
+        Assert.False(dto.Available);
+        Assert.Equal(1, dto.CompletedRoadmaps);
+        Assert.Equal(2, dto.TotalRoadmaps);
+        Assert.Empty(dto.Improved);
+    }
+
+    [Fact]
+    public void Build_Improved_WhenBaselineToCurrentGainsAtLeastOne()
+    {
+        var plan = new List<CandidateSkillPlanItem>
+        {
+            new() { Skill = "Java", BaselineScore = 40, CurrentScore = 70, TargetScore = 70 },
+            new() { Skill = "SQL", BaselineScore = 60, CurrentScore = 60.5, TargetScore = 70 },
+            new() { Skill = "Redis", BaselineScore = null, CurrentScore = 80, TargetScore = 70 }
+        };
+        var roadmaps = new List<CandidateRoadmap>
+        {
+            Accepted("Java", CandidateRoadmapStatus.Completed)
+        };
+
+        var dto = CoachWrapUpBuilder.Build(plan, roadmaps, 70);
+
+        Assert.True(dto.Available);
+        Assert.Single(dto.Improved);
+        Assert.Equal("Java", dto.Improved[0].Skill);
+        Assert.Equal(30, dto.Improved[0].Delta);
+        Assert.Contains(dto.Strengths, s => s.Skill == "Java");
+        Assert.Contains(dto.Strengths, s => s.Skill == "Redis");
+        Assert.Contains(dto.NextSkills, n => n.Skill == "SQL" && n.Reason == "gap");
+    }
+
+    [Fact]
+    public void Build_WeakTopic_ShowsLowestFailingDrill_AndOvercameFlag()
+    {
+        var itemId = Guid.NewGuid();
+        var roadmap = Accepted("C#", CandidateRoadmapStatus.Completed);
+        roadmap.Items.Add(new CandidateRoadmapItem
+        {
+            Id = itemId,
+            Topic = "LINQ",
+            IsReassessmentGate = false,
+            IsIncluded = true,
+            Status = CandidateRoadmapItemStatus.Completed,
+            DrillScore = 75
+        });
+        roadmap.Items.Add(new CandidateRoadmapItem
+        {
+            Id = Guid.NewGuid(),
+            Topic = "Gate",
+            IsReassessmentGate = true,
+            IsIncluded = true,
+            DrillScore = 40
+        });
+
+        var attempts = new Dictionary<Guid, IReadOnlyList<double>>
+        {
+            [itemId] = new List<double> { 55, 75 }
+        };
+
+        var dto = CoachWrapUpBuilder.Build(
+            [new CandidateSkillPlanItem { Skill = "C#", BaselineScore = 50, CurrentScore = 80, TargetScore = 70 }],
+            [roadmap],
+            drillPassExclusiveMin: 70,
+            drillAttemptScoresByItemId: attempts);
+
+        Assert.Single(dto.WeakTopics);
+        Assert.Equal("LINQ", dto.WeakTopics[0].Topic);
+        Assert.Equal(55, dto.WeakTopics[0].LowestScore);
+        Assert.True(dto.WeakTopics[0].Overcame);
+    }
+
+    [Fact]
+    public void Build_NextSkills_IncludesScreeningWithoutDrill()
+    {
+        var screening = Accepted("Docker", CandidateRoadmapStatus.Completed);
+        screening.ExplanationJson = """{"reason":"screening","confidence":"screening"}""";
+        screening.CurrentScore = 45;
+        screening.TargetScore = 70;
+        screening.Gap = 25;
+        screening.Items.Add(new CandidateRoadmapItem
+        {
+            Topic = "Containers",
+            IsReassessmentGate = false,
+            IsIncluded = true
+        });
+
+        var dto = CoachWrapUpBuilder.Build(
+            Array.Empty<CandidateSkillPlanItem>(),
+            [screening],
+            70);
+
+        Assert.True(dto.Available);
+        Assert.Single(dto.NextSkills);
+        Assert.Equal("Docker", dto.NextSkills[0].Skill);
+        Assert.Equal("screening", dto.NextSkills[0].Reason);
+    }
+
+    private static CandidateRoadmap Accepted(string skill, string status)
+        => new()
+        {
+            Skill = skill,
+            Status = status,
+            AcceptedAt = DateTime.UtcNow,
+            TargetScore = 70,
+            Gap = 0
+        };
+}

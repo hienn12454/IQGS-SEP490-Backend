@@ -87,7 +87,8 @@ public class CompetencyPolicyAdminService : ICompetencyPolicyAdminService
             DiagnosticMinTotalQuestions = dto.DiagnosticMinTotalQuestions,
             ScreeningEnabled = dto.ScreeningEnabled,
             ScreeningQuestionsPerSkill = dto.ScreeningQuestionsPerSkill,
-            ScreeningMaxSkills = dto.ScreeningMaxSkills
+            ScreeningMaxSkills = dto.ScreeningMaxSkills,
+            ReassessmentQuestionsPerSkill = dto.ReassessmentQuestionsPerSkill
         };
         await _frameworks.SavePolicyAsync(entity);
         return MapPolicy(await _frameworks.GetPolicyAsync());
@@ -198,6 +199,7 @@ public class CompetencyPolicyAdminService : ICompetencyPolicyAdminService
         if (dto.DiagnosticMinTotalQuestions < 0) dto.DiagnosticMinTotalQuestions = 0;
         if (dto.ScreeningQuestionsPerSkill <= 0) dto.ScreeningQuestionsPerSkill = 1;
         if (dto.ScreeningMaxSkills <= 0) dto.ScreeningMaxSkills = 12;
+        if (dto.ReassessmentQuestionsPerSkill <= 0) dto.ReassessmentQuestionsPerSkill = 3;
         // ScreeningEnabled: false là giá trị hợp lệ — JSON omit dùng default true trên DTO.
     }
 
@@ -218,6 +220,8 @@ public class CompetencyPolicyAdminService : ICompetencyPolicyAdminService
             throw new BadRequestException("ScreeningQuestionsPerSkill phải trong [1, 3].");
         if (dto.ScreeningMaxSkills is < 1 or > 20)
             throw new BadRequestException("ScreeningMaxSkills phải trong [1, 20].");
+        if (dto.ReassessmentQuestionsPerSkill is < 2 or > 10)
+            throw new BadRequestException("ReassessmentQuestionsPerSkill phải trong [2, 10].");
     }
 
     private static CompetencyScoringPolicyDto MapPolicy(CompetencyScoringPolicy p) => new()
@@ -249,7 +253,8 @@ public class CompetencyPolicyAdminService : ICompetencyPolicyAdminService
         DiagnosticMinTotalQuestions = CoachDiagnosticPolicy.MinTotalQuestions(p),
         ScreeningEnabled = CoachDiagnosticPolicy.ScreeningEnabled(p),
         ScreeningQuestionsPerSkill = CoachDiagnosticPolicy.ScreeningQuestionsPerSkill(p),
-        ScreeningMaxSkills = CoachDiagnosticPolicy.ScreeningMaxSkills(p)
+        ScreeningMaxSkills = CoachDiagnosticPolicy.ScreeningMaxSkills(p),
+        ReassessmentQuestionsPerSkill = CoachDiagnosticPolicy.ReassessmentQuestionsPerSkill(p)
     };
 
     private static CompetencyLevelRuleDto MapRule(CompetencyLevelRule r) => new()
