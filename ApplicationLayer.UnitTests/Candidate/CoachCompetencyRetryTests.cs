@@ -331,6 +331,51 @@ public sealed class CoachCompetencyRetryTests
     }
 
     [Fact]
+    public async Task HandleDrillSessionCompleted_ScoreAtOrBelowPass_KeepsInProgress()
+    {
+        // SCRUM-487/488: điểm <= ngưỡng Admin → không Completed, FE hiện hint làm lại
+        var itemId = Guid.NewGuid();
+        var setId = Guid.NewGuid();
+        var item = new CandidateRoadmapItem
+        {
+            Id = itemId,
+            Topic = "LINQ",
+            Status = CandidateRoadmapItemStatus.InProgress
+        };
+        var roadmap = new CandidateRoadmap
+        {
+            Id = Guid.NewGuid(),
+            CandidateUserId = UserId,
+            FrameworkId = Guid.NewGuid(),
+            Skill = "C#",
+            Status = CandidateRoadmapStatus.Active,
+            Items = new List<CandidateRoadmapItem> { item }
+        };
+        var job = new CandidatePersonalSetJob
+        {
+            Id = Guid.NewGuid(),
+            CandidateUserId = UserId,
+            Status = CandidatePersonalSetJobStatus.Completed,
+            Purpose = CandidatePersonalSetPurpose.CvDrill,
+            QuestionSetId = setId,
+            RoadmapItemId = itemId,
+            JobDescription = "drill"
+        };
+        var svc = CreateService(new FakeJobRepo(job), new FakeAssessmentRepo(), new FakeRoadmapRepo(roadmap));
+        await svc.HandleDrillSessionCompletedAsync(new PracticeSession
+        {
+            Id = Guid.NewGuid(),
+            CandidateUserId = UserId,
+            QuestionSetId = setId,
+            OverallScore = 70,
+            Status = "COMPLETED"
+        });
+
+        Assert.Equal(CandidateRoadmapItemStatus.InProgress, item.Status);
+        Assert.Equal(70, item.DrillScore);
+    }
+
+    [Fact]
     public async Task GetRoadmap_OtherCandidate_ThrowsForbidden()
     {
         var owner = Guid.NewGuid();
@@ -373,7 +418,7 @@ public sealed class CoachCompetencyRetryTests
     {
         return new CoachCompetencyService(
             profiles ?? Mock.Of<ICandidateProfileRepository>(),
-            frameworks ?? Mock.Of<ICompetencyFrameworkRepository>(),
+            frameworks ?? DefaultFrameworks(),
             resolver ?? Mock.Of<ICompetencyFrameworkResolver>(),
             competencyResolver ?? Mock.Of<ICompetencyResolver>(),
             Mock.Of<IAdaptiveBlueprintBuilder>(),
@@ -387,6 +432,17 @@ public sealed class CoachCompetencyRetryTests
             scheduler ?? Mock.Of<IJobScheduler>(),
             Mock.Of<ICompetencyProfileService>(),
             Mock.Of<IRoadmapRecommendationService>());
+    }
+
+    /// <summary>SCRUM-488: HandleDrillSessionCompleted / MapRoadmap đọc GetPolicyAsync — mock trống sẽ NRE.</summary>
+    private static ICompetencyFrameworkRepository DefaultFrameworks()
+    {
+        var m = new Mock<ICompetencyFrameworkRepository>();
+        m.Setup(f => f.GetPolicyAsync()).ReturnsAsync(new CompetencyScoringPolicy
+        {
+            DrillPassScoreExclusiveMin = 70
+        });
+        return m.Object;
     }
 
     private sealed class FakeJobRepo : ICandidatePersonalSetJobRepository

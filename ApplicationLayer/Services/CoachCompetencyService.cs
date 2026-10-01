@@ -374,8 +374,10 @@ public class CoachCompetencyService : ICoachCompetencyService
             profile.TargetRole, profile.TargetLevel, null, focus);
         jd += $"\nFocus topic: {item.Topic}. Current competency context score: {roadmap.CurrentScore ?? 0}.";
 
+        // SCRUM-488: số câu / band / remix lấy từ Admin policy (không hardcode 3–4 câu)
+        var policy = await _frameworks.GetPolicyAsync();
         var plan = DiagnosticBlueprintBuilder.BuildDrill(
-            roadmap.Skill, item.Topic, roadmap.CurrentScore, roadmap.TargetScore);
+            roadmap.Skill, item.Topic, roadmap.CurrentScore, roadmap.TargetScore, policy);
         var job = new CandidatePersonalSetJob
         {
             CandidateUserId = candidateUserId,
@@ -919,15 +921,26 @@ public class CoachCompetencyService : ICoachCompetencyService
         item.DrillSessionId = session.Id;
         item.DrillQuestionSetId = session.QuestionSetId;
         item.DrillScore = session.OverallScore;
-        item.Status = CandidateRoadmapItemStatus.Completed;
 
-        var remaining = roadmap.Items.Where(i => !i.IsReassessmentGate && i.IsIncluded).ToList();
-        if (remaining.Count > 0 && remaining.All(i => i.Status == CandidateRoadmapItemStatus.Completed))
+        // SCRUM-487/488: chỉ Completed khi điểm > ngưỡng Admin; dưới ngưỡng giữ InProgress để FE nhắc làm lại
+        var policy = await _frameworks.GetPolicyAsync();
+        var passMin = policy.DrillPassScoreExclusiveMin > 0 ? policy.DrillPassScoreExclusiveMin : 70;
+        if (session.OverallScore > passMin)
         {
-            var gate = roadmap.Items.FirstOrDefault(i => i.IsReassessmentGate);
-            if (gate is not null)
-                gate.Status = CandidateRoadmapItemStatus.ReadyForReassessment;
-            roadmap.Status = CandidateRoadmapStatus.Active;
+            item.Status = CandidateRoadmapItemStatus.Completed;
+
+            var remaining = roadmap.Items.Where(i => !i.IsReassessmentGate && i.IsIncluded).ToList();
+            if (remaining.Count > 0 && remaining.All(i => i.Status == CandidateRoadmapItemStatus.Completed))
+            {
+                var gate = roadmap.Items.FirstOrDefault(i => i.IsReassessmentGate);
+                if (gate is not null)
+                    gate.Status = CandidateRoadmapItemStatus.ReadyForReassessment;
+                roadmap.Status = CandidateRoadmapStatus.Active;
+            }
+        }
+        else
+        {
+            item.Status = CandidateRoadmapItemStatus.InProgress;
         }
 
         await _roadmaps.UpdateAsync(roadmap);
@@ -1468,10 +1481,11 @@ public class CoachCompetencyService : ICoachCompetencyService
     /// Hydrate DrillQuestionSetId cho cổng Re-assessment đang InProgress nếu sinh đề xong
     /// nhưng chưa gắn (job cũ trước khi AttachQuestionSet). FE cần id để hiện CTA mở bài.
     /// </summary>
-    private Task<CoachRoadmapDto> MapRoadmapHydratedAsync(
+    private async Task<CoachRoadmapDto> MapRoadmapHydratedAsync(
         CandidateRoadmap r, IReadOnlyList<CandidateAssessment> assessments)
     {
-        var dto = MapRoadmapCore(r);
+        var policy = await _frameworks.GetPolicyAsync();
+        var dto = MapRoadmapCore(r, policy);
         foreach (var item in dto.Items.Where(i =>
                      i.IsReassessmentGate
                      && i.Status == CandidateRoadmapItemStatus.InProgress
@@ -1488,7 +1502,7 @@ public class CoachCompetencyService : ICoachCompetencyService
             if (ready?.QuestionSetId is Guid qid)
                 item.DrillQuestionSetId = qid;
         }
-        return Task.FromResult(dto);
+        return dto;
     }
 
     private static bool AssessmentMatchesRoadmapSkill(CandidateAssessment a, string skill)
@@ -1507,11 +1521,14 @@ public class CoachCompetencyService : ICoachCompetencyService
         }
     }
 
-    private static CoachRoadmapDto MapRoadmapCore(CandidateRoadmap r)
+    private static CoachRoadmapDto MapRoadmapCore(CandidateRoadmap r, CompetencyScoringPolicy? policy = null)
     {
         var (skillSource, outsideCvReason) =
             RoadmapRecommendationService.ParseSkillProvenanceFromJson(r.ExplanationJson);
         var adaptive = string.Equals(r.SourceMode, CompetencySourceMode.RagDynamic, StringComparison.OrdinalIgnoreCase);
+        var passMin = policy is { DrillPassScoreExclusiveMin: > 0 }
+            ? policy.DrillPassScoreExclusiveMin
+            : 70;
         return new()
         {
             Id = r.Id,
@@ -1529,6 +1546,7 @@ public class CoachCompetencyService : ICoachCompetencyService
             AcceptedAt = r.AcceptedAt,
             SkillSource = skillSource,
             OutsideCvReason = outsideCvReason,
+            DrillPassScoreExclusiveMin = passMin,
             Items = r.Items.OrderBy(i => i.SortOrder).Select(i => new CoachRoadmapItemDto
             {
                 Id = i.Id,

@@ -130,6 +130,15 @@ public class CompetencyFrameworkRepository : ICompetencyFrameworkRepository
             existing.JuniorReadyCoreSkillRatio = policy.JuniorReadyCoreSkillRatio;
             existing.OverallReadyThreshold = policy.OverallReadyThreshold;
             existing.TargetScoreByLevelJson = policy.TargetScoreByLevelJson;
+            // SCRUM-488
+            existing.DrillPassScoreExclusiveMin = policy.DrillPassScoreExclusiveMin;
+            existing.DrillQuestionCountWeak = policy.DrillQuestionCountWeak;
+            existing.DrillQuestionCountMid = policy.DrillQuestionCountMid;
+            existing.DrillQuestionCountStrong = policy.DrillQuestionCountStrong;
+            existing.DrillWeakBandRatio = policy.DrillWeakBandRatio;
+            existing.DrillRemixEnabled = policy.DrillRemixEnabled;
+            existing.DrillRemixRatio = policy.DrillRemixRatio;
+            existing.DrillWeakAnswerScoreMaxExclusive = policy.DrillWeakAnswerScoreMaxExclusive;
             existing.IsActive = true;
             existing.UpdatedAt = DateTime.UtcNow;
         }

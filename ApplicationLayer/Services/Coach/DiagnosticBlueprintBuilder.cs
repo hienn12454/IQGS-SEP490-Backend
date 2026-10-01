@@ -198,19 +198,50 @@ public static class DiagnosticBlueprintBuilder
     }
 
     /// <summary>
-    /// Blueprint drill: độ khó theo competency hiện tại của skill, không theo level cố định.
-    /// Skill đã đạt target vẫn luyện được (band cao -> câu nâng cao).
+    /// Blueprint drill: độ khó + số câu theo band competency hiện tại.
+    /// SCRUM-488: đọc count / weakBandRatio / remix từ Admin <see cref="CompetencyScoringPolicy"/>.
     /// </summary>
-    public static object BuildDrill(string skill, string topic, double? currentScore, double targetScore)
+    public static object BuildDrill(
+        string skill,
+        string topic,
+        double? currentScore,
+        double targetScore,
+        CompetencyScoringPolicy? policy = null)
     {
-        var band = currentScore ?? 0;
-        string[] diffs;
-        if (band < targetScore * 0.6)
-            diffs = [QuestionDifficultyLevel.Easy, QuestionDifficultyLevel.Easy, QuestionDifficultyLevel.Medium];
-        else if (band < targetScore)
-            diffs = [QuestionDifficultyLevel.Easy, QuestionDifficultyLevel.Medium, QuestionDifficultyLevel.Medium, QuestionDifficultyLevel.Hard];
+        var bandScore = currentScore ?? 0;
+        var weakRatio = policy is { DrillWeakBandRatio: > 0 and <= 1 }
+            ? policy.DrillWeakBandRatio
+            : 0.6;
+        var countWeak = ClampDrillCount(policy?.DrillQuestionCountWeak ?? 20);
+        var countMid = ClampDrillCount(policy?.DrillQuestionCountMid ?? 15);
+        var countStrong = ClampDrillCount(policy?.DrillQuestionCountStrong ?? 10);
+
+        string bandKey;
+        int count;
+        if (bandScore < targetScore * weakRatio)
+        {
+            bandKey = "weak";
+            count = countWeak;
+        }
+        else if (bandScore < targetScore)
+        {
+            bandKey = "mid";
+            count = countMid;
+        }
         else
-            diffs = [QuestionDifficultyLevel.Medium, QuestionDifficultyLevel.Hard, QuestionDifficultyLevel.Hard];
+        {
+            bandKey = "strong";
+            count = countStrong;
+        }
+
+        var diffs = BuildDrillDifficulties(count, bandKey);
+        var remixEnabled = policy?.DrillRemixEnabled ?? true;
+        var remixRatio = policy is { DrillRemixRatio: >= 0 and <= 1 }
+            ? policy.DrillRemixRatio
+            : 0.35;
+        var weakAnswerMax = policy?.DrillWeakAnswerScoreMaxExclusive > 0
+            ? policy.DrillWeakAnswerScoreMaxExclusive
+            : 50;
 
         var outline = diffs
             .Select((d, i) => (object)new
@@ -225,6 +256,10 @@ public static class DiagnosticBlueprintBuilder
                 goal = $"Drill {topic} ({skill})"
             })
             .ToList();
+
+        var remixNote = remixEnabled
+            ? $" Remix: ~{remixRatio:0.##} slot là biến thể concept từ câu từng score AI < {weakAnswerMax} (không copy nguyên văn)."
+            : " Remix câu yếu: tắt.";
 
         return new
         {
@@ -245,8 +280,33 @@ public static class DiagnosticBlueprintBuilder
                 .ToList(),
             recommendedQuestionOutline = outline,
             notes = $"Chỉ hỏi skill \"{skill}\", tập trung topic \"{topic}\". "
-                    + "Sinh ĐÚNG số câu theo outline, không lặp đề cũ, không bịa JD."
+                    + $"Band={bandKey}; sinh ĐÚNG {count} câu theo outline, không lặp đề cũ, không bịa JD."
+                    + remixNote
         };
+    }
+
+    /// <summary>Khớp UI Admin [5, 40]; tránh sinh đề quá dài/ngắn.</summary>
+    public static int ClampDrillCount(int n) => Math.Clamp(n <= 0 ? 10 : n, 5, 40);
+
+    /// <summary>Phân bố độ khó theo band — giữ pattern cũ (weak=E/M, mid=E/M/H, strong=M/H) khi scale số câu.</summary>
+    public static string[] BuildDrillDifficulties(int count, string bandKey)
+    {
+        var diffs = new string[count];
+        for (var i = 0; i < count; i++)
+        {
+            var t = (i + 1.0) / count;
+            diffs[i] = bandKey switch
+            {
+                "weak" => t <= 0.65 ? QuestionDifficultyLevel.Easy : QuestionDifficultyLevel.Medium,
+                "mid" => t <= 0.30
+                    ? QuestionDifficultyLevel.Easy
+                    : t <= 0.70
+                        ? QuestionDifficultyLevel.Medium
+                        : QuestionDifficultyLevel.Hard,
+                _ => t <= 0.40 ? QuestionDifficultyLevel.Medium : QuestionDifficultyLevel.Hard
+            };
+        }
+        return diffs;
     }
 
     public static List<object> BuildDifficultyDistribution(IEnumerable<BlueprintQuestion> questions)

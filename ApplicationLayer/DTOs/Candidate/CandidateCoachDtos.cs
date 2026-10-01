@@ -176,6 +176,8 @@ public class CoachRoadmapDto
     public string? SkillSource { get; set; }
     /// <summary>Lý do gợi ý khi skillSource = outsideCv.</summary>
     public string? OutsideCvReason { get; set; }
+    /// <summary>SCRUM-488: ngưỡng qua topic drill (điểm phải &gt; giá trị này) — từ Admin policy.</summary>
+    public double DrillPassScoreExclusiveMin { get; set; } = 70;
     public List<CoachRoadmapItemDto> Items { get; set; } = new();
 }
 

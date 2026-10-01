@@ -19,6 +19,16 @@ public class CompetencyScoringPolicyDto
     public double OverallReadyThreshold { get; set; }
     /// <summary>SCRUM-457: optional {"Fresher":60,"Junior":70,...}. Null → OverallReadyThreshold.</summary>
     public string? TargetScoreByLevelJson { get; set; }
+
+    // SCRUM-488: drill policy (Admin /admin/settings → AI Coach)
+    public double DrillPassScoreExclusiveMin { get; set; } = 70;
+    public int DrillQuestionCountWeak { get; set; } = 20;
+    public int DrillQuestionCountMid { get; set; } = 15;
+    public int DrillQuestionCountStrong { get; set; } = 10;
+    public double DrillWeakBandRatio { get; set; } = 0.6;
+    public bool DrillRemixEnabled { get; set; } = true;
+    public double DrillRemixRatio { get; set; } = 0.35;
+    public double DrillWeakAnswerScoreMaxExclusive { get; set; } = 50;
 }
 
 public class CompetencyLevelRuleDto
