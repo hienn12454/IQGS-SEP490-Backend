@@ -438,6 +438,10 @@ public static class StudioRagPlanMapper
                 var answerMethod = NormalizeOutlineAnswerMethod(answerRaw, type);
                 var itemOrder = GetInt(item, "order") ?? order;
                 var citations = ParseOutlineCitations(item);
+                // HG01: giữ dấu plannedSkill/relabeled qua vòng BE → FE → BE
+                var plannedSkill = GetString(item, "plannedSkill", "planned_skill");
+                var relabeled = item.TryGetProperty("relabeled", out var relabeledProp)
+                    && relabeledProp.ValueKind == JsonValueKind.True;
                 result.Add(new PlanOutlineItemDto(
                     itemOrder,
                     type,
@@ -446,7 +450,9 @@ public static class StudioRagPlanMapper
                     focus,
                     goal,
                     answerMethod,
-                    citations));
+                    citations,
+                    plannedSkill,
+                    relabeled));
             }
 
             return result

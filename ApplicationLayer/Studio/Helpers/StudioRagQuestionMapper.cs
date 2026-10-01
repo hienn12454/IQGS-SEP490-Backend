@@ -40,6 +40,10 @@ public static class StudioRagQuestionMapper
         public object? SourceProvenance { get; set; }
         /// <summary>SCRUM-421: Cảnh báo soft_llm — thiếu tài liệu Admin.</summary>
         public bool MissingAdminWarning { get; set; }
+        /// <summary>SCRUM-495 / HG01: lệch config HR — chỉ flag, không chặn lưu.</summary>
+        public bool NeedsReview { get; set; }
+        /// <summary>SCRUM-495: lý do lệch.</summary>
+        public List<string> MismatchReasons { get; set; } = new();
         /// <summary>Legacy / mirror criteria objects (string hoặc RubricCriterion).</summary>
         public List<object> EvaluationCriteria { get; set; } = new();
         public List<object> Citations { get; set; } = new();
@@ -122,7 +126,11 @@ public static class StudioRagQuestionMapper
                     q.AnswerMethod, q.CodeTemplateType, q.CodeSnippet),
                 Citations = q.Citations ?? new List<object>(),
                 SourceProvenance = q.SourceProvenance,
-                MissingAdminWarning = q.MissingAdminWarning
+                MissingAdminWarning = q.MissingAdminWarning,
+                // SCRUM-495: flag lệch HR config — không chặn lưu
+                NeedsReview = q.NeedsReview,
+                MismatchReasons = q.MismatchReasons?.Where(r => !string.IsNullOrWhiteSpace(r)).Select(r => r.Trim()).ToList()
+                    ?? new List<string>()
             };
             ApplyRubricToMeta(meta, rubricDoc);
 
@@ -200,7 +208,10 @@ public static class StudioRagQuestionMapper
             string.IsNullOrWhiteSpace(meta.Rationale) ? null : meta.Rationale.Trim(),
             // SCRUM-436: skill/tech tag cho badge UI
             string.IsNullOrWhiteSpace(meta.Skill) ? null : meta.Skill.Trim(),
-            string.IsNullOrWhiteSpace(meta.FocusArea) ? null : meta.FocusArea.Trim()
+            string.IsNullOrWhiteSpace(meta.FocusArea) ? null : meta.FocusArea.Trim(),
+            // SCRUM-495
+            meta.NeedsReview,
+            meta.MismatchReasons is { Count: > 0 } ? meta.MismatchReasons : null
         );
     }
 

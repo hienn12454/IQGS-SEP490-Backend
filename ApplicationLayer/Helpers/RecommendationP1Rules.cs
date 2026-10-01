@@ -50,5 +50,35 @@ public static class RecommendationP1Rules
             throw new BadRequestException("ONLINE cần meetingLink.");
         if (mode == MeetingMode.Onsite && string.IsNullOrWhiteSpace(location))
             throw new BadRequestException("ONSITE cần location.");
+        // SCRUM-482: validate scheme khi đã có link (tránh javascript: lưu vào DB).
+        if (!string.IsNullOrWhiteSpace(meetingLink))
+            _ = NormalizeMeetingLink(meetingLink);
+    }
+
+    /// <summary>
+    /// SCRUM-482: chuẩn hóa meeting link thành absolute http(s) URL.
+    /// Thiếu scheme → prepend https:// (tránh browser resolve relative và chèn origin FE).
+    /// </summary>
+    public static string? NormalizeMeetingLink(string? meetingLink)
+    {
+        if (string.IsNullOrWhiteSpace(meetingLink))
+            return null;
+
+        var trimmed = meetingLink.Trim();
+        if (Uri.TryCreate(trimmed, UriKind.Absolute, out var absolute))
+        {
+            if (absolute.Scheme is not ("http" or "https"))
+                throw new BadRequestException("MeetingLink chỉ chấp nhận http hoặc https.");
+            return absolute.AbsoluteUri;
+        }
+
+        // meet.google.com/... → https://meet.google.com/...
+        var withHttps = "https://" + trimmed.TrimStart('/');
+        if (!Uri.TryCreate(withHttps, UriKind.Absolute, out var coerced)
+            || coerced.Scheme is not ("http" or "https")
+            || string.IsNullOrWhiteSpace(coerced.Host))
+            throw new BadRequestException("MeetingLink không hợp lệ.");
+
+        return coerced.AbsoluteUri;
     }
 }

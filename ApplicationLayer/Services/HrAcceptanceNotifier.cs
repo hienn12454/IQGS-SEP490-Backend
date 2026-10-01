@@ -6,8 +6,8 @@ using Microsoft.Extensions.Logging;
 namespace ApplicationLayer.Services;
 
 /// <summary>
-/// Gửi email “candidate đã chấp nhận” tới HR.
-/// Tách riêng để cả InvitationService (in-app) và OfferService (link email) gọi cùng 1 chỗ.
+/// Gửi email “candidate đã chấp nhận/từ chối” tới HR.
+/// Tách riêng để InvitationService (in-app) và OfferService (link email) gọi cùng 1 chỗ.
 /// </summary>
 public class HrAcceptanceNotifier : IHrAcceptanceNotifier
 {
@@ -31,7 +31,7 @@ public class HrAcceptanceNotifier : IHrAcceptanceNotifier
         _logger = logger;
     }
 
-    public async Task NotifyAsync(Guid hrUserId, Guid candidateUserId, string? sharedPhoneNumber)
+    public async Task NotifyAsync(Guid hrUserId, Guid candidateUserId, string? sharedPhoneNumber, bool isAccepted = true)
     {
         try
         {
@@ -40,7 +40,7 @@ public class HrAcceptanceNotifier : IHrAcceptanceNotifier
             if (hrUser is null || candidateUser is null)
             {
                 _logger.LogWarning(
-                    "Bỏ qua email báo accept: không tìm thấy HR ({HrUserId}) hoặc candidate ({CandidateUserId}).",
+                    "Bỏ qua email báo phản hồi: không tìm thấy HR ({HrUserId}) hoặc candidate ({CandidateUserId}).",
                     hrUserId, candidateUserId);
                 return;
             }
@@ -50,19 +50,37 @@ public class HrAcceptanceNotifier : IHrAcceptanceNotifier
                 ? sharedPhoneNumber.Trim()
                 : candidateProfile?.PhoneNumber;
             var frontendUrl = (_config["AppSettings:FrontendUrl"] ?? "https://iqgs.com").TrimEnd('/');
+            var appLink = $"{frontendUrl}/hr/candidate-recommendations";
 
-            await _emailService.SendCandidateOfferAcceptedNotificationAsync(
-                hrUser.Email, hrUser.FullName,
-                candidateUser.FullName, candidateUser.Email,
-                candidateProfile?.TargetRole, candidateProfile?.SeniorityLevel,
-                candidateProfile?.TechStack ?? Array.Empty<string>(),
-                phone,
-                $"{frontendUrl}/hr/candidate-recommendations");
+            if (isAccepted)
+            {
+                await _emailService.SendCandidateOfferAcceptedNotificationAsync(
+                    hrUser.Email, hrUser.FullName,
+                    candidateUser.FullName, candidateUser.Email,
+                    candidateProfile?.TargetRole, candidateProfile?.SeniorityLevel,
+                    candidateProfile?.TechStack ?? Array.Empty<string>(),
+                    phone,
+                    appLink);
+            }
+            else
+            {
+                // SCRUM-482: reject trước đây im lặng — HR không biết candidate từ chối.
+                await _emailService.SendCandidateOfferRejectedNotificationAsync(
+                    hrUser.Email, hrUser.FullName,
+                    candidateUser.FullName, candidateUser.Email,
+                    candidateProfile?.TargetRole, candidateProfile?.SeniorityLevel,
+                    candidateProfile?.TechStack ?? Array.Empty<string>(),
+                    appLink);
+            }
         }
         catch (Exception ex)
         {
-            // Accept đã commit — không rollback vì mail fail.
-            _logger.LogError(ex, "Gửi email báo HR candidate chấp nhận thất bại. HrUserId={HrUserId}", hrUserId);
+            // Phản hồi đã commit — không rollback vì mail fail.
+            _logger.LogError(
+                ex,
+                "Gửi email báo HR candidate {Outcome} thất bại. HrUserId={HrUserId}",
+                isAccepted ? "chấp nhận" : "từ chối",
+                hrUserId);
         }
     }
 }

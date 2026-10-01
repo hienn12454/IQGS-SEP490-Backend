@@ -44,7 +44,8 @@ public static class StudioPlanSettingsPatcher
         IReadOnlyList<string> questionTypes,
         IReadOnlyList<QuestionDistributionItemDto>? canonicalDistribution = null,
         IReadOnlyList<PlanOutlineItemDto>? outlineItems = null,
-        string? contentMode = null)
+        string? contentMode = null,
+        string? outputLanguage = null)
     {
         if (targetTotal < 1)
             throw new ArgumentOutOfRangeException(nameof(targetTotal), "Số câu phải ≥ 1.");
@@ -65,7 +66,8 @@ public static class StudioPlanSettingsPatcher
             canonicalDistribution,
             sourceFocus,
             outlineItems,
-            contentMode);
+            contentMode,
+            outputLanguage ?? source.Language);
 
         // Map lại sections từ JSON đã patch (type distribution / outline)
         var mapped = StudioRagPlanMapper.MapFromRagPlanObject(patchedJson, targetTotal, targetMinutes);
@@ -112,7 +114,8 @@ public static class StudioPlanSettingsPatcher
         IReadOnlyList<QuestionDistributionItemDto>? canonicalDistribution = null,
         IReadOnlyList<FocusInput>? hrFocus = null,
         IReadOnlyList<PlanOutlineItemDto>? outlineItems = null,
-        string? contentMode = null)
+        string? contentMode = null,
+        string? outputLanguage = null)
     {
         JsonObject root;
         if (string.IsNullOrWhiteSpace(sourcePlanJson))
@@ -163,16 +166,18 @@ public static class StudioPlanSettingsPatcher
         root["difficulty_distribution"] = root["difficultyDistribution"]!.DeepClone();
 
         if (outlineItems is { Count: > 0 })
-            PatchOutlineFromHrItems(root, outlineItems);
+            PatchOutlineFromHrItems(root, outlineItems, outputLanguage);
         else
-            PatchOutline(root, targetTotal, questionTypes, typeCounts, targetDifficulty, easy, medium, hard, hrFocus, contentMode);
+            PatchOutline(root, targetTotal, questionTypes, typeCounts, targetDifficulty, easy, medium, hard, hrFocus, contentMode, outputLanguage);
 
         if (hrFocus is { Count: > 0 })
             PatchCoverageFromHrFocus(root, targetTotal, hrFocus);
         else
             PatchCoverageCounts(root, targetTotal);
 
-        return root.ToJsonString(JsonOptions);
+        // HG01: chốt chặn — slot nào skill đổi mà goal/nguồn chưa đổi theo thì đổi cả slot,
+        // đồng thời chip coverage = đúng số slot thật trong outline
+        return StudioOutlineCoherenceGuard.Apply(root.ToJsonString(JsonOptions), outputLanguage, out _);
     }
 
     private static (int Easy, int Medium, int Hard) CountDifficultyFromOutline(
@@ -204,7 +209,10 @@ public static class StudioPlanSettingsPatcher
     }
 
     /// <summary>Ghi outline đúng theo preview HR (skill/focus/difficulty/answerMethod/xóa slot).</summary>
-    private static void PatchOutlineFromHrItems(JsonObject root, IReadOnlyList<PlanOutlineItemDto> items)
+    private static void PatchOutlineFromHrItems(
+        JsonObject root,
+        IReadOnlyList<PlanOutlineItemDto> items,
+        string? outputLanguage = null)
     {
         var outline = new JsonArray();
         var order = 0;
@@ -214,10 +222,13 @@ public static class StudioPlanSettingsPatcher
             var type = string.IsNullOrWhiteSpace(item.Type) ? "technical" : item.Type.Trim();
             var skill = (item.Skill ?? "").Trim();
             var focus = string.IsNullOrWhiteSpace(item.FocusArea) ? skill : item.FocusArea.Trim();
-            var goal = string.IsNullOrWhiteSpace(item.Goal)
+            // HG01: HR đổi skill trên Live Preview thì FE xoá Why ask cũ → BE viết goal mới theo skill mới
+            // (theo ngôn ngữ đầu ra), không giữ lý do hỏi của skill trước.
+            var goalWasEmpty = string.IsNullOrWhiteSpace(item.Goal);
+            var goal = goalWasEmpty
                 ? (string.IsNullOrWhiteSpace(focus)
                     ? $"Đánh giá năng lực {type}."
-                    : $"Đánh giá {focus} trong ngữ cảnh vị trí.")
+                    : StudioOutlineSlotHelper.BuildDefaultGoal(focus, outputLanguage))
                 : item.Goal.Trim();
             var answerMethod = StudioRagPlanMapper.NormalizeOutlineAnswerMethod(item.AnswerMethod, type);
             var diff = StudioRagPlanMapper.MapDifficulty(item.Difficulty).ToString().ToLowerInvariant();
@@ -234,6 +245,15 @@ public static class StudioPlanSettingsPatcher
                 ["answerMethod"] = answerMethod,
                 ["answer_method"] = answerMethod
             };
+
+            // HG01: plannedSkill = skill mà goal hiện tại đang mô tả. Goal vừa viết lại → khớp skill mới;
+            // goal HR giữ nguyên → dùng plannedSkill FE gửi lên để guard phát hiện slot lai.
+            var plannedSkill = goalWasEmpty || string.IsNullOrWhiteSpace(item.PlannedSkill)
+                ? skill
+                : item.PlannedSkill.Trim();
+            slot[StudioOutlineSlotHelper.PlannedSkillKey] = plannedSkill;
+            if (item.Relabeled)
+                slot[StudioOutlineSlotHelper.RelabeledKey] = true;
 
             // SCRUM-426: giữ citations đã khóa từ Live Preview / plan gen
             if (item.Citations is { Count: > 0 })
@@ -394,7 +414,8 @@ public static class StudioPlanSettingsPatcher
         int medium,
         int hard,
         IReadOnlyList<FocusInput>? hrFocus = null,
-        string? contentMode = null)
+        string? contentMode = null,
+        string? outputLanguage = null)
     {
         var oldItems = new List<JsonObject>();
         foreach (var key in new[] { "recommendedQuestionOutline", "recommended_question_outline" })
@@ -406,9 +427,19 @@ public static class StudioPlanSettingsPatcher
         }
 
         var difficultyQueue = BuildDifficultyQueue(easy, medium, hard, targetTotal, overall);
-        var focusQueue = BuildFocusNameQueue(hrFocus, targetTotal);
+        // HG01: % focus chỉ chia cho slot kỹ thuật — slot behavioral/situational không nhận skill kỹ thuật
+        // (trước đây rải lên mọi slot nên có "câu hành vi gắn Domain HTML").
+        var technicalSlotCount = CountTechnicalSlots(questionTypes, typeCounts);
+        var focusQueue = BuildFocusNameQueue(hrFocus, technicalSlotCount);
+        // Mọi skill focus của HR (kể cả skill 0 slot) — để slot mềm cũ bị gắn nhầm skill kỹ thuật được trả về nhãn mềm
+        var focusNames = (hrFocus ?? Array.Empty<FocusInput>())
+            .Where(f => !string.IsNullOrWhiteSpace(f.Name))
+            .Select(f => f.Name.Trim())
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var usedTemplates = new HashSet<JsonObject>();
         var outline = new JsonArray();
         var qIdx = 0;
+        var focusIdx = 0;
 
         for (var t = 0; t < questionTypes.Count; t++)
         {
@@ -419,31 +450,22 @@ public static class StudioPlanSettingsPatcher
                 .ToList();
             for (var i = 0; i < count; i++)
             {
-                var template = pool.Count > 0 ? pool[i % pool.Count] : null;
                 var diff = qIdx < difficultyQueue.Count
                     ? difficultyQueue[qIdx].ToString().ToLowerInvariant()
                     : overall.ToString().ToLowerInvariant();
-                var focusName = qIdx < focusQueue.Count ? focusQueue[qIdx] : null;
+
+                string? focusName = null;
+                if (StudioOutlineSlotHelper.IsTechnicalType(type) && focusIdx < focusQueue.Count)
+                {
+                    focusName = focusQueue[focusIdx];
+                    focusIdx++;
+                }
+
+                var template = PickTemplate(pool, i, focusName, usedTemplates);
                 // RAG QuestionGenerationPlan bắt buộc mỗi outline item có order (1-based)
                 var order = qIdx + 1;
                 qIdx++;
-                outline.Add(new JsonObject
-                {
-                    ["order"] = order,
-                    ["type"] = type,
-                    ["difficulty"] = diff,
-                    ["skill"] = focusName
-                        ?? template?["skill"]?.GetValue<string>()
-                        ?? StudioRagPlanMapper.FriendlySectionName(type),
-                    ["focusArea"] = focusName
-                        ?? template?["focusArea"]?.GetValue<string>()
-                        ?? template?["focus_area"]?.GetValue<string>()
-                        ?? StudioRagPlanMapper.FriendlySectionName(type),
-                    ["goal"] = focusName is not null
-                        ? $"Đánh giá {focusName} trong ngữ cảnh vị trí."
-                        : template?["goal"]?.GetValue<string>()
-                        ?? $"Đánh giá năng lực {type} theo yêu cầu đã refine trước đó."
-                });
+                outline.Add(BuildPatchedSlot(order, type, diff, focusName, template, focusNames, outputLanguage));
             }
         }
 
@@ -470,6 +492,92 @@ public static class StudioPlanSettingsPatcher
 
         root["recommendedQuestionOutline"] = outline;
         root["recommended_question_outline"] = outline.DeepClone();
+    }
+
+    private static int CountTechnicalSlots(IReadOnlyList<string> questionTypes, IReadOnlyList<int> typeCounts)
+    {
+        var total = 0;
+        for (var t = 0; t < questionTypes.Count; t++)
+        {
+            if (StudioOutlineSlotHelper.IsTechnicalType(questionTypes[t]))
+                total += t < typeCounts.Count ? typeCounts[t] : 0;
+        }
+        return total;
+    }
+
+    /// <summary>
+    /// Slot kỹ thuật: lấy slot cũ CÙNG skill (chưa dùng) để giữ goal LLM viết riêng cho skill đó.
+    /// Slot mềm: lấy slot cũ cùng type như trước.
+    /// </summary>
+    private static JsonObject? PickTemplate(
+        List<JsonObject> pool,
+        int indexInType,
+        string? focusName,
+        HashSet<JsonObject> usedTemplates)
+    {
+        if (pool.Count == 0)
+            return null;
+        if (focusName is null)
+            return pool[indexInType % pool.Count];
+
+        var sameSkill = pool.FirstOrDefault(p =>
+            !usedTemplates.Contains(p)
+            && StudioOutlineSlotHelper.SameSkill(StudioOutlineSlotHelper.ReadSkill(p), focusName));
+        if (sameSkill is not null)
+            usedTemplates.Add(sameSkill);
+        return sameSkill;
+    }
+
+    /// <summary>
+    /// HG01: slot patch luôn nhất quán — skill và goal nói về cùng một chủ đề.
+    /// Có focusName: goal cũ nếu slot cũ cùng skill, không thì viết goal mới theo skill.
+    /// Slot mềm: giữ cụm skill + goal của slot cũ, nhưng không mang skill kỹ thuật của focus.
+    /// </summary>
+    private static JsonObject BuildPatchedSlot(
+        int order,
+        string type,
+        string difficulty,
+        string? focusName,
+        JsonObject? template,
+        HashSet<string> focusNames,
+        string? outputLanguage)
+    {
+        var templateSkill = template is null ? "" : StudioOutlineSlotHelper.ReadSkill(template);
+        var templateGoal = template is null ? "" : StudioOutlineSlotHelper.ReadString(template, "goal");
+        var templateFocus = template is null ? "" : StudioOutlineSlotHelper.ReadString(template, "focusArea");
+
+        string skill;
+        string focusArea;
+        string goal;
+        if (focusName is not null)
+        {
+            skill = focusName;
+            focusArea = focusName;
+            goal = templateGoal.Length > 0 && StudioOutlineSlotHelper.SameSkill(templateSkill, focusName)
+                ? templateGoal
+                : StudioOutlineSlotHelper.BuildDefaultGoal(focusName, outputLanguage);
+        }
+        else
+        {
+            var softLabel = StudioRagPlanMapper.FriendlySectionName(type);
+            var templateIsTechFocus = templateSkill.Length > 0 && focusNames.Contains(templateSkill);
+            skill = templateSkill.Length == 0 || templateIsTechFocus ? softLabel : templateSkill;
+            focusArea = templateFocus.Length == 0 || templateIsTechFocus ? skill : templateFocus;
+            goal = templateGoal.Length > 0
+                ? templateGoal
+                : $"Đánh giá năng lực {type} theo yêu cầu đã refine trước đó.";
+        }
+
+        return new JsonObject
+        {
+            ["order"] = order,
+            ["type"] = type,
+            ["difficulty"] = difficulty,
+            ["skill"] = skill,
+            ["focusArea"] = focusArea,
+            ["goal"] = goal,
+            [StudioOutlineSlotHelper.PlannedSkillKey] = skill
+        };
     }
 
     /// <summary>
