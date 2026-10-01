@@ -139,6 +139,16 @@ public class CompetencyFrameworkRepository : ICompetencyFrameworkRepository
             existing.DrillRemixEnabled = policy.DrillRemixEnabled;
             existing.DrillRemixRatio = policy.DrillRemixRatio;
             existing.DrillWeakAnswerScoreMaxExclusive = policy.DrillWeakAnswerScoreMaxExclusive;
+            // SCRUM-506/508: copy tay thiếu → Admin bấm Lưu vẫn trả default (diagnostic/screening/đánh giá lại)
+            existing.DiagnosticQuestionsPerSkill = policy.DiagnosticQuestionsPerSkill;
+            existing.DiagnosticMinSkills = policy.DiagnosticMinSkills;
+            existing.DiagnosticMaxSkills = policy.DiagnosticMaxSkills;
+            existing.DiagnosticMaxAdaptiveSkills = policy.DiagnosticMaxAdaptiveSkills;
+            existing.DiagnosticMinTotalQuestions = policy.DiagnosticMinTotalQuestions;
+            existing.ScreeningEnabled = policy.ScreeningEnabled;
+            existing.ScreeningQuestionsPerSkill = policy.ScreeningQuestionsPerSkill;
+            existing.ScreeningMaxSkills = policy.ScreeningMaxSkills;
+            existing.ReassessmentQuestionsPerSkill = policy.ReassessmentQuestionsPerSkill;
             existing.IsActive = true;
             existing.UpdatedAt = DateTime.UtcNow;
         }
