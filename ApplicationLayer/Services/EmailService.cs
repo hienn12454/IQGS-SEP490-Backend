@@ -107,11 +107,15 @@ public class EmailService : IEmailService
     public async Task SendCandidateOfferEmailAsync(string toEmail, string toName, string hrCompanyName, string offerMessage, string acceptLink)
     {
         var fromName = _config["EmailSettings:FromName"] ?? "HireGen AI";
-        var fromAddress = _config["EmailSettings:FromAddress"] ?? "noreply@iqgs.com";
         var smtpHost = _config["EmailSettings:SmtpHost"];
         var smtpPort = int.Parse(_config["EmailSettings:SmtpPort"] ?? "587");
         var username = _config["EmailSettings:Username"];
         var password = _config["EmailSettings:Password"];
+        // Gmail SMTP từ chối / spam khi From ≠ account đăng nhập (noreply@iqgs.com vs fpt.edu.vn) —
+        // cùng fix như mail báo HR accept/reject, nếu không candidate không nhận được offer.
+        var fromAddress = !string.IsNullOrWhiteSpace(username)
+            ? username
+            : (_config["EmailSettings:FromAddress"] ?? "noreply@iqgs.com");
 
         if (string.IsNullOrWhiteSpace(smtpHost) || string.IsNullOrWhiteSpace(username))
         {
