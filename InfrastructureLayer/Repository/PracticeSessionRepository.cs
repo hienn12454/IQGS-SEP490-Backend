@@ -162,7 +162,9 @@ public class PracticeSessionRepository : IPracticeSessionRepository
                 Status = x.s.Status,
                 Score = x.s.OverallScore,
                 StartedAt = x.s.StartedAt,
-                CompletedAt = x.s.CompletedAt
+                CompletedAt = x.s.CompletedAt,
+                // SCRUM-502: FE lịch sử cần phân loại Tuyển dụng vs Luyện tập
+                IsHiringAssessment = x.qs.IsHiringAssessment
             });
 
         var totalCount = await projected.CountAsync();

@@ -128,6 +128,9 @@ public class PracticeSessionListItemDto
     public int? DurationSeconds { get; set; }
     public DateTime? StartedAt { get; set; }
     public DateTime? CompletedAt { get; set; }
+
+    /// <summary>SCRUM-502: true = Tuyển dụng, false = Luyện tập — FE lịch sử candidate.</summary>
+    public bool IsHiringAssessment { get; set; }
 }
 
 public class PracticeSessionStatsQueryDto
@@ -192,6 +195,9 @@ public class PracticeSessionRow
     public double? Score { get; set; }
     public DateTime? StartedAt { get; set; }
     public DateTime? CompletedAt { get; set; }
+
+    /// <summary>SCRUM-502: lấy từ QuestionSet để FE phân loại Tuyển / Luyện tập.</summary>
+    public bool IsHiringAssessment { get; set; }
 }
 
 /// <summary>SCRUM-446 / SCRUM-497: sự kiện integrity từ FE (TAB_HIDDEN hoặc terminate sau 3 strike).</summary>

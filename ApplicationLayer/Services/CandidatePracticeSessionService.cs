@@ -392,7 +392,9 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
             Score = r.Score,
             DurationSeconds = ComputeDurationSeconds(r.StartedAt, r.CompletedAt),
             StartedAt = r.StartedAt,
-            CompletedAt = r.CompletedAt
+            CompletedAt = r.CompletedAt,
+            // SCRUM-502: trả flag để FE cột Phân loại
+            IsHiringAssessment = r.IsHiringAssessment
         }).ToList();
 
         return new PagedResultDto<PracticeSessionListItemDto>
