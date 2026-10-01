@@ -4,7 +4,7 @@ public class CandidatePersonalSetJob : BaseEntity
 {
     public Guid CandidateUserId { get; set; }
     public string Status { get; set; } = Constants.CandidatePersonalSetJobStatus.Queued;
-    /// <summary>JdGap | CvDiagnostic | CvDrill | CvReassessment.</summary>
+    /// <summary>JdGap | CvDiagnostic | CvDrill | CvReassessment | CvScreening.</summary>
     public string Purpose { get; set; } = Constants.CandidatePersonalSetPurpose.JdGap;
     public string JobDescription { get; set; } = string.Empty;
     public string CvSkillsJson { get; set; } = "[]";

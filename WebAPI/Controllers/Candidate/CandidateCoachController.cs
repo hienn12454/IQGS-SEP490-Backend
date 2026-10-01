@@ -76,6 +76,22 @@ public class CandidateCoachController : ControllerBase
         return SuccessResp.Ok(result);
     }
 
+    /// <summary>SCRUM-506: preview skill CV chưa đo sau bài chẩn đoán.</summary>
+    [HttpGet("screening/preview")]
+    public async Task<IActionResult> GetScreeningPreview(CancellationToken ct)
+    {
+        var result = await _coach.GetScreeningPreviewAsync(User.GetUserId(), ct);
+        return SuccessResp.Ok(result);
+    }
+
+    /// <summary>SCRUM-506: sinh bài sàng lọc ngắn — không đụng level.</summary>
+    [HttpPost("screening")]
+    public async Task<IActionResult> StartScreening(CancellationToken ct)
+    {
+        var result = await _coach.StartScreeningAsync(User.GetUserId(), ct);
+        return SuccessResp.Ok(result);
+    }
+
     [HttpGet("jobs/active")]
     public async Task<IActionResult> GetActiveJob()
     {

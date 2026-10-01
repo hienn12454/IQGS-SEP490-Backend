@@ -322,7 +322,8 @@ public class CoachCompetencyService : ICoachCompetencyService
         if (resolution.IsFramework && resolution.Framework is not null)
         {
             var fw = resolution.Framework;
-            var coreSkills = SelectCoreSkills(fw, skills, 3, 5);
+            var coreSkills = SelectCoreSkills(
+                fw, skills, CoachDiagnosticPolicy.MinSkills(policy), CoachDiagnosticPolicy.MaxSkills(policy));
             competencyBlueprint = FrameworkBlueprintBuilder.Build(fw, profile.TargetRole, coreSkills, policy);
         }
         else
@@ -336,7 +337,10 @@ public class CoachCompetencyService : ICoachCompetencyService
         await SupersedeScoredAssessmentsAsync(candidateUserId);
         await ArchiveAllRoadmapsAsync(candidateUserId);
 
-        var diagnosticPlan = DiagnosticBlueprintBuilder.BuildDiagnostic(competencyBlueprint);
+        var perSkill = CoachDiagnosticPolicy.ResolveDiagnosticQuestionsPerSkill(
+            policy, competencyBlueprint.Competencies.Count);
+        var diagnosticPlan = DiagnosticBlueprintBuilder.BuildDiagnostic(
+            competencyBlueprint, new DiagnosticBlueprintBuilder.Options(QuestionsPerSkill: perSkill));
         var scopeSkills = competencyBlueprint.Competencies.Select(s => s.SkillName).ToList();
         var snapshot = JsonSerializer.Serialize(new
         {
@@ -637,6 +641,195 @@ public class CoachCompetencyService : ICoachCompetencyService
         return MapJob(job);
     }
 
+    public async Task<CoachScreeningPreviewDto> GetScreeningPreviewAsync(
+        Guid candidateUserId, CancellationToken ct = default)
+    {
+        var policy = await _frameworks.GetPolicyAsync();
+        if (!CoachDiagnosticPolicy.ScreeningEnabled(policy))
+        {
+            return new CoachScreeningPreviewDto
+            {
+                Enabled = false,
+                Message = "Bài sàng lọc đang tắt trên cấu hình Admin."
+            };
+        }
+
+        var ctx = await TryBuildScreeningContextAsync(candidateUserId, policy);
+        if (ctx is null)
+        {
+            return new CoachScreeningPreviewDto
+            {
+                Enabled = true,
+                Message = "Hãy hoàn thành bài chẩn đoán trước khi mở rộng độ phủ."
+            };
+        }
+
+        var perSkill = CoachDiagnosticPolicy.ScreeningQuestionsPerSkill(policy);
+        return new CoachScreeningPreviewDto
+        {
+            Enabled = true,
+            Available = ctx.Skills.Count > 0,
+            QuestionCount = ctx.Skills.Count * perSkill,
+            QuestionsPerSkill = perSkill,
+            Skills = ctx.Skills,
+            MeasuredSkills = ctx.Measured,
+            RemainingUnmeasured = ctx.RemainingUnmeasured,
+            Message = ctx.Skills.Count == 0
+                ? "Mọi kỹ năng trên CV đã được đo hoặc đã có lộ trình."
+                : null
+        };
+    }
+
+    public async Task<CandidatePersonalSetJobDto> StartScreeningAsync(
+        Guid candidateUserId, CancellationToken ct = default)
+    {
+        await _gate.CheckCoachGenerationAsync(candidateUserId);
+        var policy = await _frameworks.GetPolicyAsync();
+        if (!CoachDiagnosticPolicy.ScreeningEnabled(policy))
+            throw new BadRequestException("Bài sàng lọc đang tắt trên cấu hình Admin.");
+
+        var ctx = await TryBuildScreeningContextAsync(candidateUserId, policy)
+            ?? throw new BadRequestException("Hãy hoàn thành bài chẩn đoán trước khi mở rộng độ phủ.");
+        if (ctx.Skills.Count == 0)
+            throw new BadRequestException("Không còn kỹ năng CV nào để sàng lọc.");
+
+        var profile = await RequireConfirmedContextAsync(candidateUserId);
+        var perSkill = CoachDiagnosticPolicy.ScreeningQuestionsPerSkill(policy);
+        var targetScore = CompetencyTargetScorePolicy.Resolve(policy, profile.TargetLevel);
+        var sourceMode = ctx.Framework is null
+            ? CompetencyResolutionMode.Adaptive
+            : CompetencyResolutionMode.Framework;
+        var skillBlueprint = DiagnosticBlueprintBuilder.BuildScreeningBlueprint(
+            ctx.Skills,
+            profile.TargetRole,
+            profile.TargetLevel,
+            targetScore,
+            ctx.Framework?.Id,
+            sourceMode);
+
+        if (ctx.Framework is not null)
+        {
+            foreach (var c in skillBlueprint.Competencies)
+            {
+                var fwSkill = ctx.Framework.Skills.FirstOrDefault(s =>
+                    CompetencyScoringService.NormalizeSkill(s.Skill)
+                    == CompetencyScoringService.NormalizeSkill(c.SkillName));
+                if (fwSkill is null) continue;
+                var topics = CompetencyTopicParser.ParseTopicNames(fwSkill.TopicsJson);
+                if (topics.Count > 0) c.Topics = topics.Take(3).ToList();
+                if (fwSkill.TargetScore > 0) c.TargetScore = fwSkill.TargetScore;
+                c.Weight = fwSkill.ImportanceWeight;
+                c.Source = CompetencySourceMode.Framework;
+            }
+            AdaptiveBlueprintBuilder.RenormalizeWeights(skillBlueprint.Competencies);
+        }
+
+        // Chỉ huỷ job sàng lọc treo — giữ diagnostic đã chấm và drill đang chạy.
+        await FailPendingScreeningJobsAsync(candidateUserId, "Đã thay thế bởi bài sàng lọc mới.");
+        var pendingScreening = (await _assessments.ListByCandidateAsync(candidateUserId))
+            .Where(a => a.Kind == CandidateAssessmentKind.Screening
+                        && a.Status is CandidateAssessmentStatus.PendingGeneration
+                            or CandidateAssessmentStatus.ReadyToPractice
+                            or CandidateAssessmentStatus.InProgress)
+            .ToList();
+        foreach (var a in pendingScreening)
+        {
+            a.Status = CandidateAssessmentStatus.Abandoned;
+            await _assessments.UpdateAsync(a);
+        }
+
+        var screeningPlan = DiagnosticBlueprintBuilder.BuildScreening(skillBlueprint, perSkill);
+        var snapshot = JsonSerializer.Serialize(new
+        {
+            targetRole = profile.TargetRole,
+            targetLevel = profile.TargetLevel,
+            skills = ctx.CvSkills,
+            screeningSkills = ctx.Skills,
+            sourceAssessmentId = ctx.Source.Id,
+            kind = CandidateAssessmentKind.Screening
+        }, JsonOpts);
+
+        var assessment = new CandidateAssessment
+        {
+            CandidateUserId = candidateUserId,
+            FrameworkId = skillBlueprint.FrameworkId,
+            Kind = CandidateAssessmentKind.Screening,
+            Status = CandidateAssessmentStatus.PendingGeneration,
+            ContextSnapshotJson = snapshot,
+            ScopeSkillsJson = JsonSerializer.Serialize(ctx.Skills, JsonOpts),
+            ResolutionMode = ctx.Source.ResolutionMode ?? sourceMode,
+            RoleFamilyKey = ctx.Source.RoleFamilyKey,
+            BlueprintJson = CompetencyBlueprintJson.Serialize(skillBlueprint),
+            BlueprintSchemaVersion = skillBlueprint.SchemaVersion
+        };
+        await _assessments.AddAsync(assessment);
+
+        var jd = CvCoachPromptBuilder.BuildSyntheticJd(
+            profile.TargetRole, profile.TargetLevel, null, ctx.Skills);
+        jd += "\nThis is a SCREENING test: one question per skill. Stay inside the listed skills only.";
+
+        var job = new CandidatePersonalSetJob
+        {
+            CandidateUserId = candidateUserId,
+            Status = CandidatePersonalSetJobStatus.Queued,
+            Purpose = CandidatePersonalSetPurpose.CvScreening,
+            JobDescription = jd,
+            CvSkillsJson = JsonSerializer.Serialize(ctx.Skills, JsonOpts),
+            GapSkillsJson = "[]",
+            FocusSkillsJson = JsonSerializer.Serialize(ctx.Skills, JsonOpts),
+            PlanJson = JsonSerializer.Serialize(screeningPlan, JsonOpts),
+            AssessmentId = assessment.Id
+        };
+        await _jobs.AddAsync(job);
+        assessment.PersonalSetJobId = job.Id;
+        await _assessments.UpdateAsync(assessment);
+
+        _scheduler.EnqueueCandidatePersonalSet(job.Id);
+        return MapJob(job);
+    }
+
+    private sealed record ScreeningContext(
+        CandidateAssessment Source,
+        CompetencyFramework? Framework,
+        List<string> CvSkills,
+        List<string> Measured,
+        List<string> Skills,
+        int RemainingUnmeasured);
+
+    private async Task<ScreeningContext?> TryBuildScreeningContextAsync(
+        Guid candidateUserId, CompetencyScoringPolicy policy)
+    {
+        var list = await _assessments.ListByCandidateAsync(candidateUserId);
+        var source = list
+            .Where(a => a.Status == CandidateAssessmentStatus.Scored
+                        && a.Kind == CandidateAssessmentKind.Diagnostic)
+            .OrderByDescending(a => a.UpdatedAt ?? a.CreatedAt)
+            .ThenByDescending(a => a.CreatedAt)
+            .FirstOrDefault();
+        if (source is null)
+            return null;
+
+        var profile = await _profiles.GetByUserIdAsync(candidateUserId);
+        if (profile is null) return null;
+
+        var cvSkills = SkillMatchHelper.UnionCvSkills(profile.TechStack, profile.CvEvaluationJson).ToList();
+        var measured = ParseScopeSkills(source.ScopeSkillsJson).ToList();
+        if (measured.Count == 0)
+            measured = source.SkillResults.Select(r => r.Skill).ToList();
+
+        var roadmaps = await _roadmaps.ListByCandidateAsync(candidateUserId);
+        var roadmapSkills = roadmaps.Select(r => r.Skill).ToList();
+
+        CompetencyFramework? fw = null;
+        if (source.FrameworkId is Guid fwId)
+            fw = await _frameworks.GetByIdWithSkillsAsync(fwId);
+
+        var max = CoachDiagnosticPolicy.ScreeningMaxSkills(policy);
+        var selected = CoachScreeningPlanner.SelectSkills(cvSkills, measured, roadmapSkills, fw, max);
+        var remaining = CoachScreeningPlanner.SelectSkills(cvSkills, measured, roadmapSkills, fw, 999).Count;
+        return new ScreeningContext(source, fw, cvSkills, measured, selected, remaining);
+    }
+
     public async Task<CoachAssessmentDto?> GetLatestReportAsync(Guid candidateUserId)
     {
         var a = await _assessments.GetLatestScoredAsync(candidateUserId);
@@ -855,7 +1048,9 @@ public class CoachCompetencyService : ICoachCompetencyService
             return CoachScoreResult.Skipped("ASSESSMENT_NOT_FOUND");
         if (assessment.CandidateUserId != session.CandidateUserId)
             return CoachScoreResult.Skipped("ASSESSMENT_OWNER_MISMATCH");
-        if (assessment.Kind is not (CandidateAssessmentKind.Diagnostic or CandidateAssessmentKind.Reassessment))
+        if (assessment.Kind is not (CandidateAssessmentKind.Diagnostic
+            or CandidateAssessmentKind.Reassessment
+            or CandidateAssessmentKind.Screening))
             return CoachScoreResult.Skipped($"KIND_NOT_SCOREABLE:{assessment.Kind}");
 
         CompetencyFramework? fw = assessment.Framework;
@@ -966,6 +1161,42 @@ public class CoachCompetencyService : ICoachCompetencyService
         await _assessments.SaveScoredAssessmentAsync(assessment, newSkillResults);
 
         CandidateSkillPlan profileForRoadmap;
+        var isScreening = assessment.Kind == CandidateAssessmentKind.Screening;
+        if (isScreening)
+        {
+            // SCRUM-506: sàng lọc không merge profile — level/điểm tổng giữ nguyên từ diagnostic.
+            assessment.OverallReadiness = overall.OverallReadiness;
+            assessment.ReadinessStatus = overall.ReadinessStatus;
+            assessment.ExplanationJson = JsonSerializer.Serialize(new
+            {
+                kind = CandidateAssessmentKind.Screening,
+                scopeSkills = skillsToScore.Select(s => s.Skill).ToList(),
+                note = "Screening không cập nhật level."
+            }, JsonOpts);
+            try
+            {
+                await _assessments.UpdateReadinessAsync(
+                    assessment.Id,
+                    assessment.OverallReadiness,
+                    assessment.ReadinessStatus,
+                    assessment.ExplanationJson);
+            }
+            catch (Exception updateEx)
+            {
+                _logger.LogError(updateEx, "Không cập nhật OverallReadiness cho screening {AssessmentId}", assessment.Id);
+            }
+            profileForRoadmap = new CandidateSkillPlan
+            {
+                Items = assessment.SkillResults.Select(r => new CandidateSkillPlanItem
+                {
+                    Skill = r.Skill,
+                    CurrentScore = r.SkillScore,
+                    TargetScore = r.TargetScore,
+                    ImportanceWeight = r.ImportanceWeight
+                }).ToList()
+            };
+        }
+        else
         try
         {
             var merge = await _profile.MergeAsync(session.CandidateUserId, assessment, fw, blueprint);
@@ -1030,6 +1261,11 @@ public class CoachCompetencyService : ICoachCompetencyService
                 await _roadmapRecommendations.RefreshAfterReassessmentAsync(
                     session.CandidateUserId, assessment, fw, profileForRoadmap);
                 await CompleteReassessmentRoadmapAsync(session);
+            }
+            else if (assessment.Kind == CandidateAssessmentKind.Screening)
+            {
+                await _roadmapRecommendations.AddFromScreeningAsync(
+                    session.CandidateUserId, assessment, fw, profileForRoadmap);
             }
             else
             {
@@ -1273,9 +1509,24 @@ public class CoachCompetencyService : ICoachCompetencyService
         => _roadmaps.ArchiveActiveByCandidateAsync(candidateUserId);
 
     private static bool IsCoachPurpose(string purpose)
-        => purpose is CandidatePersonalSetPurpose.CvDiagnostic
-            or CandidatePersonalSetPurpose.CvDrill
-            or CandidatePersonalSetPurpose.CvReassessment;
+        => CandidatePersonalSetPurpose.IsCoach(purpose);
+
+    private async Task FailPendingScreeningJobsAsync(Guid candidateUserId, string reason)
+    {
+        var jobs = await _jobs.ListByCandidateAsync(candidateUserId);
+        foreach (var row in jobs.Where(j =>
+                     j.Purpose == CandidatePersonalSetPurpose.CvScreening
+                     && j.Status is CandidatePersonalSetJobStatus.Queued
+                         or CandidatePersonalSetJobStatus.Generating))
+        {
+            var tracked = await _jobs.GetByIdAsync(row.Id);
+            if (tracked is null) continue;
+            tracked.Status = CandidatePersonalSetJobStatus.Failed;
+            tracked.ErrorMessage = reason;
+            await _jobs.UpdateAsync(tracked);
+            await ApplyGenerationSideEffectsAsync(tracked, abandonAssessment: true);
+        }
+    }
 
     private async Task CompleteReassessmentRoadmapAsync(PracticeSession session)
     {
@@ -1775,6 +2026,7 @@ public class CoachCompetencyService : ICoachCompetencyService
             SkillSource = skillSource,
             OutsideCvReason = outsideCvReason,
             DisplayOrder = r.DisplayOrder,
+            Confidence = ParseRoadmapConfidence(r.ExplanationJson),
             Items = r.Items.OrderBy(i => i.SortOrder).Select(i =>
             {
                 var docId = i.RoadmapNode?.KnowledgeDocumentId;
@@ -1893,6 +2145,26 @@ public class CoachCompetencyService : ICoachCompetencyService
             /* giữ nguyên nếu không parse được */
         }
         return trimmed;
+    }
+
+    /// <summary>SCRUM-506: screening = tín hiệu 1 câu.</summary>
+    private static string? ParseRoadmapConfidence(string? explanationJson)
+    {
+        if (string.IsNullOrWhiteSpace(explanationJson)) return null;
+        var trimmed = explanationJson.Trim();
+        if (!trimmed.StartsWith('{')) return null;
+        try
+        {
+            using var doc = JsonDocument.Parse(trimmed);
+            if (doc.RootElement.TryGetProperty("confidence", out var c)
+                || doc.RootElement.TryGetProperty("Confidence", out c))
+            {
+                var v = c.GetString()?.Trim();
+                return string.IsNullOrEmpty(v) ? null : v;
+            }
+        }
+        catch (JsonException) { /* roadmap cũ không có field */ }
+        return null;
     }
 
     /// <summary>Đọc kbSource từ ExplanationJson; thiếu → inferred (an toàn cho roadmap cũ).</summary>

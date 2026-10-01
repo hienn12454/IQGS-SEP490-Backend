@@ -52,6 +52,8 @@ public class CompetencyPolicyAdminService : ICompetencyPolicyAdminService
         // Client cũ / payload thiếu drill → giữ default entity thay vì 0 khiến validate fail hoặc ghi đè mất config
         ApplyDrillDefaultsIfMissing(dto);
         ValidateDrillPolicy(dto);
+        ApplyDiagnosticDefaultsIfMissing(dto);
+        ValidateDiagnosticPolicy(dto);
 
         var entity = new CompetencyScoringPolicy
         {
@@ -77,7 +79,15 @@ public class CompetencyPolicyAdminService : ICompetencyPolicyAdminService
             DrillWeakBandRatio = dto.DrillWeakBandRatio,
             DrillRemixEnabled = dto.DrillRemixEnabled,
             DrillRemixRatio = dto.DrillRemixRatio,
-            DrillWeakAnswerScoreMaxExclusive = dto.DrillWeakAnswerScoreMaxExclusive
+            DrillWeakAnswerScoreMaxExclusive = dto.DrillWeakAnswerScoreMaxExclusive,
+            DiagnosticQuestionsPerSkill = dto.DiagnosticQuestionsPerSkill,
+            DiagnosticMinSkills = dto.DiagnosticMinSkills,
+            DiagnosticMaxSkills = dto.DiagnosticMaxSkills,
+            DiagnosticMaxAdaptiveSkills = dto.DiagnosticMaxAdaptiveSkills,
+            DiagnosticMinTotalQuestions = dto.DiagnosticMinTotalQuestions,
+            ScreeningEnabled = dto.ScreeningEnabled,
+            ScreeningQuestionsPerSkill = dto.ScreeningQuestionsPerSkill,
+            ScreeningMaxSkills = dto.ScreeningMaxSkills
         };
         await _frameworks.SavePolicyAsync(entity);
         return MapPolicy(await _frameworks.GetPolicyAsync());
@@ -178,6 +188,38 @@ public class CompetencyPolicyAdminService : ICompetencyPolicyAdminService
         // DrillRemixEnabled: false là giá trị hợp lệ — không ép true ở đây
     }
 
+    /// <summary>JSON omit / client cũ để 0 — không ghi đè DB bằng 0.</summary>
+    private static void ApplyDiagnosticDefaultsIfMissing(CompetencyScoringPolicyDto dto)
+    {
+        if (dto.DiagnosticQuestionsPerSkill <= 0) dto.DiagnosticQuestionsPerSkill = 3;
+        if (dto.DiagnosticMinSkills <= 0) dto.DiagnosticMinSkills = 3;
+        if (dto.DiagnosticMaxSkills <= 0) dto.DiagnosticMaxSkills = 5;
+        if (dto.DiagnosticMaxAdaptiveSkills <= 0) dto.DiagnosticMaxAdaptiveSkills = 8;
+        if (dto.DiagnosticMinTotalQuestions < 0) dto.DiagnosticMinTotalQuestions = 0;
+        if (dto.ScreeningQuestionsPerSkill <= 0) dto.ScreeningQuestionsPerSkill = 1;
+        if (dto.ScreeningMaxSkills <= 0) dto.ScreeningMaxSkills = 12;
+        // ScreeningEnabled: false là giá trị hợp lệ — JSON omit dùng default true trên DTO.
+    }
+
+    private static void ValidateDiagnosticPolicy(CompetencyScoringPolicyDto dto)
+    {
+        if (dto.DiagnosticQuestionsPerSkill is < 2 or > 6)
+            throw new BadRequestException("DiagnosticQuestionsPerSkill phải trong [2, 6].");
+        if (dto.DiagnosticMinSkills is < 1 or > 12
+            || dto.DiagnosticMaxSkills is < 1 or > 12)
+            throw new BadRequestException("Số skill chẩn đoán (min/max) phải trong [1, 12].");
+        if (dto.DiagnosticMinSkills > dto.DiagnosticMaxSkills)
+            throw new BadRequestException("DiagnosticMinSkills không được lớn hơn DiagnosticMaxSkills.");
+        if (dto.DiagnosticMaxAdaptiveSkills is < 1 or > 20)
+            throw new BadRequestException("DiagnosticMaxAdaptiveSkills phải trong [1, 20].");
+        if (dto.DiagnosticMinTotalQuestions is < 0 or > 60)
+            throw new BadRequestException("DiagnosticMinTotalQuestions phải trong [0, 60] (0 = tắt).");
+        if (dto.ScreeningQuestionsPerSkill is < 1 or > 3)
+            throw new BadRequestException("ScreeningQuestionsPerSkill phải trong [1, 3].");
+        if (dto.ScreeningMaxSkills is < 1 or > 20)
+            throw new BadRequestException("ScreeningMaxSkills phải trong [1, 20].");
+    }
+
     private static CompetencyScoringPolicyDto MapPolicy(CompetencyScoringPolicy p) => new()
     {
         CorrectnessWeight = p.CorrectnessWeight,
@@ -199,7 +241,15 @@ public class CompetencyPolicyAdminService : ICompetencyPolicyAdminService
         DrillWeakBandRatio = p.DrillWeakBandRatio,
         DrillRemixEnabled = p.DrillRemixEnabled,
         DrillRemixRatio = p.DrillRemixRatio,
-        DrillWeakAnswerScoreMaxExclusive = p.DrillWeakAnswerScoreMaxExclusive
+        DrillWeakAnswerScoreMaxExclusive = p.DrillWeakAnswerScoreMaxExclusive,
+        DiagnosticQuestionsPerSkill = CoachDiagnosticPolicy.QuestionsPerSkill(p),
+        DiagnosticMinSkills = CoachDiagnosticPolicy.MinSkills(p),
+        DiagnosticMaxSkills = CoachDiagnosticPolicy.MaxSkills(p),
+        DiagnosticMaxAdaptiveSkills = CoachDiagnosticPolicy.MaxAdaptiveSkills(p),
+        DiagnosticMinTotalQuestions = CoachDiagnosticPolicy.MinTotalQuestions(p),
+        ScreeningEnabled = CoachDiagnosticPolicy.ScreeningEnabled(p),
+        ScreeningQuestionsPerSkill = CoachDiagnosticPolicy.ScreeningQuestionsPerSkill(p),
+        ScreeningMaxSkills = CoachDiagnosticPolicy.ScreeningMaxSkills(p)
     };
 
     private static CompetencyLevelRuleDto MapRule(CompetencyLevelRule r) => new()

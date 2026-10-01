@@ -140,9 +140,7 @@ public class CandidatePersonalSetService : ICandidatePersonalSetService
     {
         var jobs = await _jobs.ListByCandidateAsync(candidateUserId);
         var pending = jobs.FirstOrDefault(j =>
-            (j.Purpose == CandidatePersonalSetPurpose.CvDiagnostic
-             || j.Purpose == CandidatePersonalSetPurpose.CvDrill
-             || j.Purpose == CandidatePersonalSetPurpose.CvReassessment)
+            CandidatePersonalSetPurpose.IsCoach(j.Purpose)
             && (j.Status == CandidatePersonalSetJobStatus.Queued
                 || j.Status == CandidatePersonalSetJobStatus.Generating));
         if (pending is not null)
@@ -157,9 +155,7 @@ public class CandidatePersonalSetService : ICandidatePersonalSetService
 
         // Job COMPLETED không còn "pending" — vẫn trả về để FE không rơi về màn "Bắt đầu kiểm tra" sau khi đã sinh đề.
         var done = jobs.FirstOrDefault(j =>
-            (j.Purpose == CandidatePersonalSetPurpose.CvDiagnostic
-             || j.Purpose == CandidatePersonalSetPurpose.CvDrill
-             || j.Purpose == CandidatePersonalSetPurpose.CvReassessment)
+            CandidatePersonalSetPurpose.IsCoach(j.Purpose)
             && j.Status == CandidatePersonalSetJobStatus.Completed
             && j.QuestionSetId is Guid);
         return done is null ? null : MapJob(done);
@@ -199,9 +195,7 @@ public class CandidatePersonalSetService : ICandidatePersonalSetService
             var cvSkills = DeserializeStringList(job.CvSkillsJson);
             var focusSkills = DeserializeStringList(job.FocusSkillsJson);
             var (count, skills, planNote, questionNote, titleFallback) = ResolveGenerationHints(job, cvSkills, focusSkills);
-            var isCoach = job.Purpose == CandidatePersonalSetPurpose.CvDiagnostic
-                || job.Purpose == CandidatePersonalSetPurpose.CvDrill
-                || job.Purpose == CandidatePersonalSetPurpose.CvReassessment;
+            var isCoach = CandidatePersonalSetPurpose.IsCoach(job.Purpose);
 
             List<RagGeneratedQuestionDto> generated;
             string planJson;
@@ -459,9 +453,7 @@ public class CandidatePersonalSetService : ICandidatePersonalSetService
         IReadOnlyList<string>? cvSkillsOverride = null)
     {
         _ = numberOfQuestions;
-        var isCoach = purpose == CandidatePersonalSetPurpose.CvDiagnostic
-            || purpose == CandidatePersonalSetPurpose.CvDrill
-            || purpose == CandidatePersonalSetPurpose.CvReassessment;
+        var isCoach = CandidatePersonalSetPurpose.IsCoach(purpose);
         if (isCoach)
             await _gate.CheckCoachGenerationAsync(candidateUserId);
         else
@@ -591,6 +583,16 @@ public class CandidatePersonalSetService : ICandidatePersonalSetService
                 "Re-assessment");
         }
 
+        if (job.Purpose == CandidatePersonalSetPurpose.CvScreening)
+        {
+            var capped = (focusSkills.Count > 0 ? focusSkills : cvSkills).ToList();
+            var count = Math.Max(1, capped.Count);
+            return (count, capped,
+                CvCoachPromptBuilder.BlueprintNote(capped, count),
+                CvCoachPromptBuilder.BlueprintNote(capped, count),
+                "Sàng lọc kỹ năng");
+        }
+
         var gapNote = BuildGapNote(cvSkills, job.JobDescription);
         return (10, cvSkills, gapNote, null, "Bộ luyện tập từ JD");
     }
@@ -609,6 +611,9 @@ public class CandidatePersonalSetService : ICandidatePersonalSetService
             var skill = focusSkills.FirstOrDefault();
             return string.IsNullOrWhiteSpace(skill) ? "Drill" : $"Drill — {skill}";
         }
+
+        if (job.Purpose == CandidatePersonalSetPurpose.CvScreening)
+            return "Sàng lọc kỹ năng CV";
 
         return ExtractRoleTitle(planJson) ?? fallback;
     }

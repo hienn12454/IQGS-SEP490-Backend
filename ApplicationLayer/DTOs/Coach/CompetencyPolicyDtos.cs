@@ -29,6 +29,16 @@ public class CompetencyScoringPolicyDto
     public bool DrillRemixEnabled { get; set; } = true;
     public double DrillRemixRatio { get; set; } = 0.35;
     public double DrillWeakAnswerScoreMaxExclusive { get; set; } = 50;
+
+    // SCRUM-506: diagnostic + screening (mặc định giữ hành vi cũ)
+    public int DiagnosticQuestionsPerSkill { get; set; } = 3;
+    public int DiagnosticMinSkills { get; set; } = 3;
+    public int DiagnosticMaxSkills { get; set; } = 5;
+    public int DiagnosticMaxAdaptiveSkills { get; set; } = 8;
+    public int DiagnosticMinTotalQuestions { get; set; } = 0;
+    public bool ScreeningEnabled { get; set; } = true;
+    public int ScreeningQuestionsPerSkill { get; set; } = 1;
+    public int ScreeningMaxSkills { get; set; } = 12;
 }
 
 public class CompetencyLevelRuleDto

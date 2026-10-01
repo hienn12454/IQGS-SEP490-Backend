@@ -76,17 +76,19 @@ public class AdaptiveBlueprintBuilder : IAdaptiveBlueprintBuilder
 
         if (generated is { Success: true } && generated.Competencies.Count > 0)
         {
-            comps = MapAndGateCompetencies(generated.Competencies, skills, resolution.TargetLevel, targetScore);
+            comps = MapAndGateCompetencies(generated.Competencies, skills, resolution.TargetLevel, targetScore, policy);
             if (comps.Count == 0)
-                comps = FallbackFromCv(skills, resolution.TargetLevel, targetScore);
+                comps = FallbackFromCv(skills, resolution.TargetLevel, targetScore, policy);
         }
         else
         {
             // LLM fail / empty — deterministic từ CV, citations rỗng (inferred).
-            comps = FallbackFromCv(skills, resolution.TargetLevel, targetScore);
+            comps = FallbackFromCv(skills, resolution.TargetLevel, targetScore, policy);
         }
 
-        var maxAllowed = Math.Min(8, skills.Count);
+        var maxAllowed = CoachDiagnosticPolicy.MaxAdaptiveSkills(policy);
+        maxAllowed = Math.Min(maxAllowed, skills.Count);
+        if (maxAllowed < 1) maxAllowed = 1;
         if (comps.Count is < 1 || comps.Count > maxAllowed)
             throw Fail($"Adaptive blueprint không đạt ràng buộc 1–{maxAllowed} skill theo CV.");
 
@@ -114,9 +116,11 @@ public class AdaptiveBlueprintBuilder : IAdaptiveBlueprintBuilder
         IEnumerable<RagAdaptiveCompetencyDto> generated,
         IReadOnlyList<string> cvSkills,
         string targetLevel,
-        double targetScore)
+        double targetScore,
+        CompetencyScoringPolicy? policy = null)
     {
-        var maxAllowed = Math.Min(8, Math.Max(1, cvSkills.Count));
+        var maxAllowed = CoachDiagnosticPolicy.MaxAdaptiveSkills(policy);
+        maxAllowed = Math.Min(maxAllowed, Math.Max(1, cvSkills.Count));
         var comps = new List<CompetencyItem>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
@@ -160,9 +164,10 @@ public class AdaptiveBlueprintBuilder : IAdaptiveBlueprintBuilder
     public static List<CompetencyItem> FallbackFromCv(
         IReadOnlyList<string> cvSkills,
         string targetLevel,
-        double targetScore)
+        double targetScore,
+        CompetencyScoringPolicy? policy = null)
     {
-        var take = Math.Min(8, Math.Max(1, cvSkills.Count));
+        var take = Math.Min(CoachDiagnosticPolicy.MaxAdaptiveSkills(policy), Math.Max(1, cvSkills.Count));
         var selected = cvSkills.Take(take).ToList();
         var weight = Math.Round(1.0 / selected.Count, 4);
         var comps = selected.Select(skill => new CompetencyItem

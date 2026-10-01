@@ -28,6 +28,13 @@ public interface IRoadmapRecommendationService
         CandidateAssessment assessment,
         CompetencyFramework? framework,
         CandidateSkillPlan profile);
+
+    /// <summary>SCRUM-506: thêm roadmap gợi ý từ bài sàng lọc — không archive thế hệ cũ.</summary>
+    Task AddFromScreeningAsync(
+        Guid candidateUserId,
+        CandidateAssessment assessment,
+        CompetencyFramework? framework,
+        CandidateSkillPlan profile);
 }
 
 public class RoadmapRecommendationService : IRoadmapRecommendationService
@@ -227,6 +234,45 @@ public class RoadmapRecommendationService : IRoadmapRecommendationService
         }
     }
 
+    public async Task AddFromScreeningAsync(
+        Guid candidateUserId,
+        CandidateAssessment assessment,
+        CompetencyFramework? framework,
+        CandidateSkillPlan profile)
+    {
+        var active = await _roadmaps.ListByCandidateAsync(candidateUserId);
+        var blueprint = CompetencyBlueprintJson.Deserialize(assessment.BlueprintJson);
+        var existingKeys = active
+            .Select(r => CompetencyScoringService.NormalizeSkill(r.Skill))
+            .Where(s => s.Length > 0)
+            .ToHashSet(StringComparer.Ordinal);
+
+        foreach (var result in assessment.SkillResults)
+        {
+            var key = CompetencyScoringService.NormalizeSkill(result.Skill);
+            if (key.Length == 0 || existingKeys.Contains(key)) continue;
+
+            var fwSkill = framework?.Skills.FirstOrDefault(s =>
+                CompetencyScoringService.NormalizeSkill(s.Skill) == key);
+            var bpSkill = blueprint?.Competencies.FirstOrDefault(c =>
+                CompetencyScoringService.NormalizeSkill(c.SkillName) == key);
+            var target = fwSkill?.TargetScore ?? bpSkill?.TargetScore ?? result.TargetScore;
+            var weight = fwSkill?.ImportanceWeight ?? bpSkill?.Weight ?? result.ImportanceWeight;
+            var current = result.SkillScore;
+            var gap = Math.Round(target - current, 2);
+            var cvSkills = ParseCvSkillsFromSnapshot(assessment.ContextSnapshotJson);
+            var created = await BuildRoadmapAsync(
+                candidateUserId, assessment, framework, blueprint, result.Skill, current, target, gap, weight, fwSkill, bpSkill, cvSkills,
+                confidence: "screening");
+            created.DisplayOrder = active.Count == 0
+                ? 0
+                : active.Max(r => r.DisplayOrder) + 1;
+            await _roadmaps.AddRangeAsync(new[] { created });
+            existingKeys.Add(key);
+            active.Add(created);
+        }
+    }
+
     private static string ParseKbSourceFromJson(string? explanationJson)
     {
         if (string.IsNullOrWhiteSpace(explanationJson))
@@ -342,7 +388,8 @@ public class RoadmapRecommendationService : IRoadmapRecommendationService
         double weight,
         CompetencyFrameworkSkill? fwSkill,
         CompetencyItem? bpSkill,
-        HashSet<string> cvNormalized)
+        HashSet<string> cvNormalized,
+        string? confidence = null)
     {
         var kind = gap > 0 ? CandidateRoadmapKind.Gap : CandidateRoadmapKind.Advanced;
         var score = ComputePriorityScore(gap, weight);
@@ -376,8 +423,12 @@ public class RoadmapRecommendationService : IRoadmapRecommendationService
         }
 
         explanation ??= kind == CandidateRoadmapKind.Gap
-            ? $"Gap {gap} điểm so với target {target}. Ưu tiên luyện topic yếu rồi Re-assessment."
-            : $"Đã đạt target {target}. Có thể luyện nâng cao, không bắt buộc.";
+            ? (confidence == "screening"
+                ? $"Tín hiệu sàng lọc (1 câu): gap {gap} điểm so với target {target}. Nên luyện rồi kiểm tra lại — chưa kết luận yếu."
+                : $"Gap {gap} điểm so với target {target}. Ưu tiên luyện topic yếu rồi Re-assessment.")
+            : (confidence == "screening"
+                ? $"Tín hiệu sàng lọc (1 câu): đã đạt target {target}. Có thể luyện nâng cao, không bắt buộc."
+                : $"Đã đạt target {target}. Có thể luyện nâng cao, không bắt buộc.");
 
         // Adaptive / khớp CV → cv; pad framework không có trên CV → outsideCv + lý do.
         var fromCv = adaptive || IsSkillFromCv(skill, cvNormalized);
@@ -411,7 +462,8 @@ public class RoadmapRecommendationService : IRoadmapRecommendationService
                 reason = explanation,
                 kbSource,
                 skillSource,
-                outsideCvReason
+                outsideCvReason,
+                confidence
             }, JsonOpts)
         };
 

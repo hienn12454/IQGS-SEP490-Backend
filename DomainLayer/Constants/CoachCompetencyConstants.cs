@@ -7,6 +7,8 @@ public static class CandidateAssessmentKind
 {
     public const string Diagnostic = "Diagnostic";
     public const string Reassessment = "Reassessment";
+    /// <summary>SCRUM-506: bài sàng lọc ngắn cho skill CV chưa đo — không merge vào profile/level.</summary>
+    public const string Screening = "Screening";
 }
 
 public static class CandidateAssessmentStatus

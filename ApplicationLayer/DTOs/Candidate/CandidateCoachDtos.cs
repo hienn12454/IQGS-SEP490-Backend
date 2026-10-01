@@ -190,6 +190,8 @@ public class CoachRoadmapDto
     public int DisplayOrder { get; set; }
     /// <summary>SCRUM-488: ngưỡng pass drill (điểm phải &gt; giá trị này) — từ Admin policy.</summary>
     public double DrillPassScoreExclusiveMin { get; set; } = 70;
+    /// <summary>SCRUM-506: screening = tín hiệu 1 câu, cần kiểm tra thêm.</summary>
+    public string? Confidence { get; set; }
     public List<CoachRoadmapItemDto> Items { get; set; } = new();
 }
 
@@ -255,4 +257,17 @@ public class UpdateRoadmapDraftRoadmapDto
 /// <summary>SCRUM-462: chấp nhận toàn bộ roadmap Suggested đang active.</summary>
 public class AcceptRoadmapsDto
 {
+}
+
+/// <summary>SCRUM-506: preview bài sàng lọc skill CV chưa đo.</summary>
+public class CoachScreeningPreviewDto
+{
+    public bool Enabled { get; set; }
+    public bool Available { get; set; }
+    public int QuestionCount { get; set; }
+    public int QuestionsPerSkill { get; set; }
+    public List<string> Skills { get; set; } = new();
+    public List<string> MeasuredSkills { get; set; } = new();
+    public int RemainingUnmeasured { get; set; }
+    public string? Message { get; set; }
 }

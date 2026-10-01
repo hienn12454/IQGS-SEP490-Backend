@@ -323,7 +323,8 @@ public class CandidateAssessmentRepository : ICandidateAssessmentRepository
             .Include(a => a.SkillResults)
             .Include(a => a.Framework)
             .Where(a => a.CandidateUserId == candidateUserId
-                        && a.Status == DomainLayer.Constants.CandidateAssessmentStatus.Scored)
+                        && a.Status == DomainLayer.Constants.CandidateAssessmentStatus.Scored
+                        && a.Kind != DomainLayer.Constants.CandidateAssessmentKind.Screening)
             .OrderByDescending(a => a.UpdatedAt ?? a.CreatedAt)
             .ThenByDescending(a => a.CreatedAt)
             .FirstOrDefaultAsync();

@@ -45,4 +45,18 @@ public class CompetencyScoringPolicy : BaseEntity
 
     /// <summary>Câu có điểm AI &lt; ngưỡng này vào pool remix.</summary>
     public double DrillWeakAnswerScoreMaxExclusive { get; set; } = 50;
+
+    // ── SCRUM-506: Admin cấu hình độ rộng đề chẩn đoán + bài sàng lọc ──
+
+    /// <summary>Số câu mỗi core skill ở bài chẩn đoán (mặc định 3).</summary>
+    public int DiagnosticQuestionsPerSkill { get; set; } = 3;
+    public int DiagnosticMinSkills { get; set; } = 3;
+    public int DiagnosticMaxSkills { get; set; } = 5;
+    public int DiagnosticMaxAdaptiveSkills { get; set; } = 8;
+    /// <summary>0 = tắt. Nếu tổng câu &lt; ngưỡng thì tăng câu/skill (trần 6).</summary>
+    public int DiagnosticMinTotalQuestions { get; set; } = 0;
+
+    public bool ScreeningEnabled { get; set; } = true;
+    public int ScreeningQuestionsPerSkill { get; set; } = 1;
+    public int ScreeningMaxSkills { get; set; } = 12;
 }

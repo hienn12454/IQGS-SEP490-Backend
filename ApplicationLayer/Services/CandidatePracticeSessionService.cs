@@ -661,7 +661,8 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
             var isCoachDiagnostic = job is not null
                 && job.CandidateUserId == session.CandidateUserId
                 && (string.Equals(job.Purpose, CandidatePersonalSetPurpose.CvDiagnostic, StringComparison.OrdinalIgnoreCase)
-                    || string.Equals(job.Purpose, CandidatePersonalSetPurpose.CvReassessment, StringComparison.OrdinalIgnoreCase));
+                    || string.Equals(job.Purpose, CandidatePersonalSetPurpose.CvReassessment, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(job.Purpose, CandidatePersonalSetPurpose.CvScreening, StringComparison.OrdinalIgnoreCase));
 
             var scoreResult = await _coachCompetency.ScoreAssessmentFromSessionAsync(session);
             if (isCoachDiagnostic)
@@ -806,7 +807,8 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
                 var coachJob = await _personalSetJobs.GetByQuestionSetIdAsync(session.QuestionSetId);
                 if (coachJob is not null
                     && coachJob.Purpose is CandidatePersonalSetPurpose.CvDiagnostic
-                        or CandidatePersonalSetPurpose.CvReassessment)
+                        or CandidatePersonalSetPurpose.CvReassessment
+                        or CandidatePersonalSetPurpose.CvScreening)
                 {
                     scoringMode = "coach";
                 }

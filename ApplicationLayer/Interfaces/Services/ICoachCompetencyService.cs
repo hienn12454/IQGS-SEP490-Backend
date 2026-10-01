@@ -17,6 +17,10 @@ public interface ICoachCompetencyService
     Task<CandidatePersonalSetJobDto> StartDiagnosticAsync(Guid candidateUserId, CancellationToken ct = default);
     Task<CandidatePersonalSetJobDto> StartDrillForRoadmapItemAsync(Guid candidateUserId, Guid roadmapId, Guid itemId, CancellationToken ct = default);
     Task<CandidatePersonalSetJobDto> StartReassessmentAsync(Guid candidateUserId, Guid roadmapId, CancellationToken ct = default);
+    /// <summary>SCRUM-506: preview skill CV chưa đo — CTA trên báo cáo.</summary>
+    Task<CoachScreeningPreviewDto> GetScreeningPreviewAsync(Guid candidateUserId, CancellationToken ct = default);
+    /// <summary>SCRUM-506: sinh bài sàng lọc ngắn; không supersede diagnostic / không archive roadmap.</summary>
+    Task<CandidatePersonalSetJobDto> StartScreeningAsync(Guid candidateUserId, CancellationToken ct = default);
     Task<CoachAssessmentDto?> GetLatestReportAsync(Guid candidateUserId);
     Task<IReadOnlyList<CoachAssessmentDto>> GetHistoryAsync(Guid candidateUserId);
     Task<CoachAssessmentDto?> GetAssessmentAsync(Guid candidateUserId, Guid assessmentId);

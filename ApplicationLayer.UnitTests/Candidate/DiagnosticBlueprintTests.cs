@@ -43,4 +43,41 @@ public sealed class DiagnosticBlueprintTests
             Assert.Contains(group, q => q.Difficulty == DiagnosticBlueprintBuilder.StepUp(skill.RequiredDifficulty));
         }
     }
+
+    [Fact]
+    public void Screening_OneQuestionPerSkill_AtRequiredDifficulty()
+    {
+        var bp = new ApplicationLayer.DTOs.Coach.CompetencyBlueprint
+        {
+            TargetRole = "Backend",
+            TargetLevel = "Junior",
+            Competencies =
+            {
+                new ApplicationLayer.DTOs.Coach.CompetencyItem
+                {
+                    SkillName = "Java",
+                    Category = CompetencyCategory.RoleCore,
+                    Topics = { "Collections" },
+                    TargetScore = 70
+                },
+                new ApplicationLayer.DTOs.Coach.CompetencyItem
+                {
+                    SkillName = "SQL",
+                    Category = CompetencyCategory.Fundamental,
+                    Topics = { "Index" },
+                    TargetScore = 70
+                }
+            }
+        };
+        var plan = DiagnosticBlueprintBuilder.BuildScreening(bp, 1);
+        var json = System.Text.Json.JsonSerializer.Serialize(plan);
+        using var doc = System.Text.Json.JsonDocument.Parse(json);
+        Assert.Equal(2, doc.RootElement.GetProperty("totalQuestions").GetInt32());
+        var outline = doc.RootElement.GetProperty("recommendedQuestionOutline");
+        Assert.Equal(2, outline.GetArrayLength());
+        Assert.Equal("Java", outline[0].GetProperty("skill").GetString());
+        Assert.Equal("medium", outline[0].GetProperty("difficulty").GetString());
+        Assert.Equal("SQL", outline[1].GetProperty("skill").GetString());
+        Assert.Equal("easy", outline[1].GetProperty("difficulty").GetString());
+    }
 }

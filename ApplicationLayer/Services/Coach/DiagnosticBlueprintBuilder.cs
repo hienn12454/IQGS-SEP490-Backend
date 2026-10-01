@@ -73,6 +73,76 @@ public static class DiagnosticBlueprintBuilder
             blueprint.Competencies.Select(c => c.SkillName).ToList());
     }
 
+    /// <summary>
+    /// SCRUM-506: blueprint bài sàng lọc — 1 câu/skill ở RequiredDifficulty (không ép ≥2).
+    /// Không đụng <see cref="BuildDiagnosticQuestions"/> vì hàm đó cố ý tối thiểu 2 câu/skill.
+    /// </summary>
+    public static object BuildScreening(CompetencyBlueprint blueprint, int questionsPerSkill = 1)
+    {
+        var perSkill = Math.Clamp(questionsPerSkill, 1, 3);
+        var scoring = FrameworkBlueprintBuilder.ToScoringSkills(blueprint);
+        var questions = new List<BlueprintQuestion>();
+        var order = 1;
+        foreach (var skill in scoring)
+        {
+            var item = blueprint.Competencies.FirstOrDefault(c =>
+                string.Equals(c.SkillName, skill.Skill, StringComparison.OrdinalIgnoreCase));
+            var topic = item?.Topics.FirstOrDefault(t => !string.IsNullOrWhiteSpace(t))?.Trim()
+                        ?? skill.Skill;
+            var difficulty = NormalizeDifficulty(skill.RequiredDifficulty);
+            for (var i = 0; i < perSkill; i++)
+                questions.Add(new BlueprintQuestion(order++, skill.Skill, topic, difficulty));
+        }
+
+        return BuildPlanObject(
+            roleTitle: $"{blueprint.TargetRole} — screening",
+            displayRole: blueprint.TargetRole,
+            targetLevel: blueprint.TargetLevel,
+            questions,
+            blueprint.Competencies.Select(c => c.SkillName).ToList());
+    }
+
+    /// <summary>SCRUM-506: blueprint screening từ danh sách skill CV (không có framework item).</summary>
+    public static CompetencyBlueprint BuildScreeningBlueprint(
+        IReadOnlyList<string> skills,
+        string? targetRole,
+        string? targetLevel,
+        double targetScore,
+        Guid? frameworkId,
+        string sourceMode)
+    {
+        var list = (skills ?? Array.Empty<string>())
+            .Where(s => !string.IsNullOrWhiteSpace(s))
+            .Select(s => s.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var weight = list.Count == 0 ? 0 : Math.Round(1.0 / list.Count, 4);
+        var comps = list.Select(skill => new CompetencyItem
+        {
+            SkillKey = CompetencyScoringService.NormalizeSkill(skill).Replace(' ', '-'),
+            SkillName = skill,
+            Category = CompetencyCategory.RoleCore,
+            Weight = weight,
+            ExpectedLevel = string.IsNullOrWhiteSpace(targetLevel) ? CoachSeniorityLevel.Junior : targetLevel.Trim(),
+            TargetScore = targetScore,
+            Topics = [$"{skill} fundamentals"],
+            Source = CompetencySourceMode.Rag,
+            Citations = []
+        }).ToList();
+        AdaptiveBlueprintBuilder.RenormalizeWeights(comps);
+        return new CompetencyBlueprint
+        {
+            SchemaVersion = CompetencyBlueprintSchema.CurrentVersion,
+            SourceMode = sourceMode,
+            RoleKey = "screening",
+            TargetRole = string.IsNullOrWhiteSpace(targetRole) ? "Software Engineer" : targetRole.Trim(),
+            TargetLevel = string.IsNullOrWhiteSpace(targetLevel) ? CoachSeniorityLevel.Junior : targetLevel.Trim(),
+            FrameworkId = frameworkId,
+            Competencies = comps,
+            CreatedAt = DateTime.UtcNow
+        };
+    }
+
     private static object BuildPlanObject(
         string roleTitle,
         string displayRole,

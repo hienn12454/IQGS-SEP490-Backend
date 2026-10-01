@@ -175,6 +175,120 @@ public sealed class CoachScoreAssessmentTests
     }
 
     [Fact]
+    public async Task Score_Screening_DoesNotMergeProfile_AddsScreeningRoadmap()
+    {
+        var userId = Guid.NewGuid();
+        var setId = Guid.NewGuid();
+        var sessionId = Guid.NewGuid();
+        var assessmentId = Guid.NewGuid();
+        var answerId = Guid.NewGuid();
+        var questionId = Guid.NewGuid();
+
+        var bp = new CompetencyBlueprint
+        {
+            SourceMode = CompetencyResolutionMode.Adaptive,
+            TargetLevel = "Junior",
+            Competencies =
+            {
+                new CompetencyItem { SkillName = "Java", TargetScore = 70, Weight = 1, Topics = { "Collections" } }
+            }
+        };
+        var assessment = new CandidateAssessment
+        {
+            Id = assessmentId,
+            CandidateUserId = userId,
+            QuestionSetId = setId,
+            Kind = CandidateAssessmentKind.Screening,
+            Status = CandidateAssessmentStatus.ReadyToPractice,
+            ScopeSkillsJson = """["Java"]""",
+            BlueprintJson = CompetencyBlueprintJson.Serialize(bp)
+        };
+
+        var assessments = new Mock<ICandidateAssessmentRepository>();
+        assessments.Setup(a => a.GetByQuestionSetIdAsync(setId)).ReturnsAsync(assessment);
+        assessments.Setup(a => a.SaveScoredAssessmentAsync(
+                It.IsAny<CandidateAssessment>(),
+                It.IsAny<IReadOnlyList<CandidateAssessmentSkillResult>>()))
+            .Returns((CandidateAssessment a, IReadOnlyList<CandidateAssessmentSkillResult> results) =>
+            {
+                a.SkillResults.Clear();
+                foreach (var r in results) a.SkillResults.Add(r);
+                return Task.CompletedTask;
+            });
+        assessments.Setup(a => a.UpdateReadinessAsync(
+                It.IsAny<Guid>(), It.IsAny<double?>(), It.IsAny<string?>(), It.IsAny<string?>()))
+            .Returns(Task.CompletedTask);
+
+        var answers = new Mock<ICandidateAnswerRepository>();
+        answers.Setup(a => a.GetEntitiesBySessionIdAsync(sessionId)).ReturnsAsync(
+        [
+            new CandidateAnswer { Id = answerId, PracticeSessionId = sessionId, QuestionSetQuestionId = questionId, AnswerText = "ok" }
+        ]);
+        var feedbacks = new Mock<IAiFeedbackRepository>();
+        feedbacks.Setup(f => f.GetBySessionIdAsync(sessionId)).ReturnsAsync(
+        [
+            new AiFeedback
+            {
+                CandidateAnswerId = answerId,
+                EvaluationStatus = AiFeedbackEvaluationStatus.Succeeded,
+                Score = 40,
+                DimensionScoresJson = """{"correctness":40,"relevance":40,"clarity":40}"""
+            }
+        ]);
+        var marketplace = new Mock<ICandidateMarketplaceRepository>();
+        marketplace.Setup(m => m.GetQuestionsSnapshotAsync(setId)).ReturnsAsync(
+        [
+            new PublishedQuestionRow { Id = questionId, Order = 1, Question = "q", Skill = "Java", Difficulty = "medium", QuestionType = "technical" }
+        ]);
+        var frameworks = new Mock<ICompetencyFrameworkRepository>();
+        frameworks.Setup(f => f.GetPolicyAsync()).ReturnsAsync(new CompetencyScoringPolicy
+        {
+            OverallReadyThreshold = 70,
+            CorrectnessWeight = 1,
+            RelevanceWeight = 0,
+            ClarityWeight = 0,
+            EasyDifficultyWeight = 1,
+            MediumDifficultyWeight = 1,
+            HardDifficultyWeight = 1,
+            DevelopingMaxExclusive = 50,
+            NearTargetMaxExclusive = 70,
+            ReadyMaxExclusive = 85
+        });
+        var profile = new Mock<ICompetencyProfileService>();
+        var roadmap = new Mock<IRoadmapRecommendationService>();
+        roadmap.Setup(r => r.AddFromScreeningAsync(
+                userId, It.IsAny<CandidateAssessment>(), null, It.IsAny<CandidateSkillPlan>()))
+            .Returns(Task.CompletedTask);
+
+        var svc = CreateService(
+            assessments: assessments.Object,
+            answers: answers.Object,
+            feedbacks: feedbacks.Object,
+            marketplace: marketplace.Object,
+            frameworks: frameworks.Object,
+            profile: profile.Object,
+            roadmap: roadmap.Object);
+
+        var result = await svc.ScoreAssessmentFromSessionAsync(new PracticeSession
+        {
+            Id = sessionId,
+            CandidateUserId = userId,
+            QuestionSetId = setId
+        });
+
+        Assert.True(result.Scored);
+        Assert.True(result.RoadmapUpdated);
+        profile.Verify(p => p.MergeAsync(
+            It.IsAny<Guid>(), It.IsAny<CandidateAssessment>(), It.IsAny<CompetencyFramework?>(), It.IsAny<CompetencyBlueprint?>()),
+            Times.Never);
+        roadmap.Verify(r => r.RebuildFromDiagnosticAsync(
+            It.IsAny<Guid>(), It.IsAny<CandidateAssessment>(), It.IsAny<CompetencyFramework?>(), It.IsAny<CandidateSkillPlan>()),
+            Times.Never);
+        roadmap.Verify(r => r.AddFromScreeningAsync(
+            userId, It.IsAny<CandidateAssessment>(), null, It.IsAny<CandidateSkillPlan>()), Times.Once);
+    }
+
+    [Fact]
     public async Task Score_RoadmapFail_StillReturnsScoredFalseRoadmapFlag()
     {
         var userId = Guid.NewGuid();
