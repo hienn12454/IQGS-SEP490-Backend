@@ -52,13 +52,26 @@ public static class CoachWrapUpBuilder
             ? drillPassExclusiveMin
             : CoachDrillPassPolicy.DefaultPassScoreExclusiveMin;
 
-        dto.Improved = BuildImproved(items);
-        dto.Strengths = BuildStrengths(items);
+        // Chỉ skill đã Accept lộ trình — không dump cả profile diagnostic (SQL/C#/…) khi user chỉ luyện 1 topic.
+        var practiced = PracticedSkillKeys(accepted);
+        var practicedItems = items
+            .Where(i => practiced.Contains(CompetencyScoringService.NormalizeSkill(i.Skill)))
+            .ToList();
+
+        dto.Improved = BuildImproved(practicedItems);
+        dto.Strengths = BuildStrengths(practicedItems);
         dto.WeakTopics = BuildWeakTopics(accepted, passMin, drillAttemptScoresByItemId);
         dto.NextSkills = BuildNextSkills(items, accepted);
 
         return dto;
     }
+
+    /// <summary>Skill đã Accept lộ trình (user chủ động chọn luyện, kể cả chỉ 1 topic).</summary>
+    private static HashSet<string> PracticedSkillKeys(IReadOnlyList<CandidateRoadmap> accepted)
+        => accepted
+            .Select(r => CompetencyScoringService.NormalizeSkill(r.Skill))
+            .Where(k => k.Length > 0)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
     private static List<CoachWrapUpSkillDeltaDto> BuildImproved(IReadOnlyList<CandidateSkillPlanItem> items)
         => items

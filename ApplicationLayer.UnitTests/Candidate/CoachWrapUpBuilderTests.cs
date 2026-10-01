@@ -48,8 +48,35 @@ public sealed class CoachWrapUpBuilderTests
         Assert.Equal("Java", dto.Improved[0].Skill);
         Assert.Equal(30, dto.Improved[0].Delta);
         Assert.Contains(dto.Strengths, s => s.Skill == "Java");
-        Assert.Contains(dto.Strengths, s => s.Skill == "Redis");
+        // Redis đạt target nhưng không Accept lộ trình → không đưa vào «Làm rất tốt».
+        Assert.DoesNotContain(dto.Strengths, s => s.Skill == "Redis");
         Assert.Contains(dto.NextSkills, n => n.Skill == "SQL" && n.Reason == "gap");
+    }
+
+    [Fact]
+    public void Build_Strengths_IgnoresProfileSkillsUserDidNotAccept()
+    {
+        var plan = new List<CandidateSkillPlanItem>
+        {
+            new() { Skill = "ASP.NET Core", BaselineScore = 70, CurrentScore = 100, TargetScore = 70 },
+            new() { Skill = "SQL", BaselineScore = 100, CurrentScore = 100, TargetScore = 65 },
+            new() { Skill = "C#", BaselineScore = 100, CurrentScore = 100, TargetScore = 70 },
+            new() { Skill = "REST API", BaselineScore = 90, CurrentScore = 100, TargetScore = 70 }
+        };
+        var roadmaps = new List<CandidateRoadmap>
+        {
+            Accepted("ASP.NET Core", CandidateRoadmapStatus.Completed)
+        };
+
+        var dto = CoachWrapUpBuilder.Build(plan, roadmaps, 70);
+
+        Assert.True(dto.Available);
+        Assert.Single(dto.Strengths);
+        Assert.Equal("ASP.NET Core", dto.Strengths[0].Skill);
+        Assert.Single(dto.Improved);
+        Assert.Equal("ASP.NET Core", dto.Improved[0].Skill);
+        Assert.DoesNotContain(dto.Improved, i => i.Skill == "REST API");
+        Assert.Empty(dto.NextSkills);
     }
 
     [Fact]
