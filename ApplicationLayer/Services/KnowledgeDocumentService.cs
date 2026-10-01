@@ -25,6 +25,7 @@ public class KnowledgeDocumentService : IKnowledgeDocumentService
     private readonly IJobScheduler _jobScheduler;
     private readonly KnowledgeBaseSettings _kbSettings;
     private readonly IDocumentTextExtractorFactory _textExtractors;
+    private readonly IRoadmapNodeRepository _roadmapNodes;
     private readonly ILogger<KnowledgeDocumentService> _logger;
 
     public KnowledgeDocumentService(
@@ -34,6 +35,7 @@ public class KnowledgeDocumentService : IKnowledgeDocumentService
         IJobScheduler jobScheduler,
         IOptions<KnowledgeBaseSettings> kbSettings,
         IDocumentTextExtractorFactory textExtractors,
+        IRoadmapNodeRepository roadmapNodes,
         ILogger<KnowledgeDocumentService> logger)
     {
         _repository = repository;
@@ -42,6 +44,7 @@ public class KnowledgeDocumentService : IKnowledgeDocumentService
         _jobScheduler = jobScheduler;
         _kbSettings = kbSettings.Value;
         _textExtractors = textExtractors;
+        _roadmapNodes = roadmapNodes;
         _logger = logger;
     }
 
@@ -338,12 +341,21 @@ public class KnowledgeDocumentService : IKnowledgeDocumentService
         if (updateFolder)
             document.Folder = KnowledgeFolderHelper.Normalize(folder);
 
-        // SCRUM-486: chỉ SYSTEM mới được bật Candidate view; HR luôn false
+        // SCRUM-486/501: chỉ SYSTEM mới được bật Candidate view; HR luôn false.
+        // Khi bật true → auto gắn KnowledgeDocumentId vào RoadmapNode khớp filename.
         if (allowCandidateView.HasValue)
         {
             if (!string.Equals(document.Scope, KnowledgeDocumentScope.System, StringComparison.OrdinalIgnoreCase))
                 throw new BadRequestException("Chỉ tài liệu SYSTEM mới cho phép Candidate xem.");
+            var turningOn = allowCandidateView.Value && !document.AllowCandidateView;
             document.AllowCandidateView = allowCandidateView.Value;
+            if (turningOn && !string.IsNullOrWhiteSpace(document.FileName))
+            {
+                var linked = await _roadmapNodes.LinkByFilenameAsync(document.Id, document.FileName);
+                _logger.LogInformation(
+                    "SCRUM-501: AllowCandidateView bật cho {DocId} — auto-link {Count} RoadmapNode theo file {File}",
+                    document.Id, linked.Count, document.FileName);
+            }
         }
 
         await _repository.UpdateAsync(document);

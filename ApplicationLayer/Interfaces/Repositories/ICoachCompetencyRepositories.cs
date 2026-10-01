@@ -88,6 +88,6 @@ public interface IRoadmapNodeRepository
     /// <summary>SCRUM-486</summary>
     Task<RoadmapNode?> GetByIdAsync(Guid id);
     Task UpdateAsync(RoadmapNode node);
-    /// <summary>Gắn KnowledgeDocumentId cho nodes có SourceUrl kết thúc bằng fileName.</summary>
+    /// <summary>Gắn KnowledgeDocumentId cho nodes khớp FileName với SourceUrl hoặc SourceTitle.</summary>
     Task<List<Guid>> LinkByFilenameAsync(Guid knowledgeDocumentId, string fileName);
 }

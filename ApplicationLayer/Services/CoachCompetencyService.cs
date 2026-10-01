@@ -41,6 +41,8 @@ public class CoachCompetencyService : ICoachCompetencyService
     private readonly ICompetencyProfileService _profile;
     private readonly IRoadmapRecommendationService _roadmapRecommendations;
     private readonly ICoachKnowledgeViewService _knowledgeView;
+    private readonly IKnowledgeDocumentRepository _knowledgeDocs;
+    private readonly IRoadmapNodeRepository _roadmapNodes;
     private readonly ILogger<CoachCompetencyService> _logger;
 
     public CoachCompetencyService(
@@ -62,6 +64,8 @@ public class CoachCompetencyService : ICoachCompetencyService
         ICompetencyProfileService profile,
         IRoadmapRecommendationService roadmapRecommendations,
         ICoachKnowledgeViewService knowledgeView,
+        IKnowledgeDocumentRepository knowledgeDocs,
+        IRoadmapNodeRepository roadmapNodes,
         ILogger<CoachCompetencyService>? logger = null)
     {
         _profiles = profiles;
@@ -82,6 +86,8 @@ public class CoachCompetencyService : ICoachCompetencyService
         _profile = profile;
         _roadmapRecommendations = roadmapRecommendations;
         _knowledgeView = knowledgeView;
+        _knowledgeDocs = knowledgeDocs;
+        _roadmapNodes = roadmapNodes;
         _logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<CoachCompetencyService>.Instance;
     }
 
@@ -1630,11 +1636,14 @@ public class CoachCompetencyService : ICoachCompetencyService
     /// <summary>
     /// Hydrate DrillQuestionSetId cho cổng Re-assessment đang InProgress nếu sinh đề xong
     /// nhưng chưa gắn (job cũ trước khi AttachQuestionSet). FE cần id để hiện CTA mở bài.
-    /// SCRUM-486: resolve canViewSource từ AllowCandidateView của KB doc gắn node.
+    /// SCRUM-486/501: resolve canViewSource từ AllowCandidateView; auto-link node thiếu KnowledgeDocumentId.
     /// </summary>
     private async Task<CoachRoadmapDto> MapRoadmapHydratedAsync(
         CandidateRoadmap r, IReadOnlyList<CandidateAssessment> assessments)
     {
+        // SCRUM-501: Admin đã bật AllowCandidateView nhưng node chưa gắn doc → link theo filename rồi map.
+        await TryLinkAllowViewDocsForRoadmapAsync(r);
+
         var docIds = r.Items
             .Select(i => i.RoadmapNode?.KnowledgeDocumentId)
             .Where(id => id.HasValue)
@@ -1777,6 +1786,59 @@ public class CoachCompetencyService : ICoachCompetencyService
                 };
             }).ToList()
         };
+    }
+
+    /// <summary>
+    /// SCRUM-501: nếu item gắn RoadmapNode nhưng chưa có KnowledgeDocumentId,
+    /// thử link SYSTEM doc AllowCandidateView theo FileName khớp SourceUrl/SourceTitle.
+    /// </summary>
+    private async Task TryLinkAllowViewDocsForRoadmapAsync(CandidateRoadmap r)
+    {
+        var needsLink = r.Items.Any(i =>
+            i.RoadmapNode != null && !i.RoadmapNode.KnowledgeDocumentId.HasValue
+            && (!string.IsNullOrWhiteSpace(i.RoadmapNode.SourceUrl)
+                || !string.IsNullOrWhiteSpace(i.RoadmapNode.SourceTitle)
+                || !string.IsNullOrWhiteSpace(i.SourceUrl)
+                || !string.IsNullOrWhiteSpace(i.SourceTitle)));
+        if (!needsLink) return;
+
+        IReadOnlyList<(Guid Id, string FileName)> allowDocs;
+        try
+        {
+            allowDocs = await _knowledgeDocs.ListSystemAllowCandidateViewAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "SCRUM-501: không tải được danh sách AllowCandidateView docs.");
+            return;
+        }
+
+        if (allowDocs.Count == 0) return;
+
+        foreach (var doc in allowDocs)
+        {
+            try
+            {
+                var linked = await _roadmapNodes.LinkByFilenameAsync(doc.Id, doc.FileName);
+                if (linked.Count == 0) continue;
+
+                foreach (var item in r.Items)
+                {
+                    if (item.RoadmapNode != null
+                        && linked.Contains(item.RoadmapNode.Id)
+                        && !item.RoadmapNode.KnowledgeDocumentId.HasValue)
+                    {
+                        item.RoadmapNode.KnowledgeDocumentId = doc.Id;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "SCRUM-501: link-by-filename thất bại cho doc {DocId} / {File}",
+                    doc.Id, doc.FileName);
+            }
+        }
     }
 
     /// <summary>

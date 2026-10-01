@@ -113,7 +113,9 @@ public sealed class CoachUpdateContextTests
             Mock.Of<IJobScheduler>(),
             Mock.Of<ICompetencyProfileService>(),
             Mock.Of<IRoadmapRecommendationService>(),
-            Mock.Of<ICoachKnowledgeViewService>());
+            Mock.Of<ICoachKnowledgeViewService>(),
+            Mock.Of<IKnowledgeDocumentRepository>(),
+            Mock.Of<IRoadmapNodeRepository>());
 
         await svc.UpdateContextAsync(UserId, new UpdateCoachContextDto
         {
@@ -171,7 +173,9 @@ public sealed class CoachUpdateContextTests
             Mock.Of<IJobScheduler>(),
             Mock.Of<ICompetencyProfileService>(),
             Mock.Of<IRoadmapRecommendationService>(),
-            Mock.Of<ICoachKnowledgeViewService>());
+            Mock.Of<ICoachKnowledgeViewService>(),
+            Mock.Of<IKnowledgeDocumentRepository>(),
+            Mock.Of<IRoadmapNodeRepository>());
 
         var ex = await Assert.ThrowsAsync<DomainLayer.Exceptions.BadRequestException>(() =>
             svc.UpdateContextAsync(UserId, new UpdateCoachContextDto
@@ -232,7 +236,9 @@ public sealed class CoachUpdateContextTests
             Mock.Of<IJobScheduler>(),
             Mock.Of<ICompetencyProfileService>(),
             Mock.Of<IRoadmapRecommendationService>(),
-            Mock.Of<ICoachKnowledgeViewService>());
+            Mock.Of<ICoachKnowledgeViewService>(),
+            Mock.Of<IKnowledgeDocumentRepository>(),
+            Mock.Of<IRoadmapNodeRepository>());
 
         var ex = await Assert.ThrowsAsync<DomainLayer.Exceptions.BadRequestException>(() =>
             svc.UpdateContextAsync(UserId, new UpdateCoachContextDto

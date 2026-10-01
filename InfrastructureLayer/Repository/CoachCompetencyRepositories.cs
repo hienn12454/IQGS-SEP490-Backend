@@ -561,17 +561,18 @@ public class RoadmapNodeRepository : IRoadmapNodeRepository
         var name = (fileName ?? "").Trim();
         if (name.Length == 0) return new List<Guid>();
 
-        // Match SourceUrl kết thúc bằng /fileName hoặc đúng fileName (case-insensitive)
+        var stem = Path.GetFileNameWithoutExtension(name);
+        // SCRUM-501: khớp SourceUrl và/hoặc SourceTitle (seed thường chỉ có title)
         var nodes = await _db.RoadmapNodes
-            .Where(n => n.IsActive && n.SourceUrl != null && n.SourceUrl != "")
+            .Where(n => n.IsActive
+                && ((n.SourceUrl != null && n.SourceUrl != "")
+                    || (n.SourceTitle != null && n.SourceTitle != "")))
             .ToListAsync();
 
         var linked = new List<Guid>();
         foreach (var n in nodes)
         {
-            var url = n.SourceUrl ?? "";
-            if (!url.EndsWith(name, StringComparison.OrdinalIgnoreCase)
-                && !string.Equals(Path.GetFileName(url.Replace('\\', '/')), name, StringComparison.OrdinalIgnoreCase))
+            if (!NodeMatchesFilename(n, name, stem))
                 continue;
 
             n.KnowledgeDocumentId = knowledgeDocumentId;
@@ -582,6 +583,33 @@ public class RoadmapNodeRepository : IRoadmapNodeRepository
         if (linked.Count > 0)
             await _db.SaveChangesAsync();
         return linked;
+    }
+
+    /// <summary>SCRUM-501: khớp filename với SourceUrl / SourceTitle (có/không phần mở rộng).</summary>
+    private static bool NodeMatchesFilename(RoadmapNode n, string fileName, string stem)
+    {
+        var url = n.SourceUrl ?? "";
+        if (url.Length > 0)
+        {
+            if (url.EndsWith(fileName, StringComparison.OrdinalIgnoreCase))
+                return true;
+            var urlFile = Path.GetFileName(url.Replace('\\', '/'));
+            if (string.Equals(urlFile, fileName, StringComparison.OrdinalIgnoreCase))
+                return true;
+            if (!string.IsNullOrEmpty(stem)
+                && string.Equals(Path.GetFileNameWithoutExtension(urlFile), stem, StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+
+        var title = (n.SourceTitle ?? "").Trim();
+        if (title.Length == 0) return false;
+        if (string.Equals(title, fileName, StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (!string.IsNullOrEmpty(stem) && string.Equals(title, stem, StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (title.EndsWith(fileName, StringComparison.OrdinalIgnoreCase))
+            return true;
+        return false;
     }
 
     public async Task DeleteAsync(Guid id)

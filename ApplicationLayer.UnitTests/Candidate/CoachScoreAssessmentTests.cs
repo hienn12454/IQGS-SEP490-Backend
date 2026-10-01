@@ -310,5 +310,7 @@ public sealed class CoachScoreAssessmentTests
             Mock.Of<IJobScheduler>(),
             profile ?? Mock.Of<ICompetencyProfileService>(),
             roadmap ?? Mock.Of<IRoadmapRecommendationService>(),
-            Mock.Of<ICoachKnowledgeViewService>());
+            Mock.Of<ICoachKnowledgeViewService>(),
+            Mock.Of<IKnowledgeDocumentRepository>(),
+            Mock.Of<IRoadmapNodeRepository>());
 }

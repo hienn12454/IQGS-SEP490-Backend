@@ -126,7 +126,9 @@ public sealed class CoachResetRunTests
             Mock.Of<IJobScheduler>(),
             Mock.Of<ICompetencyProfileService>(),
             Mock.Of<IRoadmapRecommendationService>(),
-            Mock.Of<ICoachKnowledgeViewService>());
+            Mock.Of<ICoachKnowledgeViewService>(),
+            Mock.Of<IKnowledgeDocumentRepository>(),
+            Mock.Of<IRoadmapNodeRepository>());
 
         var ctx = await svc.ResetCoachRunAsync(UserId);
 

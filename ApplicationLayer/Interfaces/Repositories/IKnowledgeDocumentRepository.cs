@@ -47,4 +47,7 @@ public interface IKnowledgeDocumentRepository
 
     /// <summary>SCRUM-486: map documentId → AllowCandidateView (SYSTEM active).</summary>
     Task<IReadOnlyDictionary<Guid, bool>> GetAllowCandidateViewMapAsync(IReadOnlyCollection<Guid> documentIds);
+
+    /// <summary>SCRUM-501: SYSTEM active + AllowCandidateView — dùng hydrate/link roadmap source.</summary>
+    Task<IReadOnlyList<(Guid Id, string FileName)>> ListSystemAllowCandidateViewAsync();
 }

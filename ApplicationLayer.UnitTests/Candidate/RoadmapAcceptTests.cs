@@ -41,7 +41,9 @@ public sealed class RoadmapAcceptTests
             Mock.Of<IJobScheduler>(),
             Mock.Of<ICompetencyProfileService>(),
             Mock.Of<IRoadmapRecommendationService>(),
-            Mock.Of<ICoachKnowledgeViewService>());
+            Mock.Of<ICoachKnowledgeViewService>(),
+            Mock.Of<IKnowledgeDocumentRepository>(),
+            Mock.Of<IRoadmapNodeRepository>());
     }
 
     private static CandidateRoadmap MakeDraft(string skill, bool includeTopic, bool withGate = true)

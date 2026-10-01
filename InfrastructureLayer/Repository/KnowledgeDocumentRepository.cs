@@ -291,4 +291,20 @@ public class KnowledgeDocumentRepository : IKnowledgeDocumentRepository
 
         return rows.ToDictionary(x => x.Id, x => x.AllowCandidateView);
     }
+
+    public async Task<IReadOnlyList<(Guid Id, string FileName)>> ListSystemAllowCandidateViewAsync()
+    {
+        var rows = await _context.KnowledgeDocuments
+            .AsNoTracking()
+            .Where(d => d.IsActive
+                && d.Scope == KnowledgeDocumentScope.System
+                && d.AllowCandidateView)
+            .Select(d => new { d.Id, d.FileName })
+            .ToListAsync();
+
+        return rows
+            .Where(r => !string.IsNullOrWhiteSpace(r.FileName))
+            .Select(r => (r.Id, r.FileName))
+            .ToList();
+    }
 }

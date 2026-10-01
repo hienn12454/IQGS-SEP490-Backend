@@ -467,7 +467,9 @@ public sealed class CoachCompetencyRetryTests
             Mock.Of<IJobScheduler>(),
             Mock.Of<ICompetencyProfileService>(),
             Mock.Of<IRoadmapRecommendationService>(),
-            kv.Object);
+            kv.Object,
+            Mock.Of<IKnowledgeDocumentRepository>(),
+            Mock.Of<IRoadmapNodeRepository>());
 
         var dto = await svc.GetRoadmapAsync(UserId, roadmapId);
         var topic = Assert.Single(dto.Items);
@@ -539,7 +541,9 @@ public sealed class CoachCompetencyRetryTests
             scheduler ?? Mock.Of<IJobScheduler>(),
             Mock.Of<ICompetencyProfileService>(),
             Mock.Of<IRoadmapRecommendationService>(),
-            Mock.Of<ICoachKnowledgeViewService>());
+            Mock.Of<ICoachKnowledgeViewService>(),
+            Mock.Of<IKnowledgeDocumentRepository>(),
+            Mock.Of<IRoadmapNodeRepository>());
     }
 
     private sealed class FakeJobRepo : ICandidatePersonalSetJobRepository
