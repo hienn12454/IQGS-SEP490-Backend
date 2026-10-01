@@ -127,7 +127,16 @@ public sealed class AdminPlanLimitsSyncTests
             new UnusedMetering(),
             new UnusedUserRepo(),
             new UnusedSePay(),
-            Options.Create(new SePaySettings()));
+            Options.Create(new SePaySettings()),
+            new UnusedRealtimeNotifier());
+
+    private sealed class UnusedRealtimeNotifier : ISubscriptionPaymentRealtimeNotifier
+    {
+        public Task NotifyPaymentPaidAsync(Guid userId, string orderCode, decimal amount, string currency, CancellationToken ct = default)
+            => Task.CompletedTask;
+        public Task NotifySubscriptionChangedAsync(Guid userId, string planCode, string action, CancellationToken ct = default)
+            => Task.CompletedTask;
+    }
 
     private sealed class FakePlanRepo(SubscriptionPlan plan) : ISubscriptionPlanRepository
     {
@@ -222,6 +231,7 @@ public sealed class AdminPlanLimitsSyncTests
         public Task<User?> GetByPasswordResetTokenAsync(string tokenHash) => Throw<User?>();
         public Task<User?> GetByEmailVerificationTokenAsync(string tokenHash) => Throw<User?>();
         public Task<(List<User> Users, int Total)> GetPagedAsync(UserQueryDto query) => Throw<(List<User>, int)>();
+        public Task<AdminUserStatsDto> GetAdminStatsAsync() => Throw<AdminUserStatsDto>();
         public Task<User?> GetByIdAnyStatusAsync(Guid id) => Throw<User?>();
         public Task<User?> GetByEmailAnyStatusAsync(string email) => Throw<User?>();
         public Task<User?> GetByGoogleIdAnyStatusAsync(string googleId) => Throw<User?>();

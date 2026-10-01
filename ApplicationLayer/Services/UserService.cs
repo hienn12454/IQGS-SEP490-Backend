@@ -79,6 +79,9 @@ public class UserService : IUserService
         };
     }
 
+    public Task<AdminUserStatsDto> GetUserStatsAsync()
+        => _userRepo.GetAdminStatsAsync();
+
     // ── Admin: chi tiết user (bất kể IsActive) ───────────────────────
 
     public async Task<UserDetailDto> GetUserDetailAsync(Guid userId)

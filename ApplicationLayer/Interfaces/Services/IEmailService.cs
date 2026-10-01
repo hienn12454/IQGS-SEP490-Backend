@@ -15,6 +15,13 @@ public interface IEmailService
         string? targetRole, string? seniorityLevel, IReadOnlyList<string> techStack, string? phoneNumber,
         string appLink);
 
+    /// <summary>SCRUM-482: báo HR biết candidate đã từ chối lời mời/offer.</summary>
+    Task SendCandidateOfferRejectedNotificationAsync(
+        string hrEmail, string hrName,
+        string candidateName, string candidateEmail,
+        string? targetRole, string? seniorityLevel, IReadOnlyList<string> techStack,
+        string appLink);
+
     /// <summary>Chúc mừng nâng cấp Premium thành công — kèm thời hạn sử dụng gói.</summary>
     Task SendPremiumActivatedEmailAsync(
         string toEmail, string toName, string planName,

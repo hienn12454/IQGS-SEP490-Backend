@@ -122,4 +122,36 @@ public class UserRepository : BaseRepository<User>, IUserRepository
 
         return (users, total);
     }
+
+    /// <summary>SCRUM-480: đếm toàn bộ user theo RoleId + trạng thái Active/Pending/Suspended.</summary>
+    public async Task<AdminUserStatsDto> GetAdminStatsAsync()
+    {
+        var totalUsers = await _dbSet.CountAsync();
+
+        var admin = await _dbSet.CountAsync(u => u.RoleId == DomainLayer.Constants.UserRole.AdminId);
+        var hr = await _dbSet.CountAsync(u => u.RoleId == DomainLayer.Constants.UserRole.HRId);
+        var candidate = await _dbSet.CountAsync(u => u.RoleId == DomainLayer.Constants.UserRole.CandidateId);
+
+        var active = await _dbSet.CountAsync(u => u.IsActive && u.IsEmailVerified);
+        var pending = await _dbSet.CountAsync(u => u.IsActive && !u.IsEmailVerified);
+        var suspended = await _dbSet.CountAsync(u => !u.IsActive);
+
+        return new AdminUserStatsDto
+        {
+            TotalUsers = totalUsers,
+            ByRole = new AdminUserStatsByRoleDto
+            {
+                Admin = admin,
+                HR = hr,
+                Candidate = candidate
+            },
+            ByStatus = new AdminUserStatsByStatusDto
+            {
+                Active = active,
+                Pending = pending,
+                Suspended = suspended
+            }
+        };
+    }
 }
+

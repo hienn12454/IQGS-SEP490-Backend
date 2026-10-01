@@ -174,7 +174,11 @@ public sealed record PlanOutlineItemDto(
     /// <summary>Text = lý thuyết | Code = coding task.</summary>
     string AnswerMethod = "Text",
     /// <summary>SCRUM-426: nguồn đã khóa (JD + Admin) trên slot.</summary>
-    IReadOnlyList<StudioQuestionCitationDto>? Citations = null);
+    IReadOnlyList<StudioQuestionCitationDto>? Citations = null,
+    // HG01: skill mà goal/citations đang mô tả — khác Skill nghĩa là slot lai, BE tự sửa.
+    string? PlannedSkill = null,
+    // HG01: slot vừa bị đổi skill (theo % focus hoặc HR đổi) → goal viết lại, nguồn gắn lại.
+    bool Relabeled = false);
 
 /// <summary>SCRUM-419: Nguồn plan kèm scope HR / SYSTEM / JD / LLM.</summary>
 public sealed record PlanSourceUsedDto(string Name, string? Scope);
@@ -257,7 +261,10 @@ public sealed record StudioQuestionDto(
     string? Rationale = null,
     /// <summary>SCRUM-436: skill/tech từ TagsJson (outline) — badge UI.</summary>
     string? Skill = null,
-    string? FocusArea = null);
+    string? FocusArea = null,
+    /// <summary>SCRUM-495 / HG01: lệch config HR — chỉ đánh dấu.</summary>
+    bool NeedsReview = false,
+    IReadOnlyList<string>? MismatchReasons = null);
 public sealed record StudioQuestionListRequest(Guid? PlanId, Guid? SectionId, QuestionDifficulty? Difficulty, QuestionType? Type, string? Search, int Page = 1, int PageSize = 20);
 public sealed record StudioQuestionListResponse(int Page, int PageSize, int Total, IReadOnlyList<StudioQuestionDto> Items);
 public sealed record UpdateQuestionRequest(

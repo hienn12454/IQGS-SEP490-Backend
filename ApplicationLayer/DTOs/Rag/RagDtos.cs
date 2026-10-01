@@ -334,6 +334,10 @@ public class GenerateQuestionsFromPlanResult
     public string? Error { get; set; }
     /// <summary>Coach: system | inferred.</summary>
     public string? KbSource { get; set; }
+    /// <summary>SCRUM-495: câu cần HR xem/regen (không chặn lưu).</summary>
+    public List<RagFlaggedQuestionDto> FlaggedQuestions { get; set; } = new();
+    /// <summary>SCRUM-495 / HG02: phân bổ có khớp plan không.</summary>
+    public bool? DistributionMatch { get; set; }
 }
 
 /// <summary>Request gọi RAG evaluate-answer (SCRUM-281/282).</summary>

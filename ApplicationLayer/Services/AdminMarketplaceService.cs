@@ -102,6 +102,8 @@ public class AdminMarketplaceService : IAdminMarketplaceService
         var questionSet = await _repository.GetByIdForUpdateAsync(id)
             ?? throw new NotFoundException("Bộ câu hỏi không tồn tại.");
 
+        EnsureMarketplaceKind(questionSet);
+
         if (questionSet.Status != QuestionSetStatus.Published)
             throw new ConflictException("Chỉ được ghim bộ câu hỏi đang PUBLISHED trên Marketplace.");
 
@@ -136,6 +138,8 @@ public class AdminMarketplaceService : IAdminMarketplaceService
         var questionSet = await _repository.GetByIdForUpdateAsync(id)
             ?? throw new NotFoundException("Bộ câu hỏi không tồn tại.");
 
+        EnsureMarketplaceKind(questionSet);
+
         if (!questionSet.IsPinned)
             return new AdminMarketplacePinResultDto
             {
@@ -161,6 +165,8 @@ public class AdminMarketplaceService : IAdminMarketplaceService
     {
         var questionSet = await _repository.GetByIdForUpdateAsync(id)
             ?? throw new NotFoundException("Bộ câu hỏi không tồn tại.");
+
+        EnsureMarketplaceKind(questionSet);
 
         if (questionSet.Status != QuestionSetStatus.Published)
             throw new ConflictException("Bộ câu hỏi hiện không ở trạng thái PUBLISHED.");
@@ -196,6 +202,16 @@ public class AdminMarketplaceService : IAdminMarketplaceService
             throw new BadRequestException(
                 "sortBy không hợp lệ. Cho phép: featured, newest, most_practiced, highest_rated.");
         return value.ToLowerInvariant();
+    }
+
+    /// <summary>
+    /// Bộ Personal (AI Coaching) không thuộc Admin Marketplace — kể cả khi Status=Published
+    /// để candidate luyện. Không cho pin/unpin/unpublish qua API admin.
+    /// </summary>
+    private static void EnsureMarketplaceKind(DomainLayer.Entities.QuestionSet questionSet)
+    {
+        if (!string.Equals(questionSet.Kind, QuestionSetKind.Marketplace, StringComparison.OrdinalIgnoreCase))
+            throw new NotFoundException("Bộ câu hỏi không tồn tại hoặc chưa được publish.");
     }
 
     private static AdminMarketplaceListItemDto MapListItem(AdminMarketplaceSetRow row, int minAttemptsForTrending) => new()

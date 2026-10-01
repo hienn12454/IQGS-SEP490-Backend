@@ -619,7 +619,8 @@ public class RecommendationService : IRecommendationService
         invitation.ScheduledAtUtc = dto.ScheduledAtUtc;
         invitation.TimeZoneId = string.IsNullOrWhiteSpace(dto.TimeZoneId) ? null : dto.TimeZoneId.Trim();
         invitation.MeetingMode = mode;
-        invitation.MeetingLink = string.IsNullOrWhiteSpace(dto.MeetingLink) ? null : dto.MeetingLink.Trim();
+        // SCRUM-482: lưu absolute URL để candidate FE không bị prepend origin khi thiếu https://
+        invitation.MeetingLink = RecommendationP1Rules.NormalizeMeetingLink(dto.MeetingLink);
         invitation.Location = string.IsNullOrWhiteSpace(dto.Location) ? null : dto.Location.Trim();
     }
 }

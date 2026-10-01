@@ -167,7 +167,24 @@ public static class StudioQuestionRegenHelper
         return note;
     }
 
-    /// <summary>SCRUM-429: tóm tắt câu khác để LLM tránh trùng ý.</summary>
+    /// <summary>SCRUM-496: gộp câu đang regen + siblings cho AVOID_QUESTIONS.</summary>
+    public static IReadOnlyList<string> MergeAvoidContents(string? currentContent, IEnumerable<string>? siblingContents)
+    {
+        var list = new List<string>();
+        if (!string.IsNullOrWhiteSpace(currentContent))
+            list.Add(currentContent);
+        if (siblingContents is not null)
+        {
+            foreach (var s in siblingContents)
+            {
+                if (!string.IsNullOrWhiteSpace(s))
+                    list.Add(s);
+            }
+        }
+        return list;
+    }
+
+    /// <summary>SCRUM-429: tóm tắt câu khác để LLM tránh trùng ý. SCRUM-496: gồm cả câu đang regen.</summary>
     public static string? BuildAvoidQuestionsNote(IEnumerable<string> otherQuestionContents, int maxItems = 12, int maxLenEach = 120)
     {
         var parts = new List<string>();

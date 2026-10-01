@@ -46,6 +46,7 @@ public class AdminSubscriptionPlanService : IAdminSubscriptionPlanService
     private readonly IUserRepository _userRepo;
     private readonly ISePayGateway _sePay;
     private readonly SePaySettings _sePaySettings;
+    private readonly ISubscriptionPaymentRealtimeNotifier _realtimeNotifier;
 
     private static readonly int[] AllowedPeriodMonths = [1, 3, 6, 12];
 
@@ -57,7 +58,8 @@ public class AdminSubscriptionPlanService : IAdminSubscriptionPlanService
         IUsageMeteringService metering,
         IUserRepository userRepo,
         ISePayGateway sePay,
-        IOptions<SePaySettings> sePaySettings)
+        IOptions<SePaySettings> sePaySettings,
+        ISubscriptionPaymentRealtimeNotifier realtimeNotifier)
     {
         _planRepo = planRepo;
         _subscriptionRepo = subscriptionRepo;
@@ -67,6 +69,7 @@ public class AdminSubscriptionPlanService : IAdminSubscriptionPlanService
         _userRepo = userRepo;
         _sePay = sePay;
         _sePaySettings = sePaySettings.Value;
+        _realtimeNotifier = realtimeNotifier;
     }
 
     public async Task<List<SubscriptionPlanDto>> ListAsync()
@@ -492,6 +495,8 @@ public class AdminSubscriptionPlanService : IAdminSubscriptionPlanService
             Note = BuildAdminNote("Grant Premium", adminUserId, months, dto.Note)
         });
 
+        await TryNotifySubscriptionChangedAsync(userId, premium.Code, "Granted");
+
         return await BuildUserSubscriptionDetailAsync(sub);
     }
 
@@ -524,6 +529,8 @@ public class AdminSubscriptionPlanService : IAdminSubscriptionPlanService
             ConfirmedAt = DateTime.UtcNow,
             Note = BuildAdminNote("Extend Premium period", adminUserId, months, dto.Note)
         });
+
+        await TryNotifySubscriptionChangedAsync(userId, premium.Code, "Extended");
 
         return await BuildUserSubscriptionDetailAsync(sub);
     }
@@ -571,6 +578,8 @@ public class AdminSubscriptionPlanService : IAdminSubscriptionPlanService
             ConfirmedAt = now,
             Note = BuildAdminNote("Revoke → Free", adminUserId, periodMonths: null, dto.Note)
         });
+
+        await TryNotifySubscriptionChangedAsync(userId, free.Code, "Revoked");
 
         return await BuildUserSubscriptionDetailAsync(sub);
     }
@@ -625,6 +634,8 @@ public class AdminSubscriptionPlanService : IAdminSubscriptionPlanService
         sub.CancelledAt = null;
         sub.CancelAtPeriodEnd = false;
         sub.LimitsSnapshotJson = premium.LimitsJson;
+        // Reset cooldown Free — Premium không dùng Last; tránh dính nếu snapshot lệch.
+        sub.LastSuccessfulGenerateAt = null;
         sub.CurrentPeriodStart = now;
         sub.CurrentPeriodEnd = now.AddMonths(months);
         sub.UpdatedAt = now;
@@ -653,6 +664,18 @@ public class AdminSubscriptionPlanService : IAdminSubscriptionPlanService
             return plan.Audience;
 
         return SubscriptionAudience.Candidate;
+    }
+
+    private async Task TryNotifySubscriptionChangedAsync(Guid userId, string planCode, string action)
+    {
+        try
+        {
+            await _realtimeNotifier.NotifySubscriptionChangedAsync(userId, planCode, action);
+        }
+        catch (Exception)
+        {
+            // Notifier đã log nội bộ; không fail Admin API.
+        }
     }
 
     private static string BuildAdminNote(string action, Guid adminUserId, int? periodMonths, string? note)

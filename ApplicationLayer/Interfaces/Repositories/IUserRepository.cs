@@ -13,6 +13,9 @@ public interface IUserRepository : IBaseRepository<User>
     Task<User?> GetByEmailVerificationTokenAsync(string tokenHash);
     Task<(List<User> Users, int Total)> GetPagedAsync(UserQueryDto query);
 
+    /// <summary>SCRUM-480: đếm user theo role + status trên toàn bộ dữ liệu.</summary>
+    Task<AdminUserStatsDto> GetAdminStatsAsync();
+
     /// <summary>Tìm user bất kể IsActive — dùng cho Admin.</summary>
     Task<User?> GetByIdAnyStatusAsync(Guid id);
 

@@ -5,7 +5,7 @@ using WebAPI.Hubs;
 
 namespace WebAPI.Realtime;
 
-/// <summary>Đẩy PaymentPaid qua SignalR tới đúng user đã mở modal thanh toán.</summary>
+/// <summary>Đẩy PaymentPaid / SubscriptionChanged qua SignalR tới đúng user.</summary>
 public class SignalRSubscriptionPaymentNotifier : ISubscriptionPaymentRealtimeNotifier
 {
     private readonly IHubContext<SubscriptionPaymentHub> _hub;
@@ -51,6 +51,37 @@ public class SignalRSubscriptionPaymentNotifier : ISubscriptionPaymentRealtimeNo
             _logger.LogWarning(ex,
                 "SignalR PaymentPaid thất bại user={UserId} order={OrderCode}",
                 userId, orderCode);
+        }
+    }
+
+    public async Task NotifySubscriptionChangedAsync(
+        Guid userId,
+        string planCode,
+        string action,
+        CancellationToken ct = default)
+    {
+        var payload = new SubscriptionChangedEventDto
+        {
+            PlanCode = planCode,
+            Action = action,
+            ChangedAt = DateTime.UtcNow
+        };
+
+        try
+        {
+            await _hub.Clients
+                .Group(SubscriptionPaymentHub.UserGroup(userId))
+                .SendAsync(SubscriptionPaymentHub.SubscriptionChangedEvent, payload, ct);
+
+            _logger.LogInformation(
+                "SignalR SubscriptionChanged → user={UserId} plan={PlanCode} action={Action}",
+                userId, planCode, action);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "SignalR SubscriptionChanged thất bại user={UserId} plan={PlanCode}",
+                userId, planCode);
         }
     }
 }
