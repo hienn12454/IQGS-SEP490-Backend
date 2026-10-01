@@ -354,6 +354,10 @@ public class AppDbContext : DbContext
             entity.HasIndex(qs => qs.SourcePlanId);
             entity.HasIndex(qs => qs.SourceRunId);
             entity.HasIndex(qs => new { qs.Kind, qs.Status, qs.IsActive });
+
+            // SCRUM-464: Practice vs Tuyển + anti-cheat HR
+            entity.Property(qs => qs.IsHiringAssessment).IsRequired().HasDefaultValue(false);
+            entity.Property(qs => qs.HrAntiCheatEnabled).IsRequired().HasDefaultValue(false);
         });
 
         modelBuilder.Entity<CandidatePersonalSetJob>(entity =>
@@ -736,6 +740,9 @@ public class AppDbContext : DbContext
             entity.Property(s => s.TabLeaveCount).IsRequired().HasDefaultValue(0);
             // SCRUM-464: lần complete đầu trên bộ Tuyển
             entity.Property(s => s.IsOfficialTest).IsRequired().HasDefaultValue(false);
+            // SCRUM-497: khóa retake sau đủ strike integrity
+            entity.Property(s => s.IntegrityTerminated).IsRequired().HasDefaultValue(false);
+            entity.HasIndex(s => new { s.CandidateUserId, s.QuestionSetId, s.IntegrityTerminated });
 
             entity.HasOne(s => s.QuestionSet)
                   .WithMany()
@@ -897,9 +904,9 @@ public class AppDbContext : DbContext
             const string hrPremiumLimits =
                 "{\"generateCooldownHours\":0,\"generateUnlimited\":true,\"planRegeneratePerDraft\":5,\"questionRegenPerPlan\":0,\"canExport\":true,\"askAiPerMonth\":1000,\"canPublish\":true,\"freeVisiblePercent\":100,\"canPersistHrRecommendation\":false,\"feedbackOnlyOnVisible\":false,\"canDetailedAiFeedback\":true,\"freeTeaserFeedbackCount\":0}";
             const string candidateFreeLimits =
-                "{\"generateCooldownHours\":0,\"generateUnlimited\":false,\"planRegeneratePerDraft\":0,\"canExport\":false,\"askAiPerMonth\":0,\"canPublish\":false,\"freeVisiblePercent\":100,\"canPersistHrRecommendation\":false,\"feedbackOnlyOnVisible\":false,\"canDetailedAiFeedback\":false,\"freeTeaserFeedbackCount\":1,\"canGeneratePersonalSet\":false,\"personalSetPerMonth\":0}";
+                "{\"generateCooldownHours\":0,\"generateUnlimited\":false,\"planRegeneratePerDraft\":0,\"canExport\":false,\"askAiPerMonth\":0,\"canPublish\":false,\"freeVisiblePercent\":100,\"canPersistHrRecommendation\":false,\"feedbackOnlyOnVisible\":false,\"canDetailedAiFeedback\":false,\"freeTeaserFeedbackCount\":0,\"canGeneratePersonalSet\":false,\"personalSetPerMonth\":0,\"practicePerMonth\":5,\"maxSavedSessions\":10,\"fullAiFeedbackPerMonth\":1}";
             const string candidatePremiumLimits =
-                "{\"generateCooldownHours\":0,\"generateUnlimited\":false,\"planRegeneratePerDraft\":0,\"canExport\":false,\"askAiPerMonth\":0,\"canPublish\":false,\"freeVisiblePercent\":100,\"canPersistHrRecommendation\":true,\"feedbackOnlyOnVisible\":false,\"canDetailedAiFeedback\":true,\"freeTeaserFeedbackCount\":0,\"canGeneratePersonalSet\":true,\"personalSetPerMonth\":10}";
+                "{\"generateCooldownHours\":0,\"generateUnlimited\":false,\"planRegeneratePerDraft\":0,\"canExport\":false,\"askAiPerMonth\":0,\"canPublish\":false,\"freeVisiblePercent\":100,\"canPersistHrRecommendation\":true,\"feedbackOnlyOnVisible\":false,\"canDetailedAiFeedback\":true,\"freeTeaserFeedbackCount\":0,\"canGeneratePersonalSet\":true,\"personalSetPerMonth\":10,\"practicePerMonth\":0,\"maxSavedSessions\":0,\"fullAiFeedbackPerMonth\":0}";
 
             entity.HasData(
                 new SubscriptionPlan

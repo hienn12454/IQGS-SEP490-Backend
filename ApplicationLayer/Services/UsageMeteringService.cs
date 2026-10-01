@@ -175,6 +175,8 @@ public class UsageMeteringService : IUsageMeteringService
             UsageType.HrPlanRegenerate => limits.PlanRegeneratePerDraft,
             UsageType.HrQuestionRegen => Math.Max(0, limits.QuestionRegenPerPlan),
             UsageType.CandidatePersonalSet => limits.PersonalSetPerMonth,
+            UsageType.CandidatePractice => Math.Max(0, limits.PracticePerMonth),
+            UsageType.CandidateFullAiFeedback => Math.Max(0, limits.FullAiFeedbackPerMonth),
             UsageType.HrGenerateSet when string.Equals(scopeKey, HrGenerateWindow.ScopeKey, StringComparison.Ordinal)
                 => HrGenerateWindow.ResolveMax(limits),
             _ => 0

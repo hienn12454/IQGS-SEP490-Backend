@@ -33,5 +33,11 @@ public class PracticeSession : BaseEntity
     /// <summary>SCRUM-464: lần complete đầu trên bộ Tuyển — ghi lịch sử HR; retry = false.</summary>
     public bool IsOfficialTest { get; set; }
 
+    /// <summary>
+    /// SCRUM-497: phiên kết thúc vì đủ strike integrity (webcam/tab/fullscreen…).
+    /// Candidate bị khóa làm lại cùng bộ câu hỏi (kể cả tab ẩn danh).
+    /// </summary>
+    public bool IntegrityTerminated { get; set; }
+
     public QuestionSet QuestionSet { get; set; } = null!;
 }

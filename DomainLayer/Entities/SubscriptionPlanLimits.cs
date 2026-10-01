@@ -63,6 +63,25 @@ public class SubscriptionPlanLimits
     /// <summary>Số bộ Personal được sinh mỗi kỳ subscription (0 = không được).</summary>
     public int PersonalSetPerMonth { get; set; }
 
+    /// <summary>
+    /// Candidate: số phiên luyện tập mới / kỳ (SCRUM-498).
+    /// 0 = không giới hạn. Free mặc định 5.
+    /// </summary>
+    public int PracticePerMonth { get; set; }
+
+    /// <summary>
+    /// Candidate: số phiên COMPLETED IsActive được giữ trong history.
+    /// 0 = không giới hạn. Free mặc định 10. Vượt cap → soft-delete phiên cũ nhất.
+    /// </summary>
+    public int MaxSavedSessions { get; set; }
+
+    /// <summary>
+    /// Candidate Free: số phiên complete được AI feedback cả bộ / kỳ (SCRUM-498).
+    /// Premium dùng CanDetailedAiFeedback (không phụ thuộc field này). 0 trên Free = không có lượt full AI.
+    /// Free mặc định 1 (lượt đầu trong kỳ).
+    /// </summary>
+    public int FullAiFeedbackPerMonth { get; set; }
+
     public static SubscriptionPlanLimits HrFree() => new()
     {
         GenerateCooldownHours = 24,
@@ -108,9 +127,12 @@ public class SubscriptionPlanLimits
         CanPersistHrRecommendation = false,
         FeedbackOnlyOnVisible = false,
         CanDetailedAiFeedback = false,
-        FreeTeaserFeedbackCount = 1,
+        FreeTeaserFeedbackCount = 0,
         CanGeneratePersonalSet = false,
-        PersonalSetPerMonth = 0
+        PersonalSetPerMonth = 0,
+        PracticePerMonth = 5,
+        MaxSavedSessions = 10,
+        FullAiFeedbackPerMonth = 1
     };
 
     public static SubscriptionPlanLimits CandidatePremium() => new()
@@ -127,6 +149,9 @@ public class SubscriptionPlanLimits
         CanDetailedAiFeedback = true,
         FreeTeaserFeedbackCount = 0,
         CanGeneratePersonalSet = true,
-        PersonalSetPerMonth = 10
+        PersonalSetPerMonth = 10,
+        PracticePerMonth = 0,
+        MaxSavedSessions = 0,
+        FullAiFeedbackPerMonth = 0
     };
 }

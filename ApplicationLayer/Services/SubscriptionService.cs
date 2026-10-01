@@ -530,6 +530,8 @@ public class SubscriptionService : ISubscriptionService
         var askAi = await _metering.GetUsageAsync(sub.UserId, UsageType.HrAskAi);
         var generate = await _metering.GetUsageAsync(sub.UserId, UsageType.HrGenerateSet);
         var generateWindow = await _metering.GetUsageAsync(sub.UserId, UsageType.HrGenerateSet, HrGenerateWindow.ScopeKey);
+        var practice = await _metering.GetUsageAsync(sub.UserId, UsageType.CandidatePractice);
+        var fullAi = await _metering.GetUsageAsync(sub.UserId, UsageType.CandidateFullAiFeedback);
 
         return new MySubscriptionDto
         {
@@ -549,6 +551,10 @@ public class SubscriptionService : ISubscriptionService
             GenerateSetUsed = generate.UsedCount,
             GenerateWindowUsed = generateWindow.UsedCount,
             GenerateWindowLimit = HrGenerateWindow.ResolveMax(limits),
+            PracticeUsed = practice.UsedCount,
+            PracticeLimit = Math.Max(0, limits.PracticePerMonth),
+            FullAiFeedbackUsed = fullAi.UsedCount,
+            FullAiFeedbackLimit = Math.Max(0, limits.FullAiFeedbackPerMonth),
             Entitlements = new SubscriptionEntitlementsDto
             {
                 CanExport = limits.CanExport,

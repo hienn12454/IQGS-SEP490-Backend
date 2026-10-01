@@ -27,7 +27,10 @@ public static class StudioQuestionRegenHelper
         if (t.Length > MaxInstructionLength)
             t = t[..MaxInstructionLength];
         // HrNote dùng ; — thay newline bằng space
-        return string.Join(' ', t.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+        var flattened = string.Join(' ', t.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+        // HrNote dùng ";" để ngăn cách các key (CONTENT_MODE=...; HR_REGEN_NOTE=...).
+        // Nếu HR gõ ";" trong lưu ý thì RAG sẽ tưởng lưu ý kết thúc ở đó → đổi thành ",".
+        return flattened.Replace(';', ',');
     }
 
     public static PlanOutlineItemDto ResolveSlot(
@@ -137,13 +140,28 @@ public static class StudioQuestionRegenHelper
         var templatesSegment = codeTemplates.Count > 0
             ? string.Join(",", codeTemplates)
             : "BUG_DETECTION,CODE_COMPLETION";
+        var hrInstruction = NormalizeInstruction(instruction);
+        var hasHrInstruction = !string.IsNullOrWhiteSpace(hrInstruction);
+
         var sb = new StringBuilder();
-        sb.Append($"STUDIO_UI=1; STUDIO_REGEN=1; Studio project {projectId}; plan {planId}; question {questionId}; ");
+        sb.Append("STUDIO_UI=1; STUDIO_REGEN=1; ");
+
+        // Đặt lưu ý HR lên ĐẦU hrNote: RAG chỉ lấy ~500 ký tự đầu hrNote để truy vấn tài liệu.
+        // Trước đây lưu ý nằm cuối (sau GUID, language, STRICT_FOCUS...) nên bị cắt mất,
+        // RAG vẫn đi tìm tài liệu của chủ đề cũ dù HR gõ "hỏi về OOP".
+        if (hasHrInstruction)
+            sb.Append($"HR_REGEN_NOTE={hrInstruction}; ");
+
+        sb.Append($"Studio project {projectId}; plan {planId}; question {questionId}; ");
         sb.Append($"CONTENT_MODE={contentMode}; CODE_TEMPLATES={templatesSegment}; {langInstruction}");
-        var note = StudioRagPlanHrNoteBuilder.AppendQuestionFocusConstraint(sb.ToString(), focusNames);
-        var hr = NormalizeInstruction(instruction);
-        if (!string.IsNullOrWhiteSpace(hr))
-            note = note.TrimEnd() + $"; HR_REGEN_NOTE={hr}";
+        var note = sb.ToString();
+
+        // Chỉ khóa STRICT_FOCUS khi HR KHÔNG ghi lưu ý (regen "đổi câu khác cùng chủ đề").
+        // Khi HR có lưu ý, họ có thể muốn chủ đề ngoài focus của plan (vd. OOP) —
+        // giữ STRICT_FOCUS thì LLM bị ép quay về focus cũ và chỉ viết lại câu cũ.
+        if (!hasHrInstruction)
+            note = StudioRagPlanHrNoteBuilder.AppendQuestionFocusConstraint(note, focusNames);
+
         if (!string.IsNullOrWhiteSpace(avoidQuestionsNote))
             note = note.TrimEnd() + "; " + avoidQuestionsNote.Trim();
         return note;
@@ -189,7 +207,11 @@ public static class StudioQuestionRegenHelper
             rag.EvaluationCriteria?.Cast<object>().ToList());
         var rubricDisplay = RubricNormalizer.ToDisplayText(rubricDoc);
 
-        var lockedGoal = (slot.Goal ?? "").Trim();
+        // RAG chỉ bật TopicOverridden khi HR ghi lưu ý regen và LLM đã đổi sang chủ đề mới.
+        // Khi đó skill/focus/goal/nguồn của slot cũ không còn đúng với nội dung câu mới nữa.
+        var topicOverridden = rag.TopicOverridden;
+
+        var lockedGoal = topicOverridden ? "" : (slot.Goal ?? "").Trim();
         var rationale = !string.IsNullOrWhiteSpace(lockedGoal)
             ? lockedGoal
             : (string.IsNullOrWhiteSpace(rag.Rationale) ? null : rag.Rationale.Trim());
@@ -197,14 +219,17 @@ public static class StudioQuestionRegenHelper
         if (string.IsNullOrWhiteSpace(rubricDisplay) && !string.IsNullOrWhiteSpace(rationale))
             rubricDisplay = rationale;
 
-        var citations = slot.Citations is { Count: > 0 }
+        var citations = slot.Citations is { Count: > 0 } && !topicOverridden
             ? CitationsToObjects(slot.Citations)
             : rag.Citations ?? new List<object>();
 
+        // SCRUM-495: mặc định khóa skill/focus/type từ slot HR (chống LLM tự lệch chủ đề).
+        // Ngoại lệ: HR chủ động yêu cầu chủ đề khác qua lưu ý regen → lấy skill/focus RAG trả về.
+        var (skill, focusArea) = ResolveSkillAndFocus(slot, rag, topicOverridden);
         var meta = new StudioRagQuestionMapper.QuestionMeta
         {
-            Skill = string.IsNullOrWhiteSpace(rag.Skill) ? slot.Skill : rag.Skill.Trim(),
-            FocusArea = string.IsNullOrWhiteSpace(rag.FocusArea) ? slot.FocusArea : rag.FocusArea.Trim(),
+            Skill = skill,
+            FocusArea = focusArea,
             Rationale = rationale,
             CodeTemplateType = string.IsNullOrWhiteSpace(rag.CodeTemplateType) ? null : rag.CodeTemplateType.Trim(),
             CodeSnippet = string.IsNullOrWhiteSpace(rag.CodeSnippet) ? null : rag.CodeSnippet.Trim(),
@@ -234,6 +259,23 @@ public static class StudioQuestionRegenHelper
         target.GeneratedByModelName = "RAG";
         target.TagsJson = StudioRagQuestionMapper.SerializeMeta(meta);
         target.UpdatedAt = DateTime.UtcNow;
+    }
+
+    /// <summary>Chọn skill/focus lưu vào câu: slot HR (mặc định) hoặc RAG (khi HR đổi chủ đề).</summary>
+    private static (string? Skill, string? FocusArea) ResolveSkillAndFocus(
+        PlanOutlineItemDto slot,
+        RagGeneratedQuestionDto rag,
+        bool topicOverridden)
+    {
+        var slotSkill = string.IsNullOrWhiteSpace(slot.Skill) ? null : slot.Skill.Trim();
+        var slotFocus = string.IsNullOrWhiteSpace(slot.FocusArea) ? null : slot.FocusArea.Trim();
+        if (!topicOverridden)
+            return (slotSkill, slotFocus);
+
+        // RAG không trả skill/focus thì vẫn giữ của slot, tránh để trống nhãn trên UI.
+        var ragSkill = string.IsNullOrWhiteSpace(rag.Skill) ? slotSkill : rag.Skill.Trim();
+        var ragFocus = string.IsNullOrWhiteSpace(rag.FocusArea) ? slotFocus : rag.FocusArea.Trim();
+        return (ragSkill, ragFocus);
     }
 
     private static JsonObject BuildOutlineJson(PlanOutlineItemDto slot)

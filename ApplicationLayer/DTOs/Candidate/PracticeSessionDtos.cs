@@ -185,14 +185,20 @@ public class PracticeSessionRow
     public DateTime? CompletedAt { get; set; }
 }
 
-/// <summary>SCRUM-446: sự kiện integrity từ FE (hiện chỉ TAB_HIDDEN).</summary>
+/// <summary>SCRUM-446 / SCRUM-497: sự kiện integrity từ FE (TAB_HIDDEN hoặc terminate sau 3 strike).</summary>
 public class PracticeIntegrityEventDto
 {
-    /// <summary>TAB_HIDDEN — candidate rời tab / ẩn trang.</summary>
+    /// <summary>TAB_HIDDEN — rời tab; hoặc loại strike FE (NO_FACE, TAB_SWITCH, …) khi terminated.</summary>
     public string EventType { get; set; } = "TAB_HIDDEN";
+
+    /// <summary>SCRUM-497: đủ 3 strike — FE gửi trước khi hủy phiên; BE khóa retake bộ câu hỏi.</summary>
+    public bool Terminated { get; set; }
+
+    /// <summary>Alias FE (integrityTerminated) — cùng nghĩa với Terminated.</summary>
+    public bool IntegrityTerminated { get; set; }
 }
 
-/// <summary>SCRUM-446: phản hồi sau khi ghi nhận vi phạm (hoặc bỏ qua do debounce / anti-cheat tắt).</summary>
+/// <summary>SCRUM-446 / SCRUM-497: phản hồi sau khi ghi nhận vi phạm (hoặc bỏ qua do debounce / anti-cheat tắt).</summary>
 public class PracticeIntegrityEventResponseDto
 {
     public Guid SessionId { get; set; }
@@ -204,4 +210,6 @@ public class PracticeIntegrityEventResponseDto
     public bool AutoSubmitted { get; set; }
     /// <summary>True nếu event bị bỏ qua do debounce / snapshot off / session không IN_PROGRESS.</summary>
     public bool Ignored { get; set; }
+    /// <summary>SCRUM-497: phiên đã khóa integrity — candidate không được làm lại bộ này.</summary>
+    public bool IntegrityTerminated { get; set; }
 }
