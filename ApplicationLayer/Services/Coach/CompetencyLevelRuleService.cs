@@ -13,12 +13,20 @@ public static class CompetencyLevelRuleService
     /// <summary>Một skill trong profile: điểm hiện tại + bậc khó đã chứng minh.</summary>
     public sealed record ProfileSkill(string Skill, double Score, string? DemonstratedDifficulty);
 
+    /// <summary>
+    /// Kết quả resolve level. SCRUM-509: thêm ngưỡng để FE hiện tiêu chí dễ đọc (không dump công thức).
+    /// </summary>
     public sealed record LevelResolution(
         string? AchievedLevel,
         double TargetMetRatio,
         double RequiredDifficultyRatio,
         double HardEvidenceRatio,
-        string Explanation);
+        string Explanation,
+        double Overall = 0,
+        double OverallThreshold = 0,
+        double TargetMetThreshold = 0,
+        double RequiredDifficultyThreshold = 0,
+        double HardEvidenceThreshold = 0);
 
     /// <summary>
     /// Level cao nhất thoả ĐỒNG THỜI 4 điều kiện của rule: overall, tỉ lệ skill đạt target,
@@ -32,7 +40,7 @@ public static class CompetencyLevelRuleService
         IReadOnlyList<CompetencyLevelRule> rules)
     {
         if (frameworkSkills.Count == 0)
-            return new LevelResolution(null, 0, 0, 0, "Framework không có skill nào để đánh giá.");
+            return new LevelResolution(null, 0, 0, 0, "Framework không có skill nào để đánh giá.", overall);
 
         var bySkill = profileSkills.ToDictionary(
             s => CompetencyScoringService.NormalizeSkill(s.Skill),
@@ -61,14 +69,21 @@ public static class CompetencyLevelRuleService
         var requiredRatio = Math.Round(requiredMet / total, 4);
         var hardRatio = Math.Round(hardEvidence / total, 4);
 
-        var achieved = rules
+        var activeRules = rules
             .Where(r => r.IsActive)
             .OrderByDescending(r => r.SortOrder)
-            .FirstOrDefault(r =>
-                overall >= r.OverallThreshold
-                && targetRatio >= r.TargetMetRatio
-                && requiredRatio >= r.RequiredDifficultyRatio
-                && hardRatio >= r.HardEvidenceRatio);
+            .ToList();
+
+        var achieved = activeRules.FirstOrDefault(r =>
+            overall >= r.OverallThreshold
+            && targetRatio >= r.TargetMetRatio
+            && requiredRatio >= r.RequiredDifficultyRatio
+            && hardRatio >= r.HardEvidenceRatio);
+
+        // Ngưỡng hiển thị: rule đã đạt, hoặc rule thấp nhất nếu chưa đạt.
+        var thresholdRule = achieved
+            ?? activeRules.OrderBy(r => r.SortOrder).FirstOrDefault()
+            ?? DefaultRules().OrderBy(r => r.SortOrder).First();
 
         var explanation = achieved is null
             ? $"Chưa đạt level thấp nhất: overall {overall:0.#}, đạt target {targetRatio:P0}, "
@@ -78,7 +93,17 @@ public static class CompetencyLevelRuleService
               + $"evidence đúng mức yêu cầu {requiredRatio:P0} ≥ {achieved.RequiredDifficultyRatio:P0}, "
               + $"evidence mức hard {hardRatio:P0} ≥ {achieved.HardEvidenceRatio:P0}.";
 
-        return new LevelResolution(achieved?.Level, targetRatio, requiredRatio, hardRatio, explanation);
+        return new LevelResolution(
+            achieved?.Level,
+            targetRatio,
+            requiredRatio,
+            hardRatio,
+            explanation,
+            overall,
+            thresholdRule.OverallThreshold,
+            thresholdRule.TargetMetRatio,
+            thresholdRule.RequiredDifficultyRatio,
+            thresholdRule.HardEvidenceRatio);
     }
 
     /// <summary>

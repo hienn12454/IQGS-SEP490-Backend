@@ -1,4 +1,5 @@
 using System.Text.Json;
+using ApplicationLayer.DTOs.Candidate;
 using ApplicationLayer.DTOs.Coach;
 using ApplicationLayer.Interfaces.Repositories;
 using DomainLayer.Constants;
@@ -39,7 +40,9 @@ public sealed record ProfileMergeResult(
     List<SkillDelta> SkillDeltas,
     string? AchievedLevel,
     string LevelExplanation,
-    double CoverageRatio);
+    double CoverageRatio,
+    // SCRUM-509: tiêu chí level có cấu trúc cho FE (null nếu không resolve được).
+    CoachLevelCriteriaDto? LevelCriteria = null);
 
 public class CompetencyProfileService : ICompetencyProfileService
 {
@@ -214,8 +217,23 @@ public class CompetencyProfileService : ICompetencyProfileService
             deltas,
             level.AchievedLevel,
             level.Explanation,
-            coverage);
+            coverage,
+            ToLevelCriteria(level));
     }
+
+    /// <summary>SCRUM-509: snapshot tiêu chí từ LevelResolution.</summary>
+    public static CoachLevelCriteriaDto ToLevelCriteria(CompetencyLevelRuleService.LevelResolution level)
+        => new()
+        {
+            Overall = Math.Round(level.Overall, 2),
+            OverallThreshold = level.OverallThreshold,
+            TargetMetRatio = level.TargetMetRatio,
+            TargetMetThreshold = level.TargetMetThreshold,
+            RequiredRatio = level.RequiredDifficultyRatio,
+            RequiredThreshold = level.RequiredDifficultyThreshold,
+            HardRatio = level.HardEvidenceRatio,
+            HardThreshold = level.HardEvidenceThreshold
+        };
 
     public async Task<CompetencyLevelRuleService.LevelResolution> ResolveLevelAsync(
         CandidateSkillPlan profile,

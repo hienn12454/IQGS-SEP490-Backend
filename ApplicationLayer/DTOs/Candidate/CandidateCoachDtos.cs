@@ -128,6 +128,8 @@ public class CoachAssessmentDto
     /// <summary>Level cao nhất thoả rule global trên competency profile (không phải LLM).</summary>
     public string? AchievedLevel { get; set; }
     public string? LevelExplanation { get; set; }
+    /// <summary>SCRUM-509: tiêu chí level có cấu trúc — FE hiện Đạt/Chưa đạt, không dump công thức.</summary>
+    public CoachLevelCriteriaDto? LevelCriteria { get; set; }
     public double? CoverageRatio { get; set; }
     /// <summary>SCRUM-457: Target Readiness — không dùng AchievedLevel làm headline seniority.</summary>
     public string? ResolutionMode { get; set; }
@@ -151,6 +153,19 @@ public class CoachSkillGapDto
     public double TargetScore { get; set; }
     public double Gap { get; set; }
     public double PriorityScore { get; set; }
+}
+
+/// <summary>SCRUM-509: 4 tiêu chí suy level — FE hiện nhãn người dùng + Đạt/Chưa đạt.</summary>
+public class CoachLevelCriteriaDto
+{
+    public double Overall { get; set; }
+    public double OverallThreshold { get; set; }
+    public double TargetMetRatio { get; set; }
+    public double TargetMetThreshold { get; set; }
+    public double RequiredRatio { get; set; }
+    public double RequiredThreshold { get; set; }
+    public double HardRatio { get; set; }
+    public double HardThreshold { get; set; }
 }
 
 public class CoachSkillResultDto

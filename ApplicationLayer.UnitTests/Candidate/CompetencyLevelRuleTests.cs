@@ -22,6 +22,13 @@ public sealed class CompetencyLevelRuleTests
         };
         var result = CompetencyLevelRuleService.Resolve(90, skills, fw, CompetencyLevelRuleService.DefaultRules());
         Assert.Equal(CoachSeniorityLevel.Senior, result.AchievedLevel);
+        // SCRUM-509: snapshot ngưỡng để FE map criteria — không đổi logic chấm.
+        Assert.Equal(85, result.OverallThreshold);
+        Assert.Equal(0.9, result.TargetMetThreshold);
+        Assert.Equal(0.9, result.RequiredDifficultyThreshold);
+        Assert.Equal(0.8, result.HardEvidenceThreshold);
+        Assert.True(result.Overall >= result.OverallThreshold);
+        Assert.True(result.TargetMetRatio >= result.TargetMetThreshold);
     }
 
     [Fact]

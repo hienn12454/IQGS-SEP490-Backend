@@ -1279,6 +1279,7 @@ public class CoachCompetencyService : ICoachCompetencyService
                 achievedLevel = merge.AchievedLevel,
                 estimatedBand = merge.AchievedLevel,
                 levelExplanation = merge.LevelExplanation,
+                levelCriteria = merge.LevelCriteria,
                 coverageRatio = merge.CoverageRatio,
                 scopeSkills = skillsToScore.Select(s => s.Skill).ToList(),
                 previousOverall = merge.PreviousOverall,
@@ -1961,6 +1962,8 @@ public class CoachCompetencyService : ICoachCompetencyService
 
         if (root.TryGetProperty("levelExplanation", out var exp))
             dto.LevelExplanation = exp.GetString();
+        if (root.TryGetProperty("levelCriteria", out var crit) && crit.ValueKind == JsonValueKind.Object)
+            dto.LevelCriteria = ParseLevelCriteria(crit);
         if (root.TryGetProperty("coverageRatio", out var cov) && cov.TryGetDouble(out var c))
             dto.CoverageRatio = c;
         if (root.TryGetProperty("previousOverall", out var prev) && prev.TryGetDouble(out var p))
@@ -1975,6 +1978,36 @@ public class CoachCompetencyService : ICoachCompetencyService
             dto.TargetLevel = tl.GetString();
         if (root.TryGetProperty("readinessStatus", out var rs) && string.IsNullOrWhiteSpace(dto.ReadinessStatus))
             dto.ReadinessStatus = rs.GetString();
+    }
+
+    /// <summary>SCRUM-509: đọc levelCriteria từ ExplanationJson (report cũ thiếu → null).</summary>
+    private static CoachLevelCriteriaDto? ParseLevelCriteria(JsonElement crit)
+    {
+        static double? Num(JsonElement el, params string[] keys)
+        {
+            foreach (var k in keys)
+            {
+                if (el.TryGetProperty(k, out var p) && p.TryGetDouble(out var v))
+                    return v;
+            }
+            return null;
+        }
+
+        var overall = Num(crit, "overall", "Overall");
+        var overallTh = Num(crit, "overallThreshold", "OverallThreshold");
+        if (overall is null && overallTh is null) return null;
+
+        return new CoachLevelCriteriaDto
+        {
+            Overall = overall ?? 0,
+            OverallThreshold = overallTh ?? 0,
+            TargetMetRatio = Num(crit, "targetMetRatio", "TargetMetRatio") ?? 0,
+            TargetMetThreshold = Num(crit, "targetMetThreshold", "TargetMetThreshold") ?? 0,
+            RequiredRatio = Num(crit, "requiredRatio", "RequiredRatio") ?? 0,
+            RequiredThreshold = Num(crit, "requiredThreshold", "RequiredThreshold") ?? 0,
+            HardRatio = Num(crit, "hardRatio", "HardRatio") ?? 0,
+            HardThreshold = Num(crit, "hardThreshold", "HardThreshold") ?? 0
+        };
     }
 
     private static CoachRoadmapDto MapRoadmap(CandidateRoadmap r) => MapRoadmapCore(r, null);
