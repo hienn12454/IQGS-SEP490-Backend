@@ -142,7 +142,7 @@ public class CandidateCoachController : ControllerBase
         return SuccessResp.Ok(result);
     }
 
-    /// <summary>SCRUM-462: toggle topic trên draft Suggested (không gọi LLM).</summary>
+    /// <summary>SCRUM-462 / SCRUM-484: toggle + reorder topic/skill trên draft Suggested (không gọi LLM).</summary>
     [HttpPatch("roadmaps/draft")]
     public async Task<IActionResult> UpdateRoadmapDraft([FromBody] UpdateRoadmapDraftDto dto)
     {
@@ -183,6 +183,14 @@ public class CandidateCoachController : ControllerBase
     public async Task<IActionResult> StartReassessment(Guid id, CancellationToken ct)
     {
         var result = await _coach.StartReassessmentAsync(User.GetUserId(), id, ct);
+        return SuccessResp.Ok(result);
+    }
+
+    /// <summary>SCRUM-486: xem tài liệu nguồn KB (md/pdf/docx) gắn roadmap.</summary>
+    [HttpGet("knowledge-documents/{documentId:guid}/view")]
+    public async Task<IActionResult> ViewKnowledgeSource(Guid documentId, CancellationToken ct)
+    {
+        var result = await _coach.GetKnowledgeSourceViewAsync(User.GetUserId(), documentId, ct);
         return SuccessResp.Ok(result);
     }
 }

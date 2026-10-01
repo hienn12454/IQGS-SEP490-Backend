@@ -27,6 +27,7 @@ public sealed class RoadmapAcceptTests
             Mock.Of<ICandidateProfileRepository>(),
             Mock.Of<ICompetencyFrameworkRepository>(),
             Mock.Of<ICompetencyFrameworkResolver>(),
+            Mock.Of<ICompetencyRoleFamilyRepository>(),
             Mock.Of<ICompetencyResolver>(),
             Mock.Of<IAdaptiveBlueprintBuilder>(),
             Mock.Of<ICandidateAssessmentRepository>(),
@@ -35,10 +36,12 @@ public sealed class RoadmapAcceptTests
             Mock.Of<IAiFeedbackRepository>(),
             Mock.Of<ICandidateAnswerRepository>(),
             Mock.Of<ICandidateMarketplaceRepository>(),
+            Mock.Of<IPracticeSessionRepository>(),
             gate.Object,
             Mock.Of<IJobScheduler>(),
             Mock.Of<ICompetencyProfileService>(),
-            Mock.Of<IRoadmapRecommendationService>());
+            Mock.Of<IRoadmapRecommendationService>(),
+            Mock.Of<ICoachKnowledgeViewService>());
     }
 
     private static CandidateRoadmap MakeDraft(string skill, bool includeTopic, bool withGate = true)

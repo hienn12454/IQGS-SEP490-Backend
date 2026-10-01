@@ -198,50 +198,50 @@ public static class DiagnosticBlueprintBuilder
     }
 
     /// <summary>
-    /// Blueprint drill: độ khó + số câu theo band competency hiện tại.
-    /// SCRUM-488: đọc count / weakBandRatio / remix từ Admin <see cref="CompetencyScoringPolicy"/>.
+    /// SCRUM-488: blueprint drill với số câu adaptive + khó theo band.
     /// </summary>
     public static object BuildDrill(
         string skill,
         string topic,
         double? currentScore,
         double targetScore,
-        CompetencyScoringPolicy? policy = null)
+        int questionCount,
+        double weakBandRatio = 0.6)
     {
-        var bandScore = currentScore ?? 0;
-        var weakRatio = policy is { DrillWeakBandRatio: > 0 and <= 1 }
-            ? policy.DrillWeakBandRatio
-            : 0.6;
-        var countWeak = ClampDrillCount(policy?.DrillQuestionCountWeak ?? 20);
-        var countMid = ClampDrillCount(policy?.DrillQuestionCountMid ?? 15);
-        var countStrong = ClampDrillCount(policy?.DrillQuestionCountStrong ?? 10);
+        var count = Math.Clamp(questionCount, 5, 40);
+        var band = currentScore ?? 0;
+        var target = targetScore > 0 ? targetScore : 70;
+        var ratio = weakBandRatio is > 0 and <= 1 ? weakBandRatio : 0.6;
 
-        string bandKey;
-        int count;
-        if (bandScore < targetScore * weakRatio)
+        // Ramp difficulty theo band — phân bổ đều trên `count` câu
+        var diffs = new string[count];
+        for (var i = 0; i < count; i++)
         {
-            bandKey = "weak";
-            count = countWeak;
+            var t = count == 1 ? 0.5 : (double)i / (count - 1);
+            if (band < target * ratio)
+            {
+                // Weak: chủ yếu easy → medium
+                diffs[i] = t < 0.55
+                    ? QuestionDifficultyLevel.Easy
+                    : QuestionDifficultyLevel.Medium;
+            }
+            else if (band < target)
+            {
+                // Mid: easy / medium / hard
+                diffs[i] = t < 0.25
+                    ? QuestionDifficultyLevel.Easy
+                    : t < 0.7
+                        ? QuestionDifficultyLevel.Medium
+                        : QuestionDifficultyLevel.Hard;
+            }
+            else
+            {
+                // Strong: medium → hard
+                diffs[i] = t < 0.35
+                    ? QuestionDifficultyLevel.Medium
+                    : QuestionDifficultyLevel.Hard;
+            }
         }
-        else if (bandScore < targetScore)
-        {
-            bandKey = "mid";
-            count = countMid;
-        }
-        else
-        {
-            bandKey = "strong";
-            count = countStrong;
-        }
-
-        var diffs = BuildDrillDifficulties(count, bandKey);
-        var remixEnabled = policy?.DrillRemixEnabled ?? true;
-        var remixRatio = policy is { DrillRemixRatio: >= 0 and <= 1 }
-            ? policy.DrillRemixRatio
-            : 0.35;
-        var weakAnswerMax = policy?.DrillWeakAnswerScoreMaxExclusive > 0
-            ? policy.DrillWeakAnswerScoreMaxExclusive
-            : 50;
 
         var outline = diffs
             .Select((d, i) => (object)new
@@ -256,10 +256,6 @@ public static class DiagnosticBlueprintBuilder
                 goal = $"Drill {topic} ({skill})"
             })
             .ToList();
-
-        var remixNote = remixEnabled
-            ? $" Remix: ~{remixRatio:0.##} slot là biến thể concept từ câu từng score AI < {weakAnswerMax} (không copy nguyên văn)."
-            : " Remix câu yếu: tắt.";
 
         return new
         {
@@ -280,33 +276,8 @@ public static class DiagnosticBlueprintBuilder
                 .ToList(),
             recommendedQuestionOutline = outline,
             notes = $"Chỉ hỏi skill \"{skill}\", tập trung topic \"{topic}\". "
-                    + $"Band={bandKey}; sinh ĐÚNG {count} câu theo outline, không lặp đề cũ, không bịa JD."
-                    + remixNote
+                    + $"Sinh ĐÚNG {count} câu theo outline, không lặp đề cũ, không bịa JD."
         };
-    }
-
-    /// <summary>Khớp UI Admin [5, 40]; tránh sinh đề quá dài/ngắn.</summary>
-    public static int ClampDrillCount(int n) => Math.Clamp(n <= 0 ? 10 : n, 5, 40);
-
-    /// <summary>Phân bố độ khó theo band — giữ pattern cũ (weak=E/M, mid=E/M/H, strong=M/H) khi scale số câu.</summary>
-    public static string[] BuildDrillDifficulties(int count, string bandKey)
-    {
-        var diffs = new string[count];
-        for (var i = 0; i < count; i++)
-        {
-            var t = (i + 1.0) / count;
-            diffs[i] = bandKey switch
-            {
-                "weak" => t <= 0.65 ? QuestionDifficultyLevel.Easy : QuestionDifficultyLevel.Medium,
-                "mid" => t <= 0.30
-                    ? QuestionDifficultyLevel.Easy
-                    : t <= 0.70
-                        ? QuestionDifficultyLevel.Medium
-                        : QuestionDifficultyLevel.Hard,
-                _ => t <= 0.40 ? QuestionDifficultyLevel.Medium : QuestionDifficultyLevel.Hard
-            };
-        }
-        return diffs;
     }
 
     public static List<object> BuildDifficultyDistribution(IEnumerable<BlueprintQuestion> questions)

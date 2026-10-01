@@ -59,7 +59,17 @@ public class CoachContextDto
     public double ResolutionConfidence { get; set; }
     public string? ResolutionReason { get; set; }
     public List<string> SupportedRoles { get; set; } = new();
+    /// <summary>SCRUM-494: catalog Role Family cho dropdown Vị trí mục tiêu (optgroup theo GroupName).</summary>
+    public List<CoachRoleFamilyOptionDto> AvailableRoleFamilies { get; set; } = new();
     public List<string> DetectedSkills { get; set; } = new();
+}
+
+/// <summary>SCRUM-494: một role family trong catalog dropdown.</summary>
+public class CoachRoleFamilyOptionDto
+{
+    public string FamilyKey { get; set; } = string.Empty;
+    public string DisplayName { get; set; } = string.Empty;
+    public string? GroupName { get; set; }
 }
 
 /// <summary>SCRUM-453: một vai trò trong catalog framework (data-driven, không hardcode stack).</summary>
@@ -176,7 +186,9 @@ public class CoachRoadmapDto
     public string? SkillSource { get; set; }
     /// <summary>Lý do gợi ý khi skillSource = outsideCv.</summary>
     public string? OutsideCvReason { get; set; }
-    /// <summary>SCRUM-488: ngưỡng qua topic drill (điểm phải &gt; giá trị này) — từ Admin policy.</summary>
+    /// <summary>SCRUM-484: thứ tự luyện skill (0 = trước).</summary>
+    public int DisplayOrder { get; set; }
+    /// <summary>SCRUM-488: ngưỡng pass drill (điểm phải &gt; giá trị này) — từ Admin policy.</summary>
     public double DrillPassScoreExclusiveMin { get; set; } = 70;
     public List<CoachRoadmapItemDto> Items { get; set; } = new();
 }
@@ -195,22 +207,49 @@ public class CoachRoadmapItemDto
     public string? TopicReason { get; set; }
     public double? DrillScore { get; set; }
     public Guid? DrillQuestionSetId { get; set; }
+    /// <summary>SCRUM-484: session luyện đã nộp — FE deep-link xem lại feedback.</summary>
+    public Guid? DrillSessionId { get; set; }
+    /// <summary>SCRUM-489: mọi phiên COMPLETED trên cùng DrillQuestionSetId (cũ → mới).</summary>
+    public List<CoachDrillAttemptDto> DrillAttempts { get; set; } = new();
     public string? SourceUrl { get; set; }
     public string? SourceTitle { get; set; }
+    /// <summary>SCRUM-486: KB doc gắn node — FE mở viewer trong app.</summary>
+    public Guid? KnowledgeDocumentId { get; set; }
+    /// <summary>SCRUM-486: true khi doc AllowCandidateView và đã gắn node.</summary>
+    public bool CanViewSource { get; set; }
     public List<string> Prerequisites { get; set; } = new();
     public List<string> NextTopics { get; set; } = new();
 }
 
-/// <summary>SCRUM-462: cập nhật toggle topic trên draft Suggested.</summary>
+/// <summary>SCRUM-489: một lần nộp drill (COMPLETED) trên topic — FE link xem lại feedback.</summary>
+public class CoachDrillAttemptDto
+{
+    public Guid SessionId { get; set; }
+    public double? Score { get; set; }
+    public DateTime? CompletedAt { get; set; }
+}
+
+/// <summary>SCRUM-462 / SCRUM-484: toggle topic + reorder skill/topic trên draft Suggested.</summary>
 public class UpdateRoadmapDraftDto
 {
     public List<UpdateRoadmapDraftItemDto> Items { get; set; } = new();
+    /// <summary>SCRUM-484: đổi DisplayOrder các skill draft.</summary>
+    public List<UpdateRoadmapDraftRoadmapDto> Roadmaps { get; set; } = new();
 }
 
 public class UpdateRoadmapDraftItemDto
 {
     public Guid ItemId { get; set; }
-    public bool IsIncluded { get; set; }
+    /// <summary>null = không đổi IsIncluded.</summary>
+    public bool? IsIncluded { get; set; }
+    /// <summary>null = không đổi SortOrder. Gate bỏ qua.</summary>
+    public int? SortOrder { get; set; }
+}
+
+public class UpdateRoadmapDraftRoadmapDto
+{
+    public Guid RoadmapId { get; set; }
+    public int DisplayOrder { get; set; }
 }
 
 /// <summary>SCRUM-462: chấp nhận toàn bộ roadmap Suggested đang active.</summary>

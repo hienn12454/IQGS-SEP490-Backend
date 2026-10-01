@@ -85,4 +85,9 @@ public interface IRoadmapNodeRepository
     Task UpsertRangeAsync(IReadOnlyList<RoadmapNode> nodes);
     Task DeleteAsync(Guid id);
     Task<HashSet<string>> ListKnownRoleKeysAsync();
+    /// <summary>SCRUM-486</summary>
+    Task<RoadmapNode?> GetByIdAsync(Guid id);
+    Task UpdateAsync(RoadmapNode node);
+    /// <summary>Gắn KnowledgeDocumentId cho nodes có SourceUrl kết thúc bằng fileName.</summary>
+    Task<List<Guid>> LinkByFilenameAsync(Guid knowledgeDocumentId, string fileName);
 }

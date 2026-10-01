@@ -25,5 +25,8 @@ public class KnowledgeDocument : BaseEntity
     /// <summary>SCRUM-450: nhóm folder ảo trên UI Admin (vd. swe). Không đổi Blob path.</summary>
     public string? Folder { get; set; }
 
+    /// <summary>SCRUM-486: Admin cho phép Candidate xem file gốc (SYSTEM only; default false).</summary>
+    public bool AllowCandidateView { get; set; }
+
     public ICollection<KnowledgeChunk> Chunks { get; set; } = new List<KnowledgeChunk>();
 }

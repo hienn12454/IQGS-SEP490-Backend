@@ -90,6 +90,11 @@ public class CandidateCvService : ICandidateCvService
             parseResult.RejectReason);
         ItDomainClassifyGate.EnsureCvHasSkills(parseResult.Skills);
 
+        // SCRUM-493: chuẩn hóa skill CV trước khi persist (en-dash, (), drop non-IT…)
+        var skills = CoachSkillFormat.SanitizeList(parseResult.Skills);
+        ItDomainClassifyGate.EnsureCvHasSkills(skills);
+        parseResult.Skills = skills;
+
         var profile = await _candidateProfileRepository.GetByUserIdAsync(userId);
         var oldBlobPath = profile?.CvBlobPath;
 

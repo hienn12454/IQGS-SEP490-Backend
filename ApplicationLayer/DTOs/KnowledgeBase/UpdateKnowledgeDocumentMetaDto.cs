@@ -14,4 +14,7 @@ public class UpdateKnowledgeDocumentMetaDto
 
     /// <summary>true = gán Folder=null (unsorted), kể cả khi Folder null.</summary>
     public bool ClearFolder { get; set; }
+
+    /// <summary>SCRUM-486: null = không đổi; true/false = Admin bật/tắt Candidate xem file.</summary>
+    public bool? AllowCandidateView { get; set; }
 }

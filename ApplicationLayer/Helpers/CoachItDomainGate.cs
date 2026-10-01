@@ -36,7 +36,7 @@ public static class CoachItDomainGate
 
         var blob = string.Join("\n", parts);
         if (string.IsNullOrWhiteSpace(blob))
-            throw new BadRequestException("Hãy upload CV (hoặc thêm TechStack) trước khi dùng AI Coach.");
+            throw new BadRequestException("Hãy upload CV trước khi dùng AI Coach.");
 
         var err = JobDescriptionValidator.ValidateItDomain(blob);
         if (err is not null)

@@ -546,6 +546,44 @@ public class RoadmapNodeRepository : IRoadmapNodeRepository
         await _db.SaveChangesAsync();
     }
 
+    public Task<RoadmapNode?> GetByIdAsync(Guid id)
+        => _db.RoadmapNodes.FirstOrDefaultAsync(n => n.Id == id);
+
+    public async Task UpdateAsync(RoadmapNode node)
+    {
+        node.UpdatedAt = DateTime.UtcNow;
+        _db.RoadmapNodes.Update(node);
+        await _db.SaveChangesAsync();
+    }
+
+    public async Task<List<Guid>> LinkByFilenameAsync(Guid knowledgeDocumentId, string fileName)
+    {
+        var name = (fileName ?? "").Trim();
+        if (name.Length == 0) return new List<Guid>();
+
+        // Match SourceUrl kết thúc bằng /fileName hoặc đúng fileName (case-insensitive)
+        var nodes = await _db.RoadmapNodes
+            .Where(n => n.IsActive && n.SourceUrl != null && n.SourceUrl != "")
+            .ToListAsync();
+
+        var linked = new List<Guid>();
+        foreach (var n in nodes)
+        {
+            var url = n.SourceUrl ?? "";
+            if (!url.EndsWith(name, StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(Path.GetFileName(url.Replace('\\', '/')), name, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            n.KnowledgeDocumentId = knowledgeDocumentId;
+            n.UpdatedAt = DateTime.UtcNow;
+            linked.Add(n.Id);
+        }
+
+        if (linked.Count > 0)
+            await _db.SaveChangesAsync();
+        return linked;
+    }
+
     public async Task DeleteAsync(Guid id)
     {
         var node = await _db.RoadmapNodes.FirstOrDefaultAsync(n => n.Id == id);
@@ -599,6 +637,7 @@ public class CompetencyRoleFamilyRepository : ICompetencyRoleFamilyRepository
         else
         {
             existing.DisplayName = family.DisplayName;
+            existing.GroupName = family.GroupName;
             existing.Status = family.Status;
             existing.SortOrder = family.SortOrder;
             existing.Description = family.Description;

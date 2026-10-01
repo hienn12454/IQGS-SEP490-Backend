@@ -91,7 +91,7 @@ public class AdminKnowledgeDocumentsController : ControllerBase
         return SuccessResp.Ok(result);
     }
 
-    /// <summary>SCRUM-447/450: PATCH type + AdminNote + Folder.</summary>
+    /// <summary>SCRUM-447/450/486: PATCH type + AdminNote + Folder + AllowCandidateView.</summary>
     [HttpPatch("{id:guid}")]
     public async Task<IActionResult> UpdateMeta(Guid id, [FromBody] UpdateKnowledgeDocumentMetaDto body)
     {
@@ -101,7 +101,8 @@ public class AdminKnowledgeDocumentsController : ControllerBase
             body.AdminNote,
             body.Folder,
             updateFolder: body.Folder is not null || body.ClearFolder,
-            ownerIdFilter: null);
+            ownerIdFilter: null,
+            allowCandidateView: body.AllowCandidateView);
         return SuccessResp.Ok(result);
     }
 

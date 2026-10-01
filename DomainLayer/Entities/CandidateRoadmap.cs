@@ -20,6 +20,8 @@ public class CandidateRoadmap : BaseEntity
     public string SourceMode { get; set; } = Constants.CompetencySourceMode.Framework;
     /// <summary>SCRUM-462: null = chưa Accept preview; có giá trị = candidate đã chấp nhận lộ trình.</summary>
     public DateTime? AcceptedAt { get; set; }
+    /// <summary>SCRUM-484: thứ tự hiển thị/luyện skill trong preview (0 = học trước). Khác PriorityScore (điểm ưu tiên AI).</summary>
+    public int DisplayOrder { get; set; }
 
     public CandidateAssessment? SourceAssessment { get; set; }
     public CompetencyFramework? Framework { get; set; }

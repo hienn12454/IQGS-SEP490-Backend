@@ -141,6 +141,11 @@ public class RoadmapRecommendationService : IRoadmapRecommendationService
 
         if (toAdd.Count == 0) return;
 
+        // SCRUM-484: DisplayOrder theo PriorityScore (cao → học trước = 0).
+        var ranked = toAdd.OrderByDescending(r => r.PriorityScore).ThenBy(r => r.Skill).ToList();
+        for (var i = 0; i < ranked.Count; i++)
+            ranked[i].DisplayOrder = i;
+
         var existing = await _roadmaps.ListAllByCandidateAsync(candidateUserId);
         var previouslyActiveIds = existing.Where(r => r.IsActive).Select(r => r.Id).ToList();
         await _roadmaps.ArchiveActiveByCandidateAsync(candidateUserId);
@@ -192,6 +197,10 @@ public class RoadmapRecommendationService : IRoadmapRecommendationService
                 var cvSkills = ParseCvSkillsFromSnapshot(assessment.ContextSnapshotJson);
                 var created = await BuildRoadmapAsync(
                     candidateUserId, assessment, framework, blueprint, result.Skill, current, target, gap, weight, fwSkill, bpSkill, cvSkills);
+                // SCRUM-484: skill mới sau reassessment — đặt cuối danh sách đang active.
+                created.DisplayOrder = active.Count == 0
+                    ? 0
+                    : active.Max(r => r.DisplayOrder) + 1;
                 await _roadmaps.AddRangeAsync(new[] { created });
                 continue;
             }

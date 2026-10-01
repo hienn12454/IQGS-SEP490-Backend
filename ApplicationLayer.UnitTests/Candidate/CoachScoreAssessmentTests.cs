@@ -296,6 +296,7 @@ public sealed class CoachScoreAssessmentTests
             Mock.Of<ICandidateProfileRepository>(),
             frameworks ?? Mock.Of<ICompetencyFrameworkRepository>(),
             Mock.Of<ICompetencyFrameworkResolver>(),
+            Mock.Of<ICompetencyRoleFamilyRepository>(),
             Mock.Of<ICompetencyResolver>(),
             Mock.Of<IAdaptiveBlueprintBuilder>(),
             assessments ?? Mock.Of<ICandidateAssessmentRepository>(),
@@ -304,8 +305,10 @@ public sealed class CoachScoreAssessmentTests
             feedbacks ?? Mock.Of<IAiFeedbackRepository>(),
             answers ?? Mock.Of<ICandidateAnswerRepository>(),
             marketplace ?? Mock.Of<ICandidateMarketplaceRepository>(),
+            Mock.Of<IPracticeSessionRepository>(),
             Mock.Of<ISubscriptionGateService>(),
             Mock.Of<IJobScheduler>(),
             profile ?? Mock.Of<ICompetencyProfileService>(),
-            roadmap ?? Mock.Of<IRoadmapRecommendationService>());
+            roadmap ?? Mock.Of<IRoadmapRecommendationService>(),
+            Mock.Of<ICoachKnowledgeViewService>());
 }

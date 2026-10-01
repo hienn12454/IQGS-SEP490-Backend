@@ -275,4 +275,20 @@ public class KnowledgeDocumentRepository : IKnowledgeDocumentRepository
             await _context.SaveChangesAsync();
         return docs.Count;
     }
+
+    public async Task<IReadOnlyDictionary<Guid, bool>> GetAllowCandidateViewMapAsync(IReadOnlyCollection<Guid> documentIds)
+    {
+        if (documentIds.Count == 0)
+            return new Dictionary<Guid, bool>();
+
+        var ids = documentIds.Distinct().ToList();
+        var rows = await _context.KnowledgeDocuments
+            .AsNoTracking()
+            .Where(d => ids.Contains(d.Id) && d.IsActive
+                && d.Scope == KnowledgeDocumentScope.System)
+            .Select(d => new { d.Id, d.AllowCandidateView })
+            .ToListAsync();
+
+        return rows.ToDictionary(x => x.Id, x => x.AllowCandidateView);
+    }
 }
