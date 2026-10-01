@@ -212,6 +212,10 @@ public static class StudioQuestionRegenHelper
         if (string.IsNullOrWhiteSpace(rag.Question))
             throw new InvalidOperationException("RAG không trả nội dung câu hỏi.");
 
+        // Thiếu đáp án mẫu thì không ghi đè câu cũ — response thiếu trường không được xóa dữ liệu hợp lệ.
+        if (includeSampleAnswers && string.IsNullOrWhiteSpace(rag.SampleAnswer))
+            throw new InvalidOperationException("RAG không trả đáp án mẫu — giữ nguyên câu hỏi cũ.");
+
         var existingMeta = StudioRagQuestionMapper.ParseMeta(target.TagsJson);
         var blobPath = existingMeta.AttachedImageBlobPath;
 

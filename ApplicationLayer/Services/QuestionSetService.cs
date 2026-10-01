@@ -987,6 +987,9 @@ public class QuestionSetService : IQuestionSetService
     {
         ValidateQuestionInput(text, questionType, difficulty);
 
+        // Chuẩn hóa và chặn trước khi gán field — rubric sai không được ghi, draft cũ trên DB giữ nguyên.
+        var criteriaJson = SerializeEvaluationCriteria(evaluationCriteria);
+
         question.Question = text.Trim();
         question.QuestionType = QuestionTypeNormalizer.Normalize(new List<string> { questionType }).First();
         question.Difficulty = difficulty.Trim();
@@ -995,33 +998,23 @@ public class QuestionSetService : IQuestionSetService
         question.Rationale = rationale?.Trim();
         question.SampleAnswer = sampleAnswer?.Trim();
         question.AnswerMethod = AnswerMethodNormalizer.Require(answerMethod);
-        question.EvaluationCriteriaJson = SerializeEvaluationCriteria(evaluationCriteria);
+        question.EvaluationCriteriaJson = criteriaJson;
         question.CitationsJson = JsonSerializer.Serialize(citations, JsonOptions);
     }
 
-    /// <summary>SCRUM-418: Chuẩn hóa rubric trước khi lưu jsonb.</summary>
+    /// <summary>SCRUM-418: Chuẩn hóa rubric trước khi lưu jsonb. Trọng số đã ghi mà tổng ≠ 100 thì 400.</summary>
     private static string SerializeEvaluationCriteria(List<object> evaluationCriteria)
     {
+        RubricNormalizer.RubricDocumentV1 doc;
         if (evaluationCriteria is not { Count: > 0 })
-            return RubricNormalizer.SerializeForStorage(RubricNormalizer.NormalizeFromJson(null));
+            doc = RubricNormalizer.NormalizeFromJson(null);
+        else
+            doc = RubricNormalizer.NormalizeFromObjects(evaluationCriteria);
 
-        var first = evaluationCriteria[0];
-        if (first is JsonElement el && el.ValueKind == JsonValueKind.Object
-            && el.TryGetProperty("criteria", out _))
-        {
-            return RubricNormalizer.SerializeForStorage(
-                RubricNormalizer.NormalizeFromObjects(evaluationCriteria));
-        }
+        if (RubricNormalizer.IsWeightInvalid(doc))
+            throw new BadRequestException(RubricNormalizer.WeightInvalidMessage);
 
-        if (first is JsonElement el2 && el2.ValueKind == JsonValueKind.Object
-            && (el2.TryGetProperty("label", out _) || el2.TryGetProperty("anchors", out _)))
-        {
-            var doc = RubricNormalizer.NormalizeFromObjects(evaluationCriteria);
-            return RubricNormalizer.SerializeForStorage(doc);
-        }
-
-        var docFromLegacy = RubricNormalizer.NormalizeFromObjects(evaluationCriteria);
-        return RubricNormalizer.SerializeForStorage(docFromLegacy);
+        return RubricNormalizer.SerializeForStorage(doc);
     }
 
     private async Task NormalizeQuestionOrdersAsync(Guid questionSetId)

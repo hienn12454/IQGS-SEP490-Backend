@@ -2543,6 +2543,17 @@ public sealed class QuestionGenerationService(
             return true;
         }
 
+        // Chặn trước khi apply: sample rỗng không được xóa đáp án đang có. FE poll thấy Failed và retry được.
+        if (run.IncludeSampleAnswers && string.IsNullOrWhiteSpace(ragQ.SampleAnswer))
+        {
+            run.Status = DomainLayer.Studio.Enums.QuestionGenerationStatus.Failed;
+            run.ErrorCode = "RAG_REGEN_SAMPLE_MISSING";
+            run.ErrorMessage = "RAG không trả đáp án mẫu. Câu cũ được giữ nguyên — có thể thử regenerate lại.";
+            run.FailedAt = DateTime.UtcNow;
+            await dbContext.SaveChangesAsync(ct);
+            return true;
+        }
+
         try
         {
             var slot = StudioQuestionRegenHelper.ResolveSlot(q, plan?.SourcePlanJson);
@@ -2599,13 +2610,8 @@ public sealed class QuestionGenerationService(
         await projectService.EnsureProjectAccessAsync(projectId, userId, true, ct);
         var q = await dbContext.InterviewQuestions.FirstOrDefaultAsync(x => x.Id == questionId && x.ProjectId == projectId && x.IsActive, ct)
             ?? throw new StudioBusinessException("QUESTION_NOT_FOUND", 404, "Không tìm thấy câu hỏi.");
-        q.Content = request.Content.Trim();
-        q.Difficulty = request.Difficulty;
-        q.Type = request.Type;
-        q.EstimatedMinutes = request.EstimatedMinutes;
-        q.ExpectedAnswer = request.ExpectedAnswer;
 
-        var meta = StudioRagQuestionMapper.ParseMeta(q.TagsJson);
+        // Chặn trước khi sửa entity — rubric 90%/110%/không đọc được không ghi đè bản đang lưu.
         RubricNormalizer.RubricDocumentV1 rubricDoc;
         if (!string.IsNullOrWhiteSpace(request.RubricJson))
             rubricDoc = RubricNormalizer.NormalizeFromJson(request.RubricJson);
@@ -2618,6 +2624,17 @@ public sealed class QuestionGenerationService(
         else
             rubricDoc = RubricNormalizer.NormalizeFromJson(null);
 
+        if (RubricNormalizer.IsWeightInvalid(rubricDoc))
+            throw new StudioBusinessException("RUBRIC_WEIGHT_INVALID", StatusCodes.Status400BadRequest,
+                RubricNormalizer.WeightInvalidMessage);
+
+        q.Content = request.Content.Trim();
+        q.Difficulty = request.Difficulty;
+        q.Type = request.Type;
+        q.EstimatedMinutes = request.EstimatedMinutes;
+        q.ExpectedAnswer = request.ExpectedAnswer;
+
+        var meta = StudioRagQuestionMapper.ParseMeta(q.TagsJson);
         StudioRagQuestionMapper.ApplyRubricToMeta(meta, rubricDoc);
         q.ScoringRubric = RubricNormalizer.ToDisplayText(rubricDoc);
         if (string.IsNullOrWhiteSpace(q.ScoringRubric))

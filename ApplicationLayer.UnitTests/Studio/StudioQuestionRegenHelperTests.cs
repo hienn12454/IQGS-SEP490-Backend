@@ -94,6 +94,36 @@ public sealed class StudioQuestionRegenHelperTests
     }
 
     [Fact]
+    public void ApplyRagResult_MissingSampleAnswer_DoesNotOverwrite()
+    {
+        var target = new InterviewQuestion
+        {
+            Content = "old question",
+            ExpectedAnswer = "old answer",
+            ScoringRubric = "[50%] A\n[50%] B",
+            OrderIndex = 1,
+            Type = QuestionType.Technical,
+            Difficulty = QuestionDifficulty.Easy,
+        };
+        var slot = new PlanOutlineItemDto(1, "technical", "easy", "React", "Hooks", "goal", "Text");
+        var rag = new RagGeneratedQuestionDto
+        {
+            Question = "new question",
+            SampleAnswer = "  ",
+            QuestionType = "technical",
+            Difficulty = "easy",
+        };
+
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            StudioQuestionRegenHelper.ApplyRagResultToQuestion(target, rag, slot, true, true));
+
+        Assert.Contains("đáp án mẫu", ex.Message);
+        Assert.Equal("old question", target.Content);
+        Assert.Equal("old answer", target.ExpectedAnswer);
+        Assert.Equal("[50%] A\n[50%] B", target.ScoringRubric);
+    }
+
+    [Fact]
     public void NormalizeInstruction_TrimsAndFlattens()
     {
         Assert.Null(StudioQuestionRegenHelper.NormalizeInstruction("  "));
@@ -188,6 +218,7 @@ public sealed class StudioQuestionRegenHelperTests
             Skill = "OOP",
             FocusArea = "Polymorphism",
             Rationale = "Kiểm tra hiểu đa hình",
+            SampleAnswer = "Overloading khác chữ ký, overriding ghi đè hành vi.",
             TopicOverridden = true
         };
 

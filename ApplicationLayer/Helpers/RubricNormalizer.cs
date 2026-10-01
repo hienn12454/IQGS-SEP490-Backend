@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 
 namespace ApplicationLayer.Helpers;
 
@@ -18,6 +19,15 @@ public static class RubricNormalizer
 
     public const int RubricVersion = 1;
     public const string DefaultScale = "0-100";
+
+    /// <summary>HR nhập sai trọng số — không lưu, không tự chia lại cho đủ 100%.</summary>
+    public const string WeightInvalidMessage =
+        "Tổng trọng số rubric phải bằng 100% và mỗi tiêu chí là số nguyên dương. Dòng không đúng dạng [50%] Tên tiêu chí bị từ chối.";
+
+    /// <summary>[50%] Nhãn — số nguyên, có thể âm để bị chặn. Phần thập phân coi là không đọc được.</summary>
+    private static readonly Regex DisplayWeightRegex = new(
+        @"^\[(?<num>-?\d+(?:\.\d+)?)%\]\s*(?<label>.*)$",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     private static readonly string[] DefaultAnchorKeys = ["25", "50", "75", "100"];
 
@@ -139,6 +149,21 @@ public static class RubricNormalizer
             "\n",
             doc.Criteria.Select(c =>
                 $"[{c.Weight}%] {c.Label}"));
+    }
+
+    /// <summary>
+    /// Trọng số đã ghi nhưng không hợp lệ (tổng ≠ 100, ≤ 0, hoặc dòng [..%] không đọc được).
+    /// Rubric trống hoặc legacy không có số (đã được chia đều) thì hợp lệ.
+    /// </summary>
+    public static bool IsWeightInvalid(RubricDocumentV1? doc)
+    {
+        if (doc?.Criteria is not { Count: > 0 })
+            return false;
+
+        if (doc.Criteria.Any(c => c.Weight <= 0))
+            return true;
+
+        return doc.Criteria.Sum(c => c.Weight) != 100;
     }
 
     /// <summary>Publish gate: ≥1 criterion, weight=100, mỗi criterion ≥2 anchors.</summary>
@@ -289,6 +314,30 @@ public static class RubricNormalizer
     private static RubricCriterionV1 CreateCriterionFromLabel(string label, int index)
     {
         var trimmed = label.Trim();
+        var match = DisplayWeightRegex.Match(trimmed);
+        if (match.Success)
+        {
+            var num = match.Groups["num"].Value;
+            var inner = match.Groups["label"].Value.Trim();
+            // [50%] Nhãn đọc được. Số thập phân hoặc thiếu nhãn: giữ dòng gốc, weight âm để bị chặn.
+            if (inner.Length > 0 && !num.Contains('.') && int.TryParse(num, out var weight))
+            {
+                return new RubricCriterionV1
+                {
+                    Id = Slugify(inner, $"criterion-{index + 1}"),
+                    Label = inner,
+                    Weight = weight,
+                    Anchors = DefaultAnchorsForLabel(inner)
+                };
+            }
+
+            return UnreadableCriterion(trimmed, index);
+        }
+
+        // Có dấu [ nhưng không phải [số%] — không nuốt vào nhãn rồi chia đều.
+        if (trimmed.StartsWith('['))
+            return UnreadableCriterion(trimmed, index);
+
         return new RubricCriterionV1
         {
             Id = Slugify(trimmed, $"criterion-{index + 1}"),
@@ -297,6 +346,15 @@ public static class RubricNormalizer
             Anchors = DefaultAnchorsForLabel(trimmed)
         };
     }
+
+    private static RubricCriterionV1 UnreadableCriterion(string raw, int index)
+        => new()
+        {
+            Id = $"unreadable-{index + 1}",
+            Label = raw,
+            Weight = -1,
+            Anchors = DefaultAnchorsForLabel(raw)
+        };
 
     private static Dictionary<string, string> DefaultAnchorsForLabel(string label)
     {
@@ -309,12 +367,16 @@ public static class RubricNormalizer
         };
     }
 
+    /// <summary>
+    /// Chỉ chia đều khi mọi tiêu chí chưa có trọng số (legacy, weight = 0).
+    /// Số HR đã ghi — kể cả 90% hoặc số âm — được giữ nguyên để bước lưu/publish từ chối.
+    /// </summary>
     private static void DistributeWeightsEvenly(List<RubricCriterionV1> criteria)
     {
         if (criteria.Count == 0)
             return;
 
-        if (criteria.All(c => c.Weight > 0) && criteria.Sum(c => c.Weight) == 100)
+        if (criteria.Any(c => c.Weight != 0))
             return;
 
         var baseWeight = 100 / criteria.Count;
@@ -324,15 +386,7 @@ public static class RubricNormalizer
     }
 
     private static void RebalanceWeightsIfNeeded(RubricDocumentV1 doc)
-    {
-        if (doc.Criteria.Count == 0)
-            return;
-
-        if (doc.Criteria.All(c => c.Weight > 0) && doc.Criteria.Sum(c => c.Weight) == 100)
-            return;
-
-        DistributeWeightsEvenly(doc.Criteria);
-    }
+        => DistributeWeightsEvenly(doc.Criteria);
 
     private static string? ReadString(JsonElement el, params string[] names)
     {
