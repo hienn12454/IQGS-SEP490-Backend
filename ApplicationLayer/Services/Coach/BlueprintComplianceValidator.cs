@@ -1,5 +1,6 @@
 using System.Text.Json;
 using ApplicationLayer.DTOs.Rag;
+using ApplicationLayer.Helpers;
 
 namespace ApplicationLayer.Services.Coach;
 
@@ -120,52 +121,22 @@ public static class BlueprintComplianceValidator
             question.Order = slot.Order;
             question.Skill = slot.Skill;
             question.Difficulty = slot.Difficulty;
-            if (string.IsNullOrWhiteSpace(question.FocusArea))
-                question.FocusArea = slot.Topic;
+            // SCRUM-503: topic cũng lấy theo slot — trước đây chỉ gán khi rỗng nên FocusArea
+            // do LLM tự khai có thể lệch khỏi topic candidate vừa luyện.
+            question.FocusArea = string.IsNullOrWhiteSpace(slot.Topic) ? question.FocusArea : slot.Topic;
             normalized.Add(question);
         }
 
         return new Result(true, null, normalized);
     }
 
-    /// <summary>Map tên skill LLM trả về (vd. "C# .NET") sang skill chuẩn của framework ("C#").</summary>
+    /// <summary>
+    /// Map tên skill LLM trả về (vd. "C# .NET") sang skill chuẩn của framework ("C#").
+    /// SCRUM-503: so khớp theo token qua <see cref="TechSkillMatcher"/> — trước đây dùng
+    /// substring nên "JavaScript" lọt vào slot "Java" rồi bị dán nhãn thành Java.
+    /// </summary>
     public static string? MapSkill(string? raw, IReadOnlyList<string> allowedSkills)
-    {
-        var value = Normalize(raw);
-        if (value.Length == 0) return null;
-
-        foreach (var allowed in allowedSkills)
-            if (Normalize(allowed) == value)
-                return allowed;
-
-        // Chứa lẫn nhau: "asp.net core web api" ~ "asp.net core"; chọn skill khớp dài nhất cho ổn định.
-        string? best = null;
-        var bestLen = 0;
-        foreach (var allowed in allowedSkills)
-        {
-            var a = Normalize(allowed);
-            if (a.Length == 0) continue;
-            if ((value.Contains(a, StringComparison.Ordinal) || a.Contains(value, StringComparison.Ordinal))
-                && a.Length > bestLen)
-            {
-                best = allowed;
-                bestLen = a.Length;
-            }
-        }
-        return best;
-    }
-
-    /// <summary>Bỏ dấu cách và ký tự phụ để "EF Core" == "efcore" == "ef-core".</summary>
-    private static string Normalize(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value)) return string.Empty;
-        var chars = value
-            .Trim()
-            .ToLowerInvariant()
-            .Where(c => char.IsLetterOrDigit(c) || c == '#' || c == '+' || c == '.')
-            .ToArray();
-        return new string(chars);
-    }
+        => TechSkillMatcher.MapToAllowed(raw, allowedSkills);
 
     private static string? ReadString(JsonElement element, string property)
         => element.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.String

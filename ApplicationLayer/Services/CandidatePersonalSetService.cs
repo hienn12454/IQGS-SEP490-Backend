@@ -273,6 +273,12 @@ public class CandidatePersonalSetService : ICandidatePersonalSetService
                 var compliance = BlueprintComplianceValidator.Validate(blueprintSlots, qFast.Questions);
                 if (!compliance.Ok)
                     throw new ServerFailureException(compliance.Error ?? "Bộ câu hỏi không khớp blueprint năng lực.");
+
+                // SCRUM-503: nhãn skill đúng blueprint vẫn có thể kèm nội dung lệch
+                // (vd. slot Java nhưng câu hỏi nói về JavaScript) → fail job thay vì chấm điểm sai.
+                var relevance = QuestionRelevanceValidator.Check(compliance.Questions);
+                if (!relevance.Ok)
+                    throw new ServerFailureException(relevance.Error ?? "Bộ câu hỏi lệch khỏi kỹ năng cần đo.");
                 generated = compliance.Questions;
             }
             else

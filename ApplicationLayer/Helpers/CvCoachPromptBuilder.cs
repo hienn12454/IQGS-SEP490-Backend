@@ -30,6 +30,20 @@ public static class CvCoachPromptBuilder
            + "Chỉ hỏi các skill sau, không bịa JD hay yêu cầu ngoài list: "
            + string.Join(", ", skills) + ".";
 
+    /// <summary>
+    /// SCRUM-503: phạm vi Re-assessment. Nêu rõ topic đã luyện và cấm công nghệ gần tên
+    /// (Java vs JavaScript, Go vs Django…) vì đây là nguồn gốc đề lạc chủ đề.
+    /// </summary>
+    public static string ReassessmentScopeNote(string skill, IReadOnlyList<string> practicedTopics)
+    {
+        var note = $"\nScope: every question MUST be about \"{skill}\" only.";
+        if (practicedTopics.Count > 0)
+            note += $"\nTopics the candidate just practised (stay inside them): {string.Join("; ", practicedTopics)}.";
+        note += "\nDo NOT ask about any other technology, and do NOT substitute a similarly named one "
+                + $"(e.g. JavaScript/TypeScript when the skill is Java). If a question does not test \"{skill}\", drop it.";
+        return note;
+    }
+
     public static string DrillHrNote(string skill)
         => $"Chỉ hỏi skill \"{skill}\". Sinh câu hỏi mới để kiểm tra kiến thức, không lặp đề cũ, không bịa JD.";
 

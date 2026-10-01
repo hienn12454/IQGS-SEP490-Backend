@@ -179,8 +179,13 @@ public class CoachCompetencyService : ICoachCompetencyService
         var normalized = NormalizeCoachSkills(dto.Skills);
         if (normalized.Count == 0)
             throw new BadRequestException("Cần ít nhất 1 công nghệ.");
-        if (normalized.Count > 40)
-            throw new BadRequestException("Tối đa 40 công nghệ.");
+        // SCRUM-504: bỏ cap 40 — CV thật dễ có nhiều hơn 40 kỹ năng và trước đây ứng viên bị kẹt
+        // ở bước Phân tích CV. An toàn vì số skill đưa vào đề đã bị giới hạn sẵn
+        // (SelectCoreSkills 3-5 với framework, AdaptiveBlueprintBuilder tối đa 8).
+        // Guard còn lại chỉ để chặn payload bất thường, không phải giới hạn nghiệp vụ.
+        if (normalized.Count > MaxCoachSkillPayload)
+            throw new BadRequestException(
+                $"Danh sách công nghệ quá dài (tối đa {MaxCoachSkillPayload} mục). Hãy bỏ bớt mục không liên quan.");
 
         // SCRUM-491: format từng skill (hybrid — không whitelist cứng)
         EnsureCoachSkillFormats(normalized);
@@ -199,6 +204,9 @@ public class CoachCompetencyService : ICoachCompetencyService
         await _profiles.UpdateAsync(profile);
         return await GetContextAsync(candidateUserId);
     }
+
+    /// <summary>SCRUM-504: guard chống payload bất thường, không phải giới hạn nghiệp vụ.</summary>
+    public const int MaxCoachSkillPayload = 200;
 
     /// <summary>SCRUM-493: sanitize + dedupe (giữ casing đầu) trước khi lưu / validate.</summary>
     public static List<string> NormalizeCoachSkills(IEnumerable<string>? skills)
@@ -550,6 +558,20 @@ public class CoachCompetencyService : ICoachCompetencyService
 
         var previous = sourceAssessment;
 
+        // SCRUM-503: đề đo lại phải bám topic ứng viên vừa luyện trong lộ trình,
+        // không dùng topic mặc định của blueprint (nguyên nhân đề "lạc đề" dù đúng skill).
+        var practicedTopics = practiceItems
+            .OrderBy(i => i.SortOrder)
+            .Select(i => string.IsNullOrWhiteSpace(i.Subtopic)
+                ? i.Topic?.Trim()
+                : $"{i.Topic?.Trim()} - {i.Subtopic.Trim()}")
+            .Where(t => !string.IsNullOrWhiteSpace(t))
+            .Select(t => t!)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (practicedTopics.Count > 0 && skillBlueprint.Competencies.Count == 1)
+            skillBlueprint.Competencies[0].Topics = practicedTopics;
+
         var diagnosticPlan = DiagnosticBlueprintBuilder.BuildDiagnostic(skillBlueprint);
         var snapshot = JsonSerializer.Serialize(new
         {
@@ -580,6 +602,8 @@ public class CoachCompetencyService : ICoachCompetencyService
         var jd = CvCoachPromptBuilder.BuildSyntheticJd(
             profile.TargetRole, profile.TargetLevel, null, new[] { roadmap.Skill });
         jd += "\nThis is a RE-ASSESSMENT. Generate NEW questions, do not duplicate prior diagnostic wording.";
+        // SCRUM-503: chốt cứng phạm vi cho LLM — chỉ skill + topic đã luyện, cấm công nghệ gần tên.
+        jd += CvCoachPromptBuilder.ReassessmentScopeNote(roadmap.Skill, practicedTopics);
 
         // Avoid-list: gửi kèm câu hỏi đã dùng ở các lần đo trước để RAG không hỏi lại y nguyên.
         var previousQuestions = await CollectPreviousQuestionTextsAsync(candidateUserId, roadmap.Skill);
