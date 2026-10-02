@@ -913,9 +913,14 @@ public sealed class InterviewPlanService(
             questionDistribution = derived;
         }
 
-        var focusAreas = settings is not null
+        // Focus đã có: canonical về TechSkill + gộp alias. Trống: seed từ skill JD khớp enum.
+        var savedFocus = settings is not null
             ? StudioAiConfigurationHelper.MapFocusAreas(settings.FocusAreas)
             : [];
+        var canonicalFocus = TechSkillFocusNormalizer.Canonicalize(savedFocus);
+        var focusAreas = canonicalFocus.Count > 0
+            ? canonicalFocus
+            : TechSkillFocusNormalizer.SeedFromJd(skills);
         var questionStyles = settings is not null
             ? StudioAiConfigurationHelper.ParseQuestionStyles(settings.QuestionStylesJson)
             : [];
@@ -987,8 +992,8 @@ public sealed class InterviewPlanService(
         try
         {
             mapped = StudioRagPlanMapper.MapFromRagPlanObject(ragResult.Plan, numberOfQuestions, preferredMinutes);
-            // SCRUM-434: bổ sung đủ skill JD vào focus + sync coverage (không tin LLM một mình)
-            mapped = StudioPlanFocusJdCompleter.EnsureAllJdSkills(mapped, skills, numberOfQuestions);
+            // Gộp focus RAG với focus HR/seed. Cùng nhãn TechSkill chỉ một dòng — không append hết JD.
+            mapped = TechSkillFocusNormalizer.MergeIntoPlan(mapped, focusAreas);
             // SCRUM-435 + HG01: chia slot kỹ thuật theo % focus, nhưng đổi skill là đổi CẢ slot
             // (goal + nguồn) — không để Domain một nẻo, Why ask một nẻo như trước
             mapped = StudioOutlineFocusRedistributor.ApplyFocusWeightsToOutline(mapped, outputLanguage);
