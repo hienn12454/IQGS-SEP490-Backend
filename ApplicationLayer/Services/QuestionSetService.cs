@@ -454,15 +454,13 @@ public class QuestionSetService : IQuestionSetService
 
         foreach (var q in activeQuestions)
         {
-            // Câu basic chỉ cần nội dung. Đáp án mẫu và rubric để trống được, bổ sung sau.
-            // Rubric đã nhập dở (không đủ 100% hoặc thiếu mốc) thì vẫn chặn để không publish bản sai.
-            if (string.IsNullOrWhiteSpace(q.Question))
-                throw new BadRequestException($"Câu hỏi #{q.Order} thiếu nội dung — không thể publish.");
+            if (string.IsNullOrWhiteSpace(q.SampleAnswer))
+                throw new BadRequestException($"Câu hỏi #{q.Order} thiếu đáp án mẫu — không thể publish.");
 
             var rubricDoc = RubricNormalizer.NormalizeFromJson(q.EvaluationCriteriaJson);
-            if (rubricDoc.Criteria.Count > 0 && !RubricNormalizer.IsPublishReady(rubricDoc))
+            if (!RubricNormalizer.IsPublishReady(rubricDoc))
                 throw new BadRequestException(
-                    $"Câu hỏi #{q.Order} có tiêu chí chấm chưa hợp lệ (weight=100%, mỗi tiêu chí ≥2 mốc). Để trống rubric nếu muốn bổ sung sau.");
+                    $"Câu hỏi #{q.Order} thiếu tiêu chí chấm hợp lệ (weight=100%, mỗi tiêu chí ≥2 mốc).");
         }
 
         questionSet.Status = QuestionSetStatus.Published;
