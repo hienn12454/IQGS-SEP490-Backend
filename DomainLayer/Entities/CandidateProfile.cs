@@ -24,6 +24,8 @@ public class CandidateProfile : BaseEntity
     /// <summary>Candidate đã confirm context Coach trước diagnostic.</summary>
     public bool CoachContextConfirmed { get; set; }
     public DateTime? CoachContextConfirmedAt { get; set; }
+    /// <summary>Ngôn ngữ câu hỏi Coach do user chọn ở bước CV: English | Vietnamese.</summary>
+    public string? CoachOutputLanguage { get; set; }
     public string? PhoneNumber { get; set; }
     public string? LinkedInUrl { get; set; }
     public string? GithubUrl { get; set; }

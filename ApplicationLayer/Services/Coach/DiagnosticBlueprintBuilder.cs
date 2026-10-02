@@ -1,4 +1,5 @@
 using ApplicationLayer.DTOs.Coach;
+using ApplicationLayer.Studio.Helpers;
 using DomainLayer.Constants;
 using DomainLayer.Entities;
 
@@ -40,7 +41,8 @@ public static class DiagnosticBlueprintBuilder
         CompetencyFramework framework,
         IReadOnlyList<CompetencyFrameworkSkill> coreSkills,
         Func<CompetencyFrameworkSkill, IReadOnlyList<string>> topicsResolver,
-        Options? options = null)
+        Options? options = null,
+        string? outputLanguage = null)
     {
         var opt = options ?? Options.Default;
         var questions = BuildDiagnosticQuestions(coreSkills, topicsResolver, opt);
@@ -49,11 +51,13 @@ public static class DiagnosticBlueprintBuilder
             displayRole: framework.DisplayRole,
             targetLevel: framework.TargetLevel,
             questions,
-            coreSkills.Select(s => s.Skill).ToList());
+            coreSkills.Select(s => s.Skill).ToList(),
+            outputLanguage);
     }
 
     /// <summary>SCRUM-457: diagnostic từ CompetencyBlueprint — FRAMEWORK và ADAPTIVE dùng chung.</summary>
-    public static object BuildDiagnostic(CompetencyBlueprint blueprint, Options? options = null)
+    public static object BuildDiagnostic(
+        CompetencyBlueprint blueprint, Options? options = null, string? outputLanguage = null)
     {
         var skills = FrameworkBlueprintBuilder.ToScoringSkills(blueprint);
         var questions = BuildDiagnosticQuestions(
@@ -70,14 +74,16 @@ public static class DiagnosticBlueprintBuilder
             displayRole: blueprint.TargetRole,
             targetLevel: blueprint.TargetLevel,
             questions,
-            blueprint.Competencies.Select(c => c.SkillName).ToList());
+            blueprint.Competencies.Select(c => c.SkillName).ToList(),
+            outputLanguage);
     }
 
     /// <summary>
     /// SCRUM-506: blueprint bài sàng lọc — 1 câu/skill ở RequiredDifficulty (không ép ≥2).
     /// Không đụng <see cref="BuildDiagnosticQuestions"/> vì hàm đó cố ý tối thiểu 2 câu/skill.
     /// </summary>
-    public static object BuildScreening(CompetencyBlueprint blueprint, int questionsPerSkill = 1)
+    public static object BuildScreening(
+        CompetencyBlueprint blueprint, int questionsPerSkill = 1, string? outputLanguage = null)
     {
         var perSkill = Math.Clamp(questionsPerSkill, 1, 3);
         var scoring = FrameworkBlueprintBuilder.ToScoringSkills(blueprint);
@@ -99,7 +105,8 @@ public static class DiagnosticBlueprintBuilder
             displayRole: blueprint.TargetRole,
             targetLevel: blueprint.TargetLevel,
             questions,
-            blueprint.Competencies.Select(c => c.SkillName).ToList());
+            blueprint.Competencies.Select(c => c.SkillName).ToList(),
+            outputLanguage);
     }
 
     /// <summary>SCRUM-506: blueprint screening từ danh sách skill CV (không có framework item).</summary>
@@ -148,12 +155,16 @@ public static class DiagnosticBlueprintBuilder
         string displayRole,
         string targetLevel,
         List<BlueprintQuestion> questions,
-        List<string> skills)
+        List<string> skills,
+        string? outputLanguage = null)
     {
+        var english = StudioOutputLanguage.Normalize(outputLanguage) == StudioOutputLanguage.English;
         return new
         {
             roleTitle,
-            summary = "Competency diagnostic blueprint sinh từ CompetencyBlueprint (không phải đề tự do).",
+            summary = english
+                ? "Competency diagnostic blueprint built from the competency blueprint (not a free-form exam)."
+                : "Competency diagnostic blueprint sinh từ CompetencyBlueprint (không phải đề tự do).",
             difficulty = QuestionDifficultyLevel.Medium,
             experienceLevel = MapExperience(targetLevel),
             level = QuestionDifficultyLevel.Medium,
@@ -173,13 +184,19 @@ public static class DiagnosticBlueprintBuilder
                     skill = q.Skill,
                     focusArea = q.Topic,
                     topic = q.Topic,
-                    evaluationFocus = $"Bằng chứng {q.Skill} / {q.Topic} ở mức {q.Difficulty}",
+                    evaluationFocus = english
+                        ? $"Evidence of {q.Skill} / {q.Topic} at {q.Difficulty}"
+                        : $"Bằng chứng {q.Skill} / {q.Topic} ở mức {q.Difficulty}",
                     goal = $"Assess {q.Skill} ({q.Topic}) at {q.Difficulty} for {displayRole} {targetLevel}"
                 })
                 .ToList(),
-            notes = $"Target level={targetLevel}; self-assessed chỉ là context. "
-                    + "Sinh ĐÚNG số câu và ĐÚNG skill/topic/difficulty theo từng dòng outline. "
-                    + "Không thêm skill ngoài danh sách."
+            notes = english
+                ? $"Target level={targetLevel}; self-assessed level is context only. "
+                  + "Generate EXACTLY the outline count, keeping each row's skill, topic, and difficulty. "
+                  + "Do not add skills outside the list."
+                : $"Target level={targetLevel}; self-assessed chỉ là context. "
+                  + "Sinh ĐÚNG số câu và ĐÚNG skill/topic/difficulty theo từng dòng outline. "
+                  + "Không thêm skill ngoài danh sách."
         };
     }
 
@@ -276,8 +293,10 @@ public static class DiagnosticBlueprintBuilder
         double? currentScore,
         double targetScore,
         int questionCount,
-        double weakBandRatio = 0.6)
+        double weakBandRatio = 0.6,
+        string? outputLanguage = null)
     {
+        var english = StudioOutputLanguage.Normalize(outputLanguage) == StudioOutputLanguage.English;
         var count = Math.Clamp(questionCount, 5, 40);
         var band = currentScore ?? 0;
         var target = targetScore > 0 ? targetScore : 70;
@@ -322,7 +341,9 @@ public static class DiagnosticBlueprintBuilder
                 skill,
                 focusArea = topic,
                 topic,
-                evaluationFocus = $"Bằng chứng {skill} / {topic} ở mức {d}",
+                evaluationFocus = english
+                    ? $"Evidence of {skill} / {topic} at {d}"
+                    : $"Bằng chứng {skill} / {topic} ở mức {d}",
                 goal = $"Drill {topic} ({skill})"
             })
             .ToList();
@@ -330,7 +351,9 @@ public static class DiagnosticBlueprintBuilder
         return new
         {
             roleTitle = $"Drill — {skill} / {topic}",
-            summary = "Targeted skill drill; điểm drill không cập nhật competency chính thức.",
+            summary = english
+                ? "Targeted skill drill; the drill score does not update the official competency level."
+                : "Targeted skill drill; điểm drill không cập nhật competency chính thức.",
             difficulty = QuestionDifficultyLevel.Medium,
             experienceLevel = "mid",
             level = QuestionDifficultyLevel.Medium,
@@ -345,8 +368,11 @@ public static class DiagnosticBlueprintBuilder
                 .Select(g => new { difficulty = g.Key, count = g.Count() })
                 .ToList(),
             recommendedQuestionOutline = outline,
-            notes = $"Chỉ hỏi skill \"{skill}\", tập trung topic \"{topic}\". "
-                    + $"Sinh ĐÚNG {count} câu theo outline, không lặp đề cũ, không bịa JD."
+            notes = english
+                ? $"Ask only about skill \"{skill}\", focused on topic \"{topic}\". "
+                  + $"Generate EXACTLY {count} questions from the outline. Do not repeat old questions or invent a job description."
+                : $"Chỉ hỏi skill \"{skill}\", tập trung topic \"{topic}\". "
+                  + $"Sinh ĐÚNG {count} câu theo outline, không lặp đề cũ, không bịa JD."
         };
     }
 

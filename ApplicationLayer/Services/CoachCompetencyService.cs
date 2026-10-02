@@ -3,6 +3,7 @@ using System.Text.Json;
 using ApplicationLayer.DTOs.Candidate;
 using ApplicationLayer.DTOs.Coach;
 using ApplicationLayer.Helpers;
+using ApplicationLayer.Studio.Helpers;
 using ApplicationLayer.Interfaces.Jobs;
 using ApplicationLayer.Interfaces.Repositories;
 using ApplicationLayer.Interfaces.Services;
@@ -133,6 +134,9 @@ public class CoachCompetencyService : ICoachCompetencyService
             ContextConfirmedAt = profile.CoachContextConfirmedAt,
             // SCRUM-483: chỉ coi đã có CV khi có file thật — không fallback TechStack/skills
             HasCv = !string.IsNullOrWhiteSpace(profile.CvBlobPath),
+            OutputLanguage = string.IsNullOrWhiteSpace(profile.CoachOutputLanguage)
+                ? null
+                : StudioOutputLanguage.Normalize(profile.CoachOutputLanguage),
             MatchedFrameworkId = fw?.Id,
             MatchedFrameworkRole = fw?.DisplayRole ?? (resolution.IsAdaptive ? resolution.NormalizedRole : null),
             MatchedFrameworkLevel = fw?.TargetLevel ?? (resolution.IsUnsupported ? null : resolution.TargetLevel)
@@ -165,6 +169,19 @@ public class CoachCompetencyService : ICoachCompetencyService
 
         profile.CoachContextConfirmed = true;
         profile.CoachContextConfirmedAt = DateTime.UtcNow;
+        profile.UpdatedAt = DateTime.UtcNow;
+        await _profiles.UpdateAsync(profile);
+        return await GetContextAsync(candidateUserId);
+    }
+
+    public async Task<CoachContextDto> UpdateOutputLanguageAsync(
+        Guid candidateUserId, UpdateCoachOutputLanguageDto dto)
+    {
+        var profile = await _profiles.GetByUserIdAsync(candidateUserId)
+            ?? throw new BadRequestException("Chưa có hồ sơ ứng viên.");
+        if (!TryParseCoachLanguage(dto.OutputLanguage, out var language))
+            throw new BadRequestException("Chọn Tiếng Việt hoặc English.");
+        profile.CoachOutputLanguage = language;
         profile.UpdatedAt = DateTime.UtcNow;
         await _profiles.UpdateAsync(profile);
         return await GetContextAsync(candidateUserId);
@@ -337,10 +354,13 @@ public class CoachCompetencyService : ICoachCompetencyService
         await SupersedeScoredAssessmentsAsync(candidateUserId);
         await ArchiveAllRoadmapsAsync(candidateUserId);
 
+        var outputLanguage = RequireOutputLanguage(profile);
         var perSkill = CoachDiagnosticPolicy.ResolveDiagnosticQuestionsPerSkill(
             policy, competencyBlueprint.Competencies.Count);
         var diagnosticPlan = DiagnosticBlueprintBuilder.BuildDiagnostic(
-            competencyBlueprint, new DiagnosticBlueprintBuilder.Options(QuestionsPerSkill: perSkill));
+            competencyBlueprint,
+            new DiagnosticBlueprintBuilder.Options(QuestionsPerSkill: perSkill),
+            outputLanguage);
         var scopeSkills = competencyBlueprint.Competencies.Select(s => s.SkillName).ToList();
         var snapshot = JsonSerializer.Serialize(new
         {
@@ -382,7 +402,8 @@ public class CoachCompetencyService : ICoachCompetencyService
             GapSkillsJson = "[]",
             FocusSkillsJson = "[]",
             PlanJson = JsonSerializer.Serialize(diagnosticPlan, JsonOpts),
-            AssessmentId = assessment.Id
+            AssessmentId = assessment.Id,
+            OutputLanguage = outputLanguage
         };
         await _jobs.AddAsync(job);
 
@@ -472,13 +493,15 @@ public class CoachCompetencyService : ICoachCompetencyService
             }
         }
 
+        var outputLanguage = RequireOutputLanguage(profile);
         var plan = DiagnosticBlueprintBuilder.BuildDrill(
             roadmap.Skill,
             item.Topic,
             roadmap.CurrentScore,
             roadmap.TargetScore,
             questionCount,
-            policy.DrillWeakBandRatio);
+            policy.DrillWeakBandRatio,
+            outputLanguage);
         var job = new CandidatePersonalSetJob
         {
             CandidateUserId = candidateUserId,
@@ -489,7 +512,8 @@ public class CoachCompetencyService : ICoachCompetencyService
             GapSkillsJson = "[]",
             FocusSkillsJson = JsonSerializer.Serialize(focus, JsonOpts),
             PlanJson = JsonSerializer.Serialize(plan, JsonOpts),
-            RoadmapItemId = item.Id
+            RoadmapItemId = item.Id,
+            OutputLanguage = outputLanguage
         };
         await _jobs.AddAsync(job);
 
@@ -579,9 +603,11 @@ public class CoachCompetencyService : ICoachCompetencyService
         // SCRUM-508: số câu Đánh giá lại độc lập diagnostic (mặc định 3).
         var reassessPolicy = await _frameworks.GetPolicyAsync();
         var reassessPerSkill = CoachDiagnosticPolicy.ReassessmentQuestionsPerSkill(reassessPolicy);
+        var outputLanguage = RequireOutputLanguage(profile);
         var diagnosticPlan = DiagnosticBlueprintBuilder.BuildDiagnostic(
             skillBlueprint,
-            new DiagnosticBlueprintBuilder.Options(QuestionsPerSkill: reassessPerSkill));
+            new DiagnosticBlueprintBuilder.Options(QuestionsPerSkill: reassessPerSkill),
+            outputLanguage);
         var snapshot = JsonSerializer.Serialize(new
         {
             targetRole = profile.TargetRole,
@@ -633,7 +659,8 @@ public class CoachCompetencyService : ICoachCompetencyService
             FocusSkillsJson = JsonSerializer.Serialize(new[] { roadmap.Skill }, JsonOpts),
             PlanJson = JsonSerializer.Serialize(diagnosticPlan, JsonOpts),
             AssessmentId = assessment.Id,
-            RoadmapItemId = gate.Id
+            RoadmapItemId = gate.Id,
+            OutputLanguage = outputLanguage
         };
         await _jobs.AddAsync(job);
         assessment.PersonalSetJobId = job.Id;
@@ -743,7 +770,8 @@ public class CoachCompetencyService : ICoachCompetencyService
             await _assessments.UpdateAsync(a);
         }
 
-        var screeningPlan = DiagnosticBlueprintBuilder.BuildScreening(skillBlueprint, perSkill);
+        var outputLanguage = RequireOutputLanguage(profile);
+        var screeningPlan = DiagnosticBlueprintBuilder.BuildScreening(skillBlueprint, perSkill, outputLanguage);
         var snapshot = JsonSerializer.Serialize(new
         {
             targetRole = profile.TargetRole,
@@ -783,7 +811,8 @@ public class CoachCompetencyService : ICoachCompetencyService
             GapSkillsJson = "[]",
             FocusSkillsJson = JsonSerializer.Serialize(ctx.Skills, JsonOpts),
             PlanJson = JsonSerializer.Serialize(screeningPlan, JsonOpts),
-            AssessmentId = assessment.Id
+            AssessmentId = assessment.Id,
+            OutputLanguage = outputLanguage
         };
         await _jobs.AddAsync(job);
         assessment.PersonalSetJobId = job.Id;
@@ -1270,7 +1299,9 @@ public class CoachCompetencyService : ICoachCompetencyService
         else
         try
         {
-            var merge = await _profile.MergeAsync(session.CandidateUserId, assessment, fw, blueprint);
+            var outputLanguage = (await _profiles.GetByUserIdAsync(session.CandidateUserId))?.CoachOutputLanguage;
+            var merge = await _profile.MergeAsync(
+                session.CandidateUserId, assessment, fw, blueprint, outputLanguage);
             assessment.OverallReadiness = merge.Profile.OverallReadiness ?? overall.OverallReadiness;
             assessment.ReadinessStatus = merge.Profile.ReadinessStatus ?? overall.ReadinessStatus;
             assessment.ExplanationJson = JsonSerializer.Serialize(new
@@ -1946,6 +1977,22 @@ public class CoachCompetencyService : ICoachCompetencyService
             // Không phải JSON object — bỏ qua.
         }
 
+        if (dto.LevelCriteria is CoachLevelCriteriaDto criteria)
+        {
+            var outputLanguage = (await _profiles.GetByUserIdAsync(a.CandidateUserId))?.CoachOutputLanguage;
+            dto.LevelExplanation = CompetencyLevelRuleService.FormatExplanation(
+                dto.AchievedLevel,
+                criteria.Overall,
+                criteria.OverallThreshold,
+                criteria.TargetMetRatio,
+                criteria.TargetMetThreshold,
+                criteria.RequiredRatio,
+                criteria.RequiredThreshold,
+                criteria.HardRatio,
+                criteria.HardThreshold,
+                outputLanguage);
+        }
+
         await ApplyTargetReadinessAsync(dto, a);
         return dto;
     }
@@ -2010,7 +2057,7 @@ public class CoachCompetencyService : ICoachCompetencyService
         };
     }
 
-    private static CoachRoadmapDto MapRoadmap(CandidateRoadmap r) => MapRoadmapCore(r, null);
+    private static CoachRoadmapDto MapRoadmap(CandidateRoadmap r) => MapRoadmapCore(r, null, null);
 
     /// <summary>
     /// Hydrate DrillQuestionSetId cho cổng Re-assessment đang InProgress nếu sinh đề xong
@@ -2030,8 +2077,9 @@ public class CoachCompetencyService : ICoachCompetencyService
             .Distinct()
             .ToList();
         var allowMap = await _knowledgeView.GetAllowCandidateViewMapAsync(docIds);
+        var outputLanguage = (await _profiles.GetByUserIdAsync(r.CandidateUserId))?.CoachOutputLanguage;
 
-        var dto = MapRoadmapCore(r, allowMap);
+        var dto = MapRoadmapCore(r, allowMap, outputLanguage);
         foreach (var item in dto.Items.Where(i =>
                      i.IsReassessmentGate
                      && i.Status == CandidateRoadmapItemStatus.InProgress
@@ -2107,11 +2155,13 @@ public class CoachCompetencyService : ICoachCompetencyService
 
     private static CoachRoadmapDto MapRoadmapCore(
         CandidateRoadmap r,
-        IReadOnlyDictionary<Guid, bool>? allowViewByDocId)
+        IReadOnlyDictionary<Guid, bool>? allowViewByDocId,
+        string? outputLanguage)
     {
         var (skillSource, outsideCvReason) =
             RoadmapRecommendationService.ParseSkillProvenanceFromJson(r.ExplanationJson);
         var adaptive = string.Equals(r.SourceMode, CompetencySourceMode.RagDynamic, StringComparison.OrdinalIgnoreCase);
+        var english = StudioOutputLanguage.Normalize(outputLanguage) == StudioOutputLanguage.English;
         return new()
         {
             Id = r.Id,
@@ -2152,8 +2202,12 @@ public class CoachCompetencyService : ICoachCompetencyService
                         : (!string.IsNullOrWhiteSpace(i.SourceTitle)
                             ? i.SourceTitle
                             : adaptive
-                                ? $"Suy từ blueprint cho skill {r.Skill}"
-                                : $"Topic curated cho skill {r.Skill}"),
+                                ? (english
+                                    ? $"Inferred from the blueprint for skill {r.Skill}"
+                                    : $"Suy từ blueprint cho skill {r.Skill}")
+                                : (english
+                                    ? $"Curated topic for skill {r.Skill}"
+                                    : $"Topic curated cho skill {r.Skill}")),
                     DrillScore = i.DrillScore,
                     DrillQuestionSetId = i.DrillQuestionSetId,
                     DrillSessionId = i.DrillSessionId,
@@ -2325,4 +2379,35 @@ public class CoachCompetencyService : ICoachCompetencyService
     public Task<CoachKnowledgeViewDto> GetKnowledgeSourceViewAsync(
         Guid candidateUserId, Guid documentId, CancellationToken ct = default)
         => _knowledgeView.GetViewForCandidateAsync(candidateUserId, documentId, ct);
+
+    /// <summary>Chỉ nhận English/Vietnamese (và alias en/vi). Giá trị lạ thì từ chối, không âm thầm về tiếng Việt.</summary>
+    private static bool TryParseCoachLanguage(string? raw, out string language)
+    {
+        language = StudioOutputLanguage.Vietnamese;
+        if (string.IsNullOrWhiteSpace(raw)) return false;
+        var t = raw.Trim();
+        if (t.Equals(StudioOutputLanguage.English, StringComparison.OrdinalIgnoreCase)
+            || t.Equals("en", StringComparison.OrdinalIgnoreCase))
+        {
+            language = StudioOutputLanguage.English;
+            return true;
+        }
+        if (t.Equals(StudioOutputLanguage.Vietnamese, StringComparison.OrdinalIgnoreCase)
+            || t.Equals("vi", StringComparison.OrdinalIgnoreCase)
+            || t.Equals("vn", StringComparison.OrdinalIgnoreCase))
+        {
+            language = StudioOutputLanguage.Vietnamese;
+            return true;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Ngôn ngữ đã lưu ở bước CV. Hồ sơ cũ chưa chọn thì giữ tiếng Việt
+    /// để không chặn vòng Coach đang chạy dở.
+    /// </summary>
+    private static string RequireOutputLanguage(CandidateProfile profile)
+        => TryParseCoachLanguage(profile.CoachOutputLanguage, out var language)
+            ? language
+            : StudioOutputLanguage.Vietnamese;
 }

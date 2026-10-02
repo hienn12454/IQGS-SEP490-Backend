@@ -10,6 +10,8 @@ public interface ICoachCompetencyService
     /// <summary>SCRUM-453: catalog Target Role đang có framework — FE dùng cho combobox Target Role.</summary>
     Task<List<CoachFrameworkOptionDto>> ListFrameworkCatalogAsync();
     Task<CoachContextDto> UpdateContextAsync(Guid candidateUserId, UpdateCoachContextDto dto);
+    /// <summary>Lưu ngôn ngữ câu hỏi Coach (English | Vietnamese) từ bước CV.</summary>
+    Task<CoachContextDto> UpdateOutputLanguageAsync(Guid candidateUserId, UpdateCoachOutputLanguageDto dto);
     /// <summary>SCRUM-463: cập nhật TechStack + CvEvaluationJson.skills — không Confirm Goal.</summary>
     Task<CoachContextDto> UpdateCoachSkillsAsync(Guid candidateUserId, UpdateCoachSkillsDto dto);
     /// <summary>SCRUM-459: soft-reset vòng Coach — về Confirm Goal, giữ CV.</summary>

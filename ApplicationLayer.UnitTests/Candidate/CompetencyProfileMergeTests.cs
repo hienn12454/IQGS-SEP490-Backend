@@ -69,7 +69,7 @@ public sealed class CompetencyProfileMergeTests
             }
         };
 
-        var merge = await svc.MergeAsync(userId, assessment, fw);
+        var merge = await svc.MergeAsync(userId, assessment, fw, null, null);
 
         Assert.Equal(2, merge.Profile.Items.Count);
         Assert.Equal(75, merge.Profile.Items.First(i => i.Skill == "C#").CurrentScore);
@@ -144,7 +144,7 @@ public sealed class CompetencyProfileMergeTests
             }
         };
 
-        var merge = await svc.MergeAsync(userId, assessment, framework: null, newBp);
+        var merge = await svc.MergeAsync(userId, assessment, null, newBp, null);
 
         Assert.Equal(2, merge.Profile.Items.Count);
         Assert.DoesNotContain(merge.Profile.Items, i =>

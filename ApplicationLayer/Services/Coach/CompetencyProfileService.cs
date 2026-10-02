@@ -18,14 +18,16 @@ public interface ICompetencyProfileService
         Guid candidateUserId,
         CandidateAssessment assessment,
         CompetencyFramework? framework,
-        CompetencyBlueprint? blueprint = null);
+        CompetencyBlueprint? blueprint,
+        string? outputLanguage);
 
     Task<CandidateSkillPlan?> GetProfileAsync(Guid candidateUserId);
 
     /// <summary>Level + giải thích tính trên profile hiện tại (dùng cho report).</summary>
     Task<CompetencyLevelRuleService.LevelResolution> ResolveLevelAsync(
         CandidateSkillPlan profile,
-        IReadOnlyList<CompetencyFrameworkSkill> scoringSkills);
+        IReadOnlyList<CompetencyFrameworkSkill> scoringSkills,
+        string? outputLanguage = null);
 }
 
 public sealed record SkillDelta(string Skill, double? PreviousScore, double NewScore, double? Delta);
@@ -73,7 +75,8 @@ public class CompetencyProfileService : ICompetencyProfileService
         Guid candidateUserId,
         CandidateAssessment assessment,
         CompetencyFramework? framework,
-        CompetencyBlueprint? blueprint = null)
+        CompetencyBlueprint? blueprint,
+        string? outputLanguage)
     {
         blueprint ??= CompetencyBlueprintJson.Deserialize(assessment.BlueprintJson);
         var scoringSkills = ResolveScoringSkills(framework, blueprint);
@@ -200,7 +203,7 @@ public class CompetencyProfileService : ICompetencyProfileService
             : CompetencyScoringService.ResolveReadinessStatus(policy, overall.Value);
         plan.LastAssessmentId = assessment.Id;
 
-        var level = await ResolveLevelAsync(plan, scoringSkills);
+        var level = await ResolveLevelAsync(plan, scoringSkills, outputLanguage);
         plan.AchievedLevel = level.AchievedLevel;
         plan.UpdatedAt = DateTime.UtcNow;
 
@@ -237,7 +240,8 @@ public class CompetencyProfileService : ICompetencyProfileService
 
     public async Task<CompetencyLevelRuleService.LevelResolution> ResolveLevelAsync(
         CandidateSkillPlan profile,
-        IReadOnlyList<CompetencyFrameworkSkill> scoringSkills)
+        IReadOnlyList<CompetencyFrameworkSkill> scoringSkills,
+        string? outputLanguage = null)
     {
         var rules = await _levelRules.ListAsync();
         if (rules.Count == 0) rules = CompetencyLevelRuleService.DefaultRules();
@@ -252,7 +256,8 @@ public class CompetencyProfileService : ICompetencyProfileService
             profile.OverallReadiness ?? 0,
             profileSkills,
             scoringSkills.ToList(),
-            rules);
+            rules,
+            outputLanguage);
     }
 
     public static List<CompetencyFrameworkSkill> ResolveScoringSkills(

@@ -16,6 +16,9 @@ public class CandidatePersonalSetJob : BaseEntity
     public Guid? QuestionSetId { get; set; }
     public string? ErrorMessage { get; set; }
 
+    /// <summary>English | Vietnamese — copy từ profile lúc tạo job, Hangfire đọc khi sinh đề.</summary>
+    public string? OutputLanguage { get; set; }
+
     /// <summary>SCRUM-447: gắn job sinh đề với assessment competency.</summary>
     public Guid? AssessmentId { get; set; }
     public Guid? RoadmapItemId { get; set; }

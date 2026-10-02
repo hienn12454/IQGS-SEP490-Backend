@@ -41,6 +41,8 @@ public class CoachContextDto
     public bool ContextConfirmed { get; set; }
     public DateTime? ContextConfirmedAt { get; set; }
     public bool HasCv { get; set; }
+    /// <summary>English | Vietnamese — null nếu user chưa chọn ở bước CV.</summary>
+    public string? OutputLanguage { get; set; }
     public string? MatchedFrameworkRole { get; set; }
     public string? MatchedFrameworkLevel { get; set; }
     public Guid? MatchedFrameworkId { get; set; }
@@ -81,6 +83,14 @@ public class CoachFrameworkOptionDto
     public List<string> Levels { get; set; } = new();
     /// <summary>Provisional | Curated — FE có thể hiển thị nhãn "dữ liệu tạm".</summary>
     public string Provenance { get; set; } = string.Empty;
+}
+
+/// <summary>Ngôn ngữ đầu ra Coach, chọn ở bước CV.</summary>
+public class UpdateCoachOutputLanguageDto
+{
+    [Required]
+    [MaxLength(20)]
+    public string OutputLanguage { get; set; } = string.Empty;
 }
 
 public class UpdateCoachContextDto

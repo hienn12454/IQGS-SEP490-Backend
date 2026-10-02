@@ -220,6 +220,7 @@ public class AppDbContext : DbContext
             entity.Property(p => p.TargetLevel).HasMaxLength(30);
             entity.Property(p => p.InterviewGoal).HasMaxLength(500);
             entity.Property(p => p.CoachContextConfirmed).IsRequired().HasDefaultValue(false);
+            entity.Property(p => p.CoachOutputLanguage).HasMaxLength(20);
 
             entity.Property(p => p.AllowRecruiterRecommendation).IsRequired().HasDefaultValue(true);
             entity.Property(p => p.AutoSyncProfileFromCv).IsRequired().HasDefaultValue(true);
@@ -374,6 +375,7 @@ public class AppDbContext : DbContext
             entity.Property(j => j.FocusSkillsJson).IsRequired().HasColumnType("jsonb").HasDefaultValue("[]");
             entity.Property(j => j.PlanJson).HasColumnType("jsonb");
             entity.Property(j => j.ErrorMessage).HasMaxLength(4000);
+            entity.Property(j => j.OutputLanguage).HasMaxLength(20);
 
             entity.HasOne(j => j.QuestionSet)
                   .WithMany()

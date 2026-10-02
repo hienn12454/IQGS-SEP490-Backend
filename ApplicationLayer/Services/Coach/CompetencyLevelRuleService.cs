@@ -1,3 +1,4 @@
+using ApplicationLayer.Studio.Helpers;
 using DomainLayer.Constants;
 using DomainLayer.Entities;
 
@@ -37,10 +38,15 @@ public static class CompetencyLevelRuleService
         double overall,
         IReadOnlyList<ProfileSkill> profileSkills,
         IReadOnlyList<CompetencyFrameworkSkill> frameworkSkills,
-        IReadOnlyList<CompetencyLevelRule> rules)
+        IReadOnlyList<CompetencyLevelRule> rules,
+        string? outputLanguage = null)
     {
+        var english = StudioOutputLanguage.Normalize(outputLanguage) == StudioOutputLanguage.English;
         if (frameworkSkills.Count == 0)
-            return new LevelResolution(null, 0, 0, 0, "Framework không có skill nào để đánh giá.", overall);
+            return new LevelResolution(
+                null, 0, 0, 0,
+                english ? "The framework has no skills to assess." : "Framework không có skill nào để đánh giá.",
+                overall);
 
         var bySkill = profileSkills.ToDictionary(
             s => CompetencyScoringService.NormalizeSkill(s.Skill),
@@ -85,13 +91,17 @@ public static class CompetencyLevelRuleService
             ?? activeRules.OrderBy(r => r.SortOrder).FirstOrDefault()
             ?? DefaultRules().OrderBy(r => r.SortOrder).First();
 
-        var explanation = achieved is null
-            ? $"Chưa đạt level thấp nhất: overall {overall:0.#}, đạt target {targetRatio:P0}, "
-              + $"evidence đúng mức yêu cầu {requiredRatio:P0}, evidence mức hard {hardRatio:P0}."
-            : $"Đạt {achieved.Level}: overall {overall:0.#} ≥ {achieved.OverallThreshold:0.#}, "
-              + $"đạt target {targetRatio:P0} ≥ {achieved.TargetMetRatio:P0}, "
-              + $"evidence đúng mức yêu cầu {requiredRatio:P0} ≥ {achieved.RequiredDifficultyRatio:P0}, "
-              + $"evidence mức hard {hardRatio:P0} ≥ {achieved.HardEvidenceRatio:P0}.";
+        var explanation = FormatExplanation(
+            achieved?.Level,
+            overall,
+            thresholdRule.OverallThreshold,
+            targetRatio,
+            thresholdRule.TargetMetRatio,
+            requiredRatio,
+            thresholdRule.RequiredDifficultyRatio,
+            hardRatio,
+            thresholdRule.HardEvidenceRatio,
+            outputLanguage);
 
         return new LevelResolution(
             achieved?.Level,
@@ -104,6 +114,40 @@ public static class CompetencyLevelRuleService
             thresholdRule.TargetMetRatio,
             thresholdRule.RequiredDifficultyRatio,
             thresholdRule.HardEvidenceRatio);
+    }
+
+    /// <summary>Câu giải thích level cho báo cáo, theo ngôn ngữ user chọn ở bước CV.</summary>
+    public static string FormatExplanation(
+        string? achievedLevel,
+        double overall,
+        double overallThreshold,
+        double targetRatio,
+        double targetThreshold,
+        double requiredRatio,
+        double requiredThreshold,
+        double hardRatio,
+        double hardThreshold,
+        string? outputLanguage)
+    {
+        var english = StudioOutputLanguage.Normalize(outputLanguage) == StudioOutputLanguage.English;
+        if (string.IsNullOrWhiteSpace(achievedLevel))
+        {
+            return english
+                ? $"Below the lowest level: overall {overall:0.#}, target met {targetRatio:P0}, "
+                  + $"required-difficulty evidence {requiredRatio:P0}, hard evidence {hardRatio:P0}."
+                : $"Chưa đạt level thấp nhất: overall {overall:0.#}, đạt target {targetRatio:P0}, "
+                  + $"evidence đúng mức yêu cầu {requiredRatio:P0}, evidence mức hard {hardRatio:P0}.";
+        }
+
+        return english
+            ? $"Reached {achievedLevel}: overall {overall:0.#} ≥ {overallThreshold:0.#}, "
+              + $"target met {targetRatio:P0} ≥ {targetThreshold:P0}, "
+              + $"required-difficulty evidence {requiredRatio:P0} ≥ {requiredThreshold:P0}, "
+              + $"hard evidence {hardRatio:P0} ≥ {hardThreshold:P0}."
+            : $"Đạt {achievedLevel}: overall {overall:0.#} ≥ {overallThreshold:0.#}, "
+              + $"đạt target {targetRatio:P0} ≥ {targetThreshold:P0}, "
+              + $"evidence đúng mức yêu cầu {requiredRatio:P0} ≥ {requiredThreshold:P0}, "
+              + $"evidence mức hard {hardRatio:P0} ≥ {hardThreshold:P0}.";
     }
 
     /// <summary>

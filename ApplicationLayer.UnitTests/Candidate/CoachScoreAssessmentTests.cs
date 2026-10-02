@@ -130,7 +130,8 @@ public sealed class CoachScoreAssessmentTests
         });
 
         var profile = new Mock<ICompetencyProfileService>();
-        profile.Setup(p => p.MergeAsync(userId, It.IsAny<CandidateAssessment>(), null, It.IsAny<CompetencyBlueprint?>()))
+        profile.Setup(p => p.MergeAsync(
+            userId, It.IsAny<CandidateAssessment>(), null, It.IsAny<CompetencyBlueprint?>(), It.IsAny<string?>()))
             .ReturnsAsync(new ProfileMergeResult(
                 new CandidateSkillPlan
                 {
@@ -279,7 +280,7 @@ public sealed class CoachScoreAssessmentTests
         Assert.True(result.Scored);
         Assert.True(result.RoadmapUpdated);
         profile.Verify(p => p.MergeAsync(
-            It.IsAny<Guid>(), It.IsAny<CandidateAssessment>(), It.IsAny<CompetencyFramework?>(), It.IsAny<CompetencyBlueprint?>()),
+            It.IsAny<Guid>(), It.IsAny<CandidateAssessment>(), It.IsAny<CompetencyFramework?>(), It.IsAny<CompetencyBlueprint?>(), It.IsAny<string?>()),
             Times.Never);
         roadmap.Verify(r => r.RebuildFromDiagnosticAsync(
             It.IsAny<Guid>(), It.IsAny<CandidateAssessment>(), It.IsAny<CompetencyFramework?>(), It.IsAny<CandidateSkillPlan>()),
@@ -362,7 +363,8 @@ public sealed class CoachScoreAssessmentTests
             ReadyMaxExclusive = 85
         });
         var profile = new Mock<ICompetencyProfileService>();
-        profile.Setup(p => p.MergeAsync(userId, It.IsAny<CandidateAssessment>(), null, It.IsAny<CompetencyBlueprint?>()))
+        profile.Setup(p => p.MergeAsync(
+            userId, It.IsAny<CandidateAssessment>(), null, It.IsAny<CompetencyBlueprint?>(), It.IsAny<string?>()))
             .ReturnsAsync(new ProfileMergeResult(
                 new CandidateSkillPlan
                 {

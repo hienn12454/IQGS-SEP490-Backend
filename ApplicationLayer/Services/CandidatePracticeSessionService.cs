@@ -425,7 +425,8 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
         string? ErrorMessage)> EvaluateAndPersistAsync(
         CandidateAnswer answer,
         Guid questionId,
-        string? scoringMode = null)
+        string? scoringMode = null,
+        string? outputLanguage = null)
     {
         var rubric = await _marketplaceRepository.GetQuestionEvaluationRubricAsync(questionId);
         if (rubric is null)
@@ -449,7 +450,8 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
                 SampleAnswer = rubric.SampleAnswer,
                 Skill = rubric.Skill,
                 QuestionType = rubric.QuestionType,
-                ScoringMode = scoringMode
+                ScoringMode = scoringMode,
+                Language = outputLanguage
             });
 
             if (!ragResult.Success)
@@ -804,17 +806,24 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
             {
                 // SCRUM-447: Coach assessment dùng dimension scoring; marketplace giữ score LLM
                 string? scoringMode = null;
+                string? outputLanguage = null;
                 var coachJob = await _personalSetJobs.GetByQuestionSetIdAsync(session.QuestionSetId);
-                if (coachJob is not null
-                    && coachJob.Purpose is CandidatePersonalSetPurpose.CvDiagnostic
+                if (coachJob is not null)
+                {
+                    outputLanguage = string.IsNullOrWhiteSpace(coachJob.OutputLanguage)
+                        ? "Vietnamese"
+                        : coachJob.OutputLanguage;
+                    if (coachJob.Purpose is CandidatePersonalSetPurpose.CvDiagnostic
                         or CandidatePersonalSetPurpose.CvReassessment
                         or CandidatePersonalSetPurpose.CvScreening)
-                {
-                    scoringMode = "coach";
+                    {
+                        scoringMode = "coach";
+                    }
                 }
 
                 var (evalStatus, evalScore, _, _, _, _, _) =
-                    await EvaluateAndPersistAsync(answer, answer.QuestionSetQuestionId, scoringMode);
+                    await EvaluateAndPersistAsync(
+                        answer, answer.QuestionSetQuestionId, scoringMode, outputLanguage);
                 await _usageMetering.IncrementAsync(session.CandidateUserId, UsageType.CandidateFeedback);
 
                 if (evalStatus != AiFeedbackEvaluationStatus.Succeeded)

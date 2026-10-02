@@ -45,6 +45,14 @@ public class CandidateCoachController : ControllerBase
         return SuccessResp.Ok(result);
     }
 
+    /// <summary>Lưu ngôn ngữ câu hỏi chọn ở bước CV. Không confirm goal.</summary>
+    [HttpPut("output-language")]
+    public async Task<IActionResult> UpdateOutputLanguage([FromBody] UpdateCoachOutputLanguageDto dto)
+    {
+        var result = await _coach.UpdateOutputLanguageAsync(User.GetUserId(), dto);
+        return SuccessResp.Ok(result);
+    }
+
     [HttpPut("context")]
     public async Task<IActionResult> UpdateContext([FromBody] UpdateCoachContextDto dto)
     {

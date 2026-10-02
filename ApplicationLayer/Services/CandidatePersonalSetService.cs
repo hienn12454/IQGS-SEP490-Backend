@@ -2,6 +2,7 @@ using System.Text.Json;
 using ApplicationLayer.DTOs.Candidate;
 using ApplicationLayer.DTOs.Rag;
 using ApplicationLayer.Helpers;
+using ApplicationLayer.Studio.Helpers;
 using ApplicationLayer.Interfaces.Jobs;
 using ApplicationLayer.Interfaces.Repositories;
 using ApplicationLayer.Interfaces.Services;
@@ -236,7 +237,9 @@ public class CandidatePersonalSetService : ICandidatePersonalSetService
                 if (blueprintSkills.Count == 0) blueprintSkills = skills.ToList();
                 var blueprintTotal = BlueprintComplianceValidator.ReadTotalQuestions(
                     planJson, blueprintSlots.Count > 0 ? blueprintSlots.Count : count);
-                var coachNote = CvCoachPromptBuilder.BlueprintNote(blueprintSkills, blueprintTotal);
+                var coachNote = CvCoachPromptBuilder.BlueprintNote(
+                    blueprintSkills, blueprintTotal, job.OutputLanguage);
+                coachNote += " " + StudioOutputLanguage.RagInstruction(job.OutputLanguage);
 
                 // Sinh đề Coach: retrieve folder SYSTEM (mặc định test-candidate); folder trống → LLM inferred.
                 var coachDocs = await _knowledgeDocs.ListSystemDocumentIdsByFolderAsync(
@@ -248,6 +251,7 @@ public class CandidatePersonalSetService : ICandidatePersonalSetService
                     JobDescription = job.JobDescription,
                     ApprovedPlan = syntheticPlan,
                     HrNote = coachNote,
+                    Language = StudioOutputLanguage.Normalize(job.OutputLanguage),
                     Audience = "coach",
                     CvContext = job.JobDescription,
                     CandidateNote = coachNote,
@@ -562,25 +566,27 @@ public class CandidatePersonalSetService : ICandidatePersonalSetService
             // Fallback khi job không có blueprint: số câu thực tế vẫn được lấy lại từ PlanJson ở ExecuteGenerationAsync.
             var capped = cvSkills.Take(10).ToList();
             var fallbackCount = Math.Max(6, capped.Count * 3);
-            return (fallbackCount, capped, CvCoachPromptBuilder.BlueprintNote(capped, fallbackCount),
-                CvCoachPromptBuilder.BlueprintNote(capped, fallbackCount), "CV check");
+            return (fallbackCount, capped,
+                CvCoachPromptBuilder.BlueprintNote(capped, fallbackCount, job.OutputLanguage),
+                CvCoachPromptBuilder.BlueprintNote(capped, fallbackCount, job.OutputLanguage),
+                "CV check");
         }
 
         if (job.Purpose == CandidatePersonalSetPurpose.CvDrill)
         {
             var skill = focusSkills.FirstOrDefault() ?? "skill";
             var drillSkills = focusSkills.Count > 0 ? focusSkills : cvSkills.Take(1).ToList();
-            return (4, drillSkills, CvCoachPromptBuilder.DrillHrNote(skill),
-                CvCoachPromptBuilder.DrillHrNote(skill), $"Drill — {skill}");
+            return (4, drillSkills,
+                CvCoachPromptBuilder.DrillHrNote(skill, job.OutputLanguage),
+                CvCoachPromptBuilder.DrillHrNote(skill, job.OutputLanguage),
+                $"Drill — {skill}");
         }
 
         if (job.Purpose == CandidatePersonalSetPurpose.CvReassessment)
         {
             var capped = (focusSkills.Count > 0 ? focusSkills : cvSkills.Take(3)).ToList();
-            return (Math.Max(6, capped.Count * 2), capped,
-                "Re-assessment: câu hỏi mới, cùng skill, không lặp đề cũ.",
-                "Re-assessment: câu hỏi mới, cùng skill, không lặp đề cũ.",
-                "Re-assessment");
+            var note = CvCoachPromptBuilder.ReassessmentHrNote(job.OutputLanguage);
+            return (Math.Max(6, capped.Count * 2), capped, note, note, "Re-assessment");
         }
 
         if (job.Purpose == CandidatePersonalSetPurpose.CvScreening)
@@ -588,8 +594,8 @@ public class CandidatePersonalSetService : ICandidatePersonalSetService
             var capped = (focusSkills.Count > 0 ? focusSkills : cvSkills).ToList();
             var count = Math.Max(1, capped.Count);
             return (count, capped,
-                CvCoachPromptBuilder.BlueprintNote(capped, count),
-                CvCoachPromptBuilder.BlueprintNote(capped, count),
+                CvCoachPromptBuilder.BlueprintNote(capped, count, job.OutputLanguage),
+                CvCoachPromptBuilder.BlueprintNote(capped, count, job.OutputLanguage),
                 "Sàng lọc kỹ năng");
         }
 
@@ -614,6 +620,12 @@ public class CandidatePersonalSetService : ICandidatePersonalSetService
 
         if (job.Purpose == CandidatePersonalSetPurpose.CvScreening)
             return "Sàng lọc kỹ năng CV";
+
+        if (job.Purpose == CandidatePersonalSetPurpose.CvReassessment)
+        {
+            var role = ExtractRoleTitle(planJson);
+            return string.IsNullOrWhiteSpace(role) ? "Re-assessment" : $"Re-assessment — {role}";
+        }
 
         return ExtractRoleTitle(planJson) ?? fallback;
     }

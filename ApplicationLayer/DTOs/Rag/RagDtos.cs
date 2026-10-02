@@ -352,6 +352,8 @@ public class EvaluateAnswerRequest
     public string? QuestionType { get; set; }
     /// <summary>SCRUM-447: marketplace (default) | coach — coach bắt buộc correctness/relevance/clarity.</summary>
     public string? ScoringMode { get; set; }
+    /// <summary>Vietnamese | English — ngôn ngữ strengths/improvements/suggestion.</summary>
+    public string? Language { get; set; }
 }
 
 public class EvaluateAnswerResult
