@@ -13,7 +13,7 @@ public static class CoachDiagnosticPolicy
     public const int DefaultMaxSkills = 5;
     public const int DefaultMaxAdaptiveSkills = 8;
     public const int DefaultScreeningPerSkill = 1;
-    public const int DefaultScreeningMaxSkills = 12;
+    public const int DefaultScreeningMaxSkills = 20;
     public const int DefaultReassessmentPerSkill = 3;
 
     public static int QuestionsPerSkill(CompetencyScoringPolicy? p)
@@ -42,7 +42,27 @@ public static class CoachDiagnosticPolicy
         => Clamp(p?.ScreeningQuestionsPerSkill ?? 0, 1, 3, DefaultScreeningPerSkill);
 
     public static int ScreeningMaxSkills(CompetencyScoringPolicy? p)
-        => Clamp(p?.ScreeningMaxSkills ?? 0, 1, 20, DefaultScreeningMaxSkills);
+        => Clamp(p?.ScreeningMaxSkills ?? 0, 1, 30, DefaultScreeningMaxSkills);
+
+    /// <summary>
+    /// Trần tổng số câu đo nhanh trong 1 bài chẩn đoán — giữ đề không quá dài
+    /// và thời gian sinh đề vẫn an toàn (RAG sinh theo từng nhóm ~10 câu).
+    /// </summary>
+    public const int MaxQuickCheckQuestions = 40;
+
+    // Đo nhanh skill CV ngoài core ngay trong bài chẩn đoán dùng chung cấu hình "Phủ rộng skill CV"
+    // (các cột Screening* có sẵn) → Admin chỉ chỉnh 1 nơi và không cần migration DB.
+    public static bool QuickCheckEnabled(CompetencyScoringPolicy? p) => ScreeningEnabled(p);
+
+    public static int QuickCheckQuestionsPerSkill(CompetencyScoringPolicy? p) => ScreeningQuestionsPerSkill(p);
+
+    /// <summary>Số skill đo nhanh tối đa — vừa theo cấu hình Admin, vừa không vượt trần tổng câu.</summary>
+    public static int QuickCheckMaxSkills(CompetencyScoringPolicy? p)
+    {
+        var bySetting = ScreeningMaxSkills(p);
+        var byQuestionCap = MaxQuickCheckQuestions / Math.Max(1, QuickCheckQuestionsPerSkill(p));
+        return Math.Min(bySetting, byQuestionCap);
+    }
 
     /// <summary>SCRUM-508: bài Đánh giá lại 1 skill — tối thiểu 2 câu evidence, trần 10.</summary>
     public static int ReassessmentQuestionsPerSkill(CompetencyScoringPolicy? p)

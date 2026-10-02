@@ -180,6 +180,67 @@ public class CandidatePersonalSetService : ICandidatePersonalSetService
         }).ToList();
     }
 
+    /// <summary>
+    /// Gọi RAG sinh đề Coach. Đề chẩn đoán có câu đo nhanh (mọi skill CV) → tách phần core và các nhóm
+    /// câu đo nhanh rồi sinh song song: đề dài hơn nhưng thời gian chờ gần như cũ, mỗi lần gọi vẫn nằm trong
+    /// timeout. Đề không có câu đo nhanh (drill, đánh giá lại, sàng lọc) giữ nguyên 1 lần gọi như trước.
+    /// </summary>
+    private async Task<(List<RagGeneratedQuestionDto> Questions, string? KbSource)> GenerateCoachQuestionsAsync(
+        CandidatePersonalSetJob job,
+        object syntheticPlan,
+        string planJson,
+        string coachNote,
+        IReadOnlyList<Guid> coachDocs,
+        CancellationToken ct)
+    {
+        var parts = CoachPlanSplitter.SplitQuickCheck(planJson);
+        if (parts.Count == 0)
+        {
+            var single = await _rag.GenerateCandidateQuestionsFromPlanAsync(
+                BuildCoachRequest(job, syntheticPlan, coachNote, coachDocs), ct);
+            if (!single.Success || single.Questions.Count == 0)
+                throw new ServerFailureException(single.Error ?? "RAG không sinh được câu hỏi.");
+            return (single.Questions, single.KbSource);
+        }
+
+        // Mỗi phần có note riêng (đúng số câu + đúng skill của phần) để LLM không sinh thừa/thiếu.
+        var calls = parts.Select(part =>
+        {
+            var partNote = CvCoachPromptBuilder.BlueprintNote(part.Skills, part.TotalQuestions, job.OutputLanguage)
+                           + " " + StudioOutputLanguage.RagInstruction(job.OutputLanguage);
+            return _rag.GenerateCandidateQuestionsFromPlanAsync(
+                BuildCoachRequest(job, part.Plan, partNote, coachDocs), ct);
+        }).ToList();
+        var results = await Task.WhenAll(calls);
+
+        var failed = results.FirstOrDefault(r => !r.Success || r.Questions.Count == 0);
+        if (failed is not null)
+            throw new ServerFailureException(failed.Error ?? "RAG không sinh được câu hỏi.");
+
+        // Gộp lại; order/skill/độ khó thật được gán theo slot của cả đề ở bước validate blueprint.
+        var questions = results.SelectMany(r => r.Questions).ToList();
+        var anySystem = results.Any(r => string.Equals(
+            r.KbSource, CoachDiagnosticKnowledgeFolder.KbSourceSystem, StringComparison.OrdinalIgnoreCase));
+        return (questions, anySystem
+            ? CoachDiagnosticKnowledgeFolder.KbSourceSystem
+            : CoachDiagnosticKnowledgeFolder.KbSourceInferred);
+    }
+
+    private static GenerateQuestionsFromPlanRequest BuildCoachRequest(
+        CandidatePersonalSetJob job, object plan, string note, IReadOnlyList<Guid> coachDocs)
+        => new()
+        {
+            OwnerId = job.CandidateUserId,
+            JobDescription = job.JobDescription,
+            ApprovedPlan = plan,
+            HrNote = note,
+            Language = StudioOutputLanguage.Normalize(job.OutputLanguage),
+            Audience = "coach",
+            CvContext = job.JobDescription,
+            CandidateNote = note,
+            DocumentIds = coachDocs.ToList()
+        };
+
     public async Task ExecuteGenerationAsync(Guid jobId, CancellationToken ct = default)
     {
         var job = await _jobs.GetByIdAsync(jobId)
@@ -245,22 +306,10 @@ public class CandidatePersonalSetService : ICandidatePersonalSetService
                 var coachDocs = await _knowledgeDocs.ListSystemDocumentIdsByFolderAsync(
                     CoachDiagnosticKnowledgeFolder.Resolve(_config));
 
-                var qFast = await _rag.GenerateCandidateQuestionsFromPlanAsync(new GenerateQuestionsFromPlanRequest
-                {
-                    OwnerId = job.CandidateUserId,
-                    JobDescription = job.JobDescription,
-                    ApprovedPlan = syntheticPlan,
-                    HrNote = coachNote,
-                    Language = StudioOutputLanguage.Normalize(job.OutputLanguage),
-                    Audience = "coach",
-                    CvContext = job.JobDescription,
-                    CandidateNote = coachNote,
-                    DocumentIds = coachDocs.ToList()
-                }, ragCts.Token);
-                if (!qFast.Success || qFast.Questions.Count == 0)
-                    throw new ServerFailureException(qFast.Error ?? "RAG không sinh được câu hỏi.");
+                var (generatedQuestions, ragKbSource) = await GenerateCoachQuestionsAsync(
+                    job, syntheticPlan, planJson, coachNote, coachDocs, ragCts.Token);
 
-                var kbSource = string.Equals(qFast.KbSource, CoachDiagnosticKnowledgeFolder.KbSourceSystem, StringComparison.OrdinalIgnoreCase)
+                var kbSource = string.Equals(ragKbSource, CoachDiagnosticKnowledgeFolder.KbSourceSystem, StringComparison.OrdinalIgnoreCase)
                     ? CoachDiagnosticKnowledgeFolder.KbSourceSystem
                     : CoachDiagnosticKnowledgeFolder.KbSourceInferred;
                 if (coachDocs.Count == 0)
@@ -268,7 +317,7 @@ public class CandidatePersonalSetService : ICandidatePersonalSetService
                 job.GapSkillsJson = CoachDiagnosticKnowledgeFolder.SerializeKbSource(kbSource);
 
                 // Skill/difficulty là input của công thức competency → phải khớp blueprint, nếu lệch thì fail job.
-                var compliance = BlueprintComplianceValidator.Validate(blueprintSlots, qFast.Questions);
+                var compliance = BlueprintComplianceValidator.Validate(blueprintSlots, generatedQuestions);
                 if (!compliance.Ok)
                     throw new ServerFailureException(compliance.Error ?? "Bộ câu hỏi không khớp blueprint năng lực.");
 

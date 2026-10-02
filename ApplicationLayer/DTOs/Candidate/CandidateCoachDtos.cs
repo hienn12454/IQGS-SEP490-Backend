@@ -188,6 +188,8 @@ public class CoachSkillResultDto
     public string? DemonstratedDifficulty { get; set; }
     public string Band { get; set; } = "needs_improvement"; // strength | needs_improvement | critical_gap
     public string? Source { get; set; }
+    /// <summary>true = skill CV chỉ được hỏi nhanh trong bài chẩn đoán (không tính vào level).</summary>
+    public bool IsQuickCheck { get; set; }
 }
 
 public class CoachRoadmapDto

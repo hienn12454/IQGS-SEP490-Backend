@@ -32,6 +32,12 @@ public class CompetencyItem
     public List<string> Topics { get; set; } = new();
     public string Source { get; set; } = CompetencySourceMode.Framework;
     public List<CompetencyCitation> Citations { get; set; } = new();
+
+    /// <summary>
+    /// Skill trên CV nằm ngoài nhóm core — chỉ hỏi nhanh (mặc định 1 câu) để biết có cần đưa vào lộ trình không.
+    /// Không tính vào Overall/level vì 1 câu chưa đủ evidence; level vẫn chỉ dựa trên nhóm core hỏi sâu.
+    /// </summary>
+    public bool QuickCheck { get; set; }
 }
 
 public class CompetencyCitation

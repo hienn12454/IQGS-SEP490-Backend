@@ -236,7 +236,8 @@ public static class TechSkillCatalog
         Add(TechSkill.Kanban, "Kanban", Architecture);
 
         // API
-        Add(TechSkill.RestApi, "REST API", Api, "rest", "restful", "restapi");
+        Add(TechSkill.RestApi, "REST API", Api, "rest", "restful", "restapi",
+            "restful api", "restful apis", "rest apis");
         Add(TechSkill.GraphQL, "GraphQL", Api, "graphql");
         Add(TechSkill.OpenApiSwagger, "OpenAPI / Swagger", Api, "swagger", "openapi");
         Add(TechSkill.WebSocket, "WebSocket", Api, "websocket");

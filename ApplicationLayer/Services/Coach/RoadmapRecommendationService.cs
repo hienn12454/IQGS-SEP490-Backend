@@ -127,6 +127,12 @@ public class RoadmapRecommendationService : IRoadmapRecommendationService
         // SCRUM-462: skills trong snapshot = CV; coreSkills có thể pad framework ngoài CV.
         var cvSkills = ParseCvSkillsFromSnapshot(assessment.ContextSnapshotJson);
 
+        // Skill đo nhanh không nằm trong competency profile → dựng riêng bên dưới từ kết quả bài đo.
+        var quickCheckKeys = CoachQuickCheckSkills.QuickCheckKeys(blueprint);
+        sources = sources
+            .Where(s => !quickCheckKeys.Contains(CompetencyScoringService.NormalizeSkill(s.Skill)))
+            .ToList();
+
         foreach (var item in sources)
         {
             var fwSkill = framework?.Skills.FirstOrDefault(s =>
@@ -143,6 +149,15 @@ public class RoadmapRecommendationService : IRoadmapRecommendationService
                 candidateUserId, assessment, framework, blueprint, item.Skill, current, target, gap, weight, fwSkill, bpSkill, cvSkills);
             created.Framework = null;
             created.SourceAssessment = null;
+            toAdd.Add(created);
+        }
+
+        // Mọi skill CV được đo nhanh đều có lộ trình: yếu → Gap (cần cải thiện), đạt → Advanced (tuỳ chọn).
+        foreach (var result in assessment.SkillResults)
+        {
+            if (!quickCheckKeys.Contains(CompetencyScoringService.NormalizeSkill(result.Skill))) continue;
+            var created = await BuildQuickCheckRoadmapAsync(
+                candidateUserId, assessment, framework, blueprint, result, cvSkills);
             toAdd.Add(created);
         }
 
@@ -376,6 +391,39 @@ public class RoadmapRecommendationService : IRoadmapRecommendationService
         return "low";
     }
 
+    /// <summary>
+    /// Lộ trình cho skill đo nhanh. Topic lấy deterministic (node curated → topic framework → mặc định),
+    /// không gọi LLM: roadmap được dựng ngay lúc ứng viên nộp bài, gọi LLM cho từng skill CV sẽ làm chờ lâu.
+    /// </summary>
+    private async Task<CandidateRoadmap> BuildQuickCheckRoadmapAsync(
+        Guid candidateUserId,
+        CandidateAssessment assessment,
+        CompetencyFramework? framework,
+        CompetencyBlueprint? blueprint,
+        CandidateAssessmentSkillResult result,
+        HashSet<string> cvSkills)
+    {
+        var key = CompetencyScoringService.NormalizeSkill(result.Skill);
+        var fwSkill = framework?.Skills.FirstOrDefault(s =>
+            CompetencyScoringService.NormalizeSkill(s.Skill) == key);
+        var bpSkill = blueprint?.Competencies.FirstOrDefault(c =>
+            CompetencyScoringService.NormalizeSkill(c.SkillName) == key);
+
+        var target = fwSkill?.TargetScore ?? bpSkill?.TargetScore ?? result.TargetScore;
+        // Trọng số nhỏ hơn skill core để skill đo nhanh luôn xếp sau, nhưng vẫn có mức ưu tiên khi yếu.
+        var weight = bpSkill is { Weight: > 0 } ? bpSkill.Weight : CoachQuickCheckSkills.RoadmapWeight;
+        var current = result.SkillScore;
+        var gap = Math.Round(target - current, 2);
+
+        // confidence = screening để FE gắn nhãn "Cần kiểm tra thêm" (1 câu chưa đủ kết luận).
+        var created = await BuildRoadmapAsync(
+            candidateUserId, assessment, framework, blueprint, result.Skill, current, target, gap, weight,
+            fwSkill, bpSkill, cvSkills, confidence: "screening", quickCheck: true);
+        created.Framework = null;
+        created.SourceAssessment = null;
+        return created;
+    }
+
     private async Task<CandidateRoadmap> BuildRoadmapAsync(
         Guid candidateUserId,
         CandidateAssessment assessment,
@@ -389,7 +437,8 @@ public class RoadmapRecommendationService : IRoadmapRecommendationService
         CompetencyFrameworkSkill? fwSkill,
         CompetencyItem? bpSkill,
         HashSet<string> cvNormalized,
-        string? confidence = null)
+        string? confidence = null,
+        bool quickCheck = false)
     {
         var kind = gap > 0 ? CandidateRoadmapKind.Gap : CandidateRoadmapKind.Advanced;
         var score = ComputePriorityScore(gap, weight);
@@ -398,7 +447,14 @@ public class RoadmapRecommendationService : IRoadmapRecommendationService
         List<TopicPick> items;
         string? explanation;
         var kbSource = CoachRoadmapKnowledgeFolder.KbSourceInferred;
-        if (adaptive)
+        if (quickCheck)
+        {
+            // Đo nhanh: topic deterministic, không gọi LLM (xem BuildQuickCheckRoadmapAsync).
+            var quickNodes = await LoadNodesAsync(framework, skill);
+            items = FallbackTopics(quickNodes, fwSkill, skill);
+            explanation = null;
+        }
+        else if (adaptive)
         {
             var personalized = await PersonalizeAdaptiveTopicsAsync(
                 assessment, blueprint, skill, current, target, gap, bpSkill);
@@ -409,17 +465,18 @@ public class RoadmapRecommendationService : IRoadmapRecommendationService
         }
         else
         {
-            var nodes = new List<RoadmapNode>();
-            if (framework is not null)
-            {
-                nodes = await _nodes.ListBySkillAsync(framework.RoleKey, framework.TargetLevel, skill);
-                if (nodes.Count == 0 && !string.Equals(framework.TargetLevel, CoachSeniorityLevel.Junior, StringComparison.OrdinalIgnoreCase))
-                    nodes = await _nodes.ListBySkillAsync(framework.RoleKey, CoachSeniorityLevel.Junior, skill);
-            }
+            var nodes = await LoadNodesAsync(framework, skill);
             var topics = await PersonalizeTopicsAsync(framework, skill, current, target, gap, nodes, fwSkill);
             items = topics.Items;
             explanation = topics.Explanation;
             kbSource = topics.KbSource;
+        }
+
+        if (quickCheck)
+        {
+            explanation ??= kind == CandidateRoadmapKind.Gap
+                ? $"Đo nhanh trong bài chẩn đoán: gap {gap} điểm so với target {target}. Nên luyện rồi Đánh giá lại để có kết luận chắc hơn."
+                : $"Đo nhanh trong bài chẩn đoán: đã đạt target {target}. Có thể luyện nâng cao, không bắt buộc.";
         }
 
         explanation ??= kind == CandidateRoadmapKind.Gap
@@ -505,6 +562,19 @@ public class RoadmapRecommendationService : IRoadmapRecommendationService
             IsIncluded = true
         });
         return roadmap;
+    }
+
+    /// <summary>Node curated theo role/level/skill; level không có node thì lùi về Junior.</summary>
+    private async Task<List<RoadmapNode>> LoadNodesAsync(CompetencyFramework? framework, string skill)
+    {
+        if (framework is null) return new List<RoadmapNode>();
+
+        var nodes = await _nodes.ListBySkillAsync(framework.RoleKey, framework.TargetLevel, skill)
+                    ?? new List<RoadmapNode>();
+        if (nodes.Count == 0 && !string.Equals(framework.TargetLevel, CoachSeniorityLevel.Junior, StringComparison.OrdinalIgnoreCase))
+            nodes = await _nodes.ListBySkillAsync(framework.RoleKey, CoachSeniorityLevel.Junior, skill)
+                    ?? new List<RoadmapNode>();
+        return nodes;
     }
 
     private static bool IsAdaptive(

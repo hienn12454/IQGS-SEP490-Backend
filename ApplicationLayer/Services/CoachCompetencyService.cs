@@ -348,6 +348,12 @@ public class CoachCompetencyService : ICoachCompetencyService
             competencyBlueprint = await _adaptiveBlueprints.BuildAsync(resolution, skills, policy, ct);
         }
 
+        // Yêu cầu: sau bài chẩn đoán, lộ trình phải có đủ mọi skill CV đã xác nhận ở bước Phân tích CV.
+        // Nhóm core ở trên hỏi sâu để tính level; skill CV còn lại được hỏi nhanh ngay trong đề này.
+        var coreSkillNames = competencyBlueprint.Competencies.Select(c => c.SkillName).ToList();
+        var quickCheck = AppendQuickCheckSkills(
+            competencyBlueprint, skills, policy, resolution.IsFramework ? resolution.Framework : null);
+
         // Chạy lại: huỷ job treo, abandon assessment chưa xong, supersede báo cáo cũ, archive roadmap thế hệ trước
         await FailPendingCoachJobsAsync(candidateUserId, "Đã thay thế bởi diagnostic mới.");
         await AbandonIncompleteAssessmentsAsync(candidateUserId);
@@ -355,11 +361,14 @@ public class CoachCompetencyService : ICoachCompetencyService
         await ArchiveAllRoadmapsAsync(candidateUserId);
 
         var outputLanguage = RequireOutputLanguage(profile);
+        // Số câu/skill chỉ tính trên nhóm core — câu đo nhanh có số câu riêng.
         var perSkill = CoachDiagnosticPolicy.ResolveDiagnosticQuestionsPerSkill(
-            policy, competencyBlueprint.Competencies.Count);
+            policy, coreSkillNames.Count);
         var diagnosticPlan = DiagnosticBlueprintBuilder.BuildDiagnostic(
             competencyBlueprint,
-            new DiagnosticBlueprintBuilder.Options(QuestionsPerSkill: perSkill),
+            new DiagnosticBlueprintBuilder.Options(
+                QuestionsPerSkill: perSkill,
+                QuickCheckQuestionsPerSkill: CoachDiagnosticPolicy.QuickCheckQuestionsPerSkill(policy)),
             outputLanguage);
         var scopeSkills = competencyBlueprint.Competencies.Select(s => s.SkillName).ToList();
         var snapshot = JsonSerializer.Serialize(new
@@ -368,7 +377,10 @@ public class CoachCompetencyService : ICoachCompetencyService
             targetLevel = profile.TargetLevel,
             selfAssessedLevel = profile.SelfAssessedLevel,
             skills,
-            coreSkills = scopeSkills,
+            coreSkills = coreSkillNames,
+            quickCheckSkills = quickCheck.Selected,
+            // Vượt trần Admin → chưa đo; bài sàng lọc sau báo cáo sẽ gợi ý các skill này.
+            unmeasuredSkills = quickCheck.Overflow,
             frameworkId = competencyBlueprint.FrameworkId,
             resolutionMode = resolution.ResolutionMode,
             roleFamilyKey = resolution.RoleFamilyKey
@@ -560,6 +572,8 @@ public class CoachCompetencyService : ICoachCompetencyService
                 CompetencyScoringService.NormalizeSkill(c.SkillName)
                 == CompetencyScoringService.NormalizeSkill(roadmap.Skill))
                 ?? throw new BadRequestException("Skill không thuộc blueprint đang Active.");
+            // Skill đo nhanh khi Đánh giá lại phải hỏi đủ câu như core, không còn là câu đo nhanh.
+            one.QuickCheck = false;
             skillBlueprint = new CompetencyBlueprint
             {
                 SchemaVersion = blueprint.SchemaVersion,
@@ -1230,7 +1244,16 @@ public class CoachCompetencyService : ICoachCompetencyService
 
         var overall = CompetencyScoringService.ComputeOverall(policy, skillsToScore, inputs);
 
+        // Skill đo nhanh chấm riêng: có điểm để lập lộ trình nhưng không cộng vào Overall/level.
+        var quickCheckScoring = blueprint is null
+            ? new List<CompetencyFrameworkSkill>()
+            : FrameworkBlueprintBuilder.ToQuickCheckScoringSkills(blueprint);
+        var quickCheckResults = quickCheckScoring.Count == 0
+            ? new List<CompetencyScoringService.SkillScoreResult>()
+            : CompetencyScoringService.ComputeOverall(policy, quickCheckScoring, inputs).Skills.ToList();
+
         var newSkillResults = overall.Skills
+            .Concat(quickCheckResults)
             .GroupBy(s => CompetencyScoringService.NormalizeSkill(s.Skill))
             .Select(g => g.First())
             .Select(r =>
@@ -1704,6 +1727,28 @@ public class CoachCompetencyService : ICoachCompetencyService
         return profile;
     }
 
+    /// <summary>
+    /// Thêm competency đo nhanh cho skill CV ngoài nhóm core. Admin tắt "Phủ rộng skill CV" → không thêm
+    /// (giữ hành vi cũ). Trả về skill đã thêm + phần vượt trần.
+    /// </summary>
+    private static CoachQuickCheckSkills.Selection AppendQuickCheckSkills(
+        CompetencyBlueprint blueprint,
+        IReadOnlyList<string> cvSkills,
+        CompetencyScoringPolicy policy,
+        CompetencyFramework? framework)
+    {
+        if (!CoachDiagnosticPolicy.QuickCheckEnabled(policy))
+            return new CoachQuickCheckSkills.Selection(new List<string>(), new List<string>());
+
+        var coreNames = blueprint.Competencies.Select(c => c.SkillName).ToList();
+        var selection = CoachQuickCheckSkills.Select(
+            cvSkills, coreNames, CoachDiagnosticPolicy.QuickCheckMaxSkills(policy));
+        var targetScore = CompetencyTargetScorePolicy.Resolve(policy, blueprint.TargetLevel);
+        blueprint.Competencies.AddRange(CoachQuickCheckSkills.BuildCompetencies(
+            selection.Selected, blueprint.TargetLevel, targetScore, framework));
+        return selection;
+    }
+
     private static List<CompetencyFrameworkSkill> SelectCoreSkills(
         CompetencyFramework fw, IReadOnlyList<string> cvSkills, int min, int max)
     {
@@ -1925,6 +1970,9 @@ public class CoachCompetencyService : ICoachCompetencyService
                 prev = new CoachAssessmentDto { OverallReadiness = p.OverallReadiness };
         }
 
+        var quickCheckKeys = CoachQuickCheckSkills.QuickCheckKeys(
+            CompetencyBlueprintJson.Deserialize(a.BlueprintJson));
+
         string Band(CandidateAssessmentSkillResult r)
         {
             if (r.SkillScore >= r.TargetScore) return "strength";
@@ -1955,7 +2003,8 @@ public class CoachCompetencyService : ICoachCompetencyService
                 Gap = r.Gap,
                 ImportanceWeight = r.ImportanceWeight,
                 DemonstratedDifficulty = r.DemonstratedDifficulty,
-                Band = Band(r)
+                Band = Band(r),
+                IsQuickCheck = quickCheckKeys.Contains(CompetencyScoringService.NormalizeSkill(r.Skill))
             }).OrderByDescending(s => s.Gap).ToList(),
             // ExplanationJson là blob nội bộ — parse sang field có cấu trúc, không dump JSON.
             Explanation = null,

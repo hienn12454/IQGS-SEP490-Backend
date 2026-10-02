@@ -218,8 +218,8 @@ public class CompetencyPolicyAdminService : ICompetencyPolicyAdminService
             throw new BadRequestException("DiagnosticMinTotalQuestions phải trong [0, 60] (0 = tắt).");
         if (dto.ScreeningQuestionsPerSkill is < 1 or > 3)
             throw new BadRequestException("ScreeningQuestionsPerSkill phải trong [1, 3].");
-        if (dto.ScreeningMaxSkills is < 1 or > 20)
-            throw new BadRequestException("ScreeningMaxSkills phải trong [1, 20].");
+        if (dto.ScreeningMaxSkills is < 1 or > 30)
+            throw new BadRequestException("ScreeningMaxSkills phải trong [1, 30].");
         if (dto.ReassessmentQuestionsPerSkill is < 2 or > 10)
             throw new BadRequestException("ReassessmentQuestionsPerSkill phải trong [2, 10].");
     }

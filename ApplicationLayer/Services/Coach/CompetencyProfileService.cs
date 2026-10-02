@@ -132,6 +132,16 @@ public class CompetencyProfileService : ICompetencyProfileService
         if (resultsToMerge.Count == 0)
             resultsToMerge = assessment.SkillResults.ToList();
 
+        // Skill đo nhanh (1 câu) không gộp vào competency profile — giống bài sàng lọc —
+        // để Overall/level chỉ phản ánh nhóm core được đo đủ evidence. Lộ trình lấy thẳng từ kết quả bài đo.
+        var quickCheckKeys = CoachQuickCheckSkills.QuickCheckKeys(blueprint);
+        if (quickCheckKeys.Count > 0)
+        {
+            resultsToMerge = resultsToMerge
+                .Where(r => !quickCheckKeys.Contains(CompetencyScoringService.NormalizeSkill(r.Skill)))
+                .ToList();
+        }
+
         // Diagnostic = đo lại toàn bộ blueprint hiện tại — bỏ skill ngoài scope (vd. asp.net sau khi đổi CV FE).
         if (assessment.Kind == CandidateAssessmentKind.Diagnostic && resultsToMerge.Count > 0)
         {
@@ -302,11 +312,14 @@ public class CompetencyProfileService : ICompetencyProfileService
         var prev = CompetencyBlueprintJson.Deserialize(previousBlueprintJson);
         if (prev is null || prev.Competencies.Count == 0) return false;
 
+        // Chỉ so nhóm core: đổi skill đo nhanh (skill phụ trên CV) không phải là đổi stack.
         var a = prev.Competencies
+            .Where(c => !c.QuickCheck)
             .Select(c => CompetencyScoringService.NormalizeSkill(c.SkillName))
             .Where(s => s.Length > 0)
             .ToHashSet(StringComparer.Ordinal);
         var b = next.Competencies
+            .Where(c => !c.QuickCheck)
             .Select(c => CompetencyScoringService.NormalizeSkill(c.SkillName))
             .Where(s => s.Length > 0)
             .ToHashSet(StringComparer.Ordinal);

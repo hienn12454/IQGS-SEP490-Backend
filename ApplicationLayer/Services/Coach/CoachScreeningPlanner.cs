@@ -16,9 +16,19 @@ public static class CoachScreeningPlanner
         CompetencyFramework? framework,
         int maxSkills)
     {
-        var cap = Math.Clamp(maxSkills, 1, 20);
-        var measured = ToNormSet(alreadyMeasured);
-        var onRoadmap = ToNormSet(existingRoadmapSkills);
+        var cap = Math.Clamp(maxSkills, 1, 30);
+        var measuredList = alreadyMeasured?.ToList() ?? new List<string>();
+        var roadmapList = existingRoadmapSkills?.ToList() ?? new List<string>();
+        var measured = ToNormSet(measuredList);
+        var onRoadmap = ToNormSet(roadmapList);
+
+        // Giữ tên gốc để so biến thể: bài chẩn đoán đã gộp "ASP.NET" vào "ASP.NET Core",
+        // "SQL Server" vào "SQL" → không được mời sàng lọc lại những skill đó.
+        var coveredNames = measuredList
+            .Concat(roadmapList)
+            .Where(s => !string.IsNullOrWhiteSpace(s))
+            .Select(s => s.Trim())
+            .ToList();
 
         var candidates = new List<(string Name, double Weight, int Order)>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
@@ -30,6 +40,7 @@ public static class CoachScreeningPlanner
             var key = CompetencyScoringService.NormalizeSkill(name);
             if (key.Length == 0 || !seen.Add(key)) continue;
             if (measured.Contains(key) || onRoadmap.Contains(key)) continue;
+            if (CoachQuickCheckSkills.IsCoveredBy(name, coveredNames)) continue;
 
             var fw = framework?.Skills.FirstOrDefault(s =>
                 CompetencyScoringService.NormalizeSkill(s.Skill) == key);

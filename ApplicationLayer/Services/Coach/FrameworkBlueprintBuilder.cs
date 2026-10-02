@@ -46,10 +46,21 @@ public static class FrameworkBlueprintBuilder
         };
     }
 
+    /// <summary>
+    /// Skill dùng để chấm Overall/level — chỉ nhóm core. Skill đo nhanh (QuickCheck) bị loại vì chỉ có
+    /// 1 câu; nếu tính vào level thì các skill phụ trên CV sẽ kéo level lệch đi.
+    /// </summary>
     public static List<CompetencyFrameworkSkill> ToScoringSkills(CompetencyBlueprint blueprint)
+        => ToFrameworkSkills(blueprint.Competencies.Where(c => !c.QuickCheck));
+
+    /// <summary>Skill đo nhanh — chấm riêng chỉ để lập lộ trình, không ảnh hưởng level.</summary>
+    public static List<CompetencyFrameworkSkill> ToQuickCheckScoringSkills(CompetencyBlueprint blueprint)
+        => ToFrameworkSkills(blueprint.Competencies.Where(c => c.QuickCheck));
+
+    private static List<CompetencyFrameworkSkill> ToFrameworkSkills(IEnumerable<CompetencyItem> competencies)
     {
         var i = 0;
-        return blueprint.Competencies.Select(c => new CompetencyFrameworkSkill
+        return competencies.Select(c => new CompetencyFrameworkSkill
         {
             Id = Guid.NewGuid(),
             Skill = c.SkillName,

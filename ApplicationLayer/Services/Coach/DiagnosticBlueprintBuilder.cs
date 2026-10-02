@@ -19,16 +19,19 @@ public static class DiagnosticBlueprintBuilder
     public sealed record Options(
         int QuestionsPerSkill = 3,
         double EasyRatio = 0.30,
-        double HardRatio = 0.30)
+        double HardRatio = 0.30,
+        int QuickCheckQuestionsPerSkill = 1)
     {
         public static readonly Options Default = new();
     }
 
+    /// <summary>QuickCheck = câu đo nhanh skill CV ngoài core (không tính vào level).</summary>
     public sealed record BlueprintQuestion(
         int Order,
         string Skill,
         string Topic,
-        string Difficulty);
+        string Difficulty,
+        bool QuickCheck = false);
 
     /// <summary>
     /// Blueprint diagnostic: mỗi core skill có đủ evidence để suy ra level.
@@ -69,6 +72,10 @@ public static class DiagnosticBlueprintBuilder
                 return (IReadOnlyList<string>)(item?.Topics.Count > 0 ? item.Topics : new List<string> { s.Skill });
             },
             options);
+
+        // Skill CV ngoài core: thêm câu đo nhanh, đánh số tiếp sau phần core.
+        questions.AddRange(BuildQuickCheckQuestions(blueprint, options, questions.Count + 1));
+
         return BuildPlanObject(
             roleTitle: $"{blueprint.TargetRole} — {blueprint.TargetLevel} diagnostic",
             displayRole: blueprint.TargetRole,
@@ -76,6 +83,30 @@ public static class DiagnosticBlueprintBuilder
             questions,
             blueprint.Competencies.Select(c => c.SkillName).ToList(),
             outputLanguage);
+    }
+
+    /// <summary>
+    /// Câu đo nhanh cho từng skill QuickCheck của blueprint (mặc định 1 câu/skill, tối đa 3).
+    /// Độ khó lấy theo Category của competency — skill ngoài framework là FUNDAMENTAL nên hỏi câu nền tảng.
+    /// </summary>
+    public static List<BlueprintQuestion> BuildQuickCheckQuestions(
+        CompetencyBlueprint blueprint, Options? options = null, int startOrder = 1)
+    {
+        var perSkill = Math.Clamp((options ?? Options.Default).QuickCheckQuestionsPerSkill, 1, 3);
+        var result = new List<BlueprintQuestion>();
+        var order = startOrder;
+
+        foreach (var item in blueprint.Competencies.Where(c => c.QuickCheck))
+        {
+            var topics = item.Topics.Where(t => !string.IsNullOrWhiteSpace(t)).ToList();
+            var difficulty = FrameworkBlueprintBuilder.DifficultyFromCategory(item.Category);
+            for (var i = 0; i < perSkill; i++)
+            {
+                var topic = topics.Count == 0 ? item.SkillName : topics[i % topics.Count];
+                result.Add(new BlueprintQuestion(order++, item.SkillName, topic, difficulty, QuickCheck: true));
+            }
+        }
+        return result;
     }
 
     /// <summary>
@@ -159,6 +190,12 @@ public static class DiagnosticBlueprintBuilder
         string? outputLanguage = null)
     {
         var english = StudioOutputLanguage.Normalize(outputLanguage) == StudioOutputLanguage.English;
+        var hasQuickCheck = questions.Any(q => q.QuickCheck);
+        var quickCheckNote = !hasQuickCheck
+            ? ""
+            : english
+                ? " Rows with quickCheck=true are single quick-check questions: ask one core, fundamental question about that skill."
+                : " Dòng quickCheck=true là câu đo nhanh: hỏi 1 câu nền tảng, cốt lõi nhất của skill đó.";
         return new
         {
             roleTitle,
@@ -187,16 +224,18 @@ public static class DiagnosticBlueprintBuilder
                     evaluationFocus = english
                         ? $"Evidence of {q.Skill} / {q.Topic} at {q.Difficulty}"
                         : $"Bằng chứng {q.Skill} / {q.Topic} ở mức {q.Difficulty}",
-                    goal = $"Assess {q.Skill} ({q.Topic}) at {q.Difficulty} for {displayRole} {targetLevel}"
+                    goal = $"Assess {q.Skill} ({q.Topic}) at {q.Difficulty} for {displayRole} {targetLevel}",
+                    // Đánh dấu để BE tách phần đo nhanh khi sinh đề song song; RAG bỏ qua field lạ.
+                    quickCheck = q.QuickCheck
                 })
                 .ToList(),
-            notes = english
+            notes = (english
                 ? $"Target level={targetLevel}; self-assessed level is context only. "
                   + "Generate EXACTLY the outline count, keeping each row's skill, topic, and difficulty. "
                   + "Do not add skills outside the list."
                 : $"Target level={targetLevel}; self-assessed chỉ là context. "
                   + "Sinh ĐÚNG số câu và ĐÚNG skill/topic/difficulty theo từng dòng outline. "
-                  + "Không thêm skill ngoài danh sách."
+                  + "Không thêm skill ngoài danh sách.") + quickCheckNote
         };
     }
 
