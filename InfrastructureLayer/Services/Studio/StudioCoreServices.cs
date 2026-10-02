@@ -1954,7 +1954,9 @@ public sealed class InterviewPlanService(
             if (root is null)
                 return mapped;
 
-            var outlineArr = JsonSerializer.SerializeToNode(bind.Outline, JsonOptions);
+            // Giữ difficulty/skill/goal/answerMethod HR — rebind chỉ được cập nhật citations
+            var preserved = PreserveHrOutlineFields(outlineItems, bind.Outline);
+            var outlineArr = JsonSerializer.SerializeToNode(preserved, JsonOptions);
             if (outlineArr is null)
                 return mapped;
 
@@ -1967,6 +1969,66 @@ public sealed class InterviewPlanService(
             // Soft-fail: Apply vẫn thành công dù rebind lỗi
             return mapped;
         }
+    }
+
+    /// <summary>
+    /// Rebind chỉ được cập nhật citations. Giữ difficulty/skill/goal/answerMethod từ outline HR đã patch.
+    /// </summary>
+    private static List<object> PreserveHrOutlineFields(
+        IReadOnlyList<PlanOutlineItemDto> hrOutline,
+        IReadOnlyList<object> boundOutline)
+    {
+        JsonArray? boundArr = null;
+        try
+        {
+            boundArr = JsonSerializer.SerializeToNode(boundOutline, JsonOptions) as JsonArray;
+        }
+        catch
+        {
+            boundArr = null;
+        }
+
+        var result = new List<object>(hrOutline.Count);
+        for (var i = 0; i < hrOutline.Count; i++)
+        {
+            var hr = hrOutline[i];
+            var diff = StudioRagPlanMapper.MapDifficulty(hr.Difficulty).ToString().ToLowerInvariant();
+            var answer = StudioRagPlanMapper.NormalizeOutlineAnswerMethod(hr.AnswerMethod, hr.Type);
+            var slot = new Dictionary<string, object?>
+            {
+                ["order"] = hr.Order > 0 ? hr.Order : i + 1,
+                ["type"] = string.IsNullOrWhiteSpace(hr.Type) ? "technical" : hr.Type.Trim(),
+                ["difficulty"] = diff,
+                ["skill"] = hr.Skill ?? "",
+                ["focusArea"] = string.IsNullOrWhiteSpace(hr.FocusArea) ? (hr.Skill ?? "") : hr.FocusArea,
+                ["focus_area"] = string.IsNullOrWhiteSpace(hr.FocusArea) ? (hr.Skill ?? "") : hr.FocusArea,
+                ["goal"] = hr.Goal ?? "",
+                ["answerMethod"] = answer,
+                ["answer_method"] = answer,
+                ["plannedSkill"] = hr.PlannedSkill,
+                ["planned_skill"] = hr.PlannedSkill,
+                ["relabeled"] = hr.Relabeled ? true : null
+            };
+
+            if (boundArr is not null
+                && i < boundArr.Count
+                && boundArr[i] is JsonObject boundSlot)
+            {
+                var citations = boundSlot["citations"] ?? boundSlot["Citations"];
+                if (citations is JsonArray { Count: > 0 })
+                {
+                    slot["citations"] = citations.DeepClone();
+                }
+            }
+            else if (hr.Citations is { Count: > 0 })
+            {
+                slot["citations"] = hr.Citations;
+            }
+
+            result.Add(slot);
+        }
+
+        return result;
     }
 
     private async Task SyncStudioSettingsFromPlanAsync(
