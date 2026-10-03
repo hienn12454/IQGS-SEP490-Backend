@@ -586,6 +586,8 @@ public class LeaderboardItemDto
     public Guid CandidateUserId { get; set; }
     public string CandidateName { get; set; } = string.Empty;
     public double BestOverallScore { get; set; }
+    /// <summary>Phiên điểm cao nhất của ứng viên, để FE redirect thẳng tới trang bài làm.</summary>
+    public Guid? BestSessionId { get; set; }
     /// <summary>Số câu đạt trên phiên điểm cao nhất. Đạt = Score &gt;= ngưỡng bộ.</summary>
     public int PassCount { get; set; }
     /// <summary>Số câu đã chấm Succeeded trên phiên điểm cao nhất.</summary>
