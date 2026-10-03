@@ -145,6 +145,55 @@ public sealed class CoachWrapUpBuilderTests
         Assert.Equal("screening", dto.NextSkills[0].Reason);
     }
 
+    [Fact]
+    public void Build_Answers_CountsPassedAgainstExclusiveThreshold()
+    {
+        var roadmaps = new List<CandidateRoadmap>
+        {
+            Accepted("ASP.NET Core", CandidateRoadmapStatus.Completed)
+        };
+        var longQuestion = new string('A', 130);
+        var answers = new List<CoachWrapUpAnswerInput>
+        {
+            new("ASP.NET Core", "Middleware pipeline?", 85, 2),
+            new("ASP.NET Core", "DI lifetime?", 70, 1),
+            new("ASP.NET Core", longQuestion, null, 3)
+        };
+
+        var dto = CoachWrapUpBuilder.Build(
+            [new CandidateSkillPlanItem { Skill = "ASP.NET Core", BaselineScore = 40, CurrentScore = 80, TargetScore = 70 }],
+            roadmaps,
+            drillPassExclusiveMin: 70,
+            reassessmentAnswers: answers);
+
+        Assert.True(dto.Available);
+        Assert.Equal(3, dto.AnswerTotalCount);
+        Assert.Equal(1, dto.AnswerPassedCount);
+        Assert.Equal(3, dto.Answers.Count);
+        // Order 1 trước order 2.
+        Assert.Equal(70, dto.Answers[0].Score);
+        Assert.False(dto.Answers[0].Passed);
+        Assert.True(dto.Answers[1].Passed);
+        Assert.Null(dto.Answers[2].Score);
+        Assert.False(dto.Answers[2].Passed);
+        Assert.Equal(CoachWrapUpBuilder.QuestionPreviewLength + 1, dto.Answers[2].QuestionPreview.Length);
+        Assert.EndsWith("…", dto.Answers[2].QuestionPreview);
+    }
+
+    [Fact]
+    public void Build_Answers_IgnoredWhenWrapUpNotAvailable()
+    {
+        var dto = CoachWrapUpBuilder.Build(
+            Array.Empty<CandidateSkillPlanItem>(),
+            [Accepted("SQL", CandidateRoadmapStatus.Active)],
+            70,
+            reassessmentAnswers: [new CoachWrapUpAnswerInput("SQL", "Join?", 90)]);
+
+        Assert.False(dto.Available);
+        Assert.Equal(0, dto.AnswerTotalCount);
+        Assert.Empty(dto.Answers);
+    }
+
     private static CandidateRoadmap Accepted(string skill, string status)
         => new()
         {

@@ -22,6 +22,14 @@ public class PracticeSessionFeedbackDto
     public List<PracticeSessionFeedbackItemDto> Items { get; set; } = new();
 }
 
+public class CriterionScoreDto
+{
+    public string Code { get; set; } = string.Empty;
+    public string Label { get; set; } = string.Empty;
+    public int Weight { get; set; }
+    public double Score { get; set; }
+}
+
 public class PracticeSessionFeedbackItemDto
 {
     public Guid QuestionId { get; set; }
@@ -34,6 +42,9 @@ public class PracticeSessionFeedbackItemDto
     public List<string> Improvements { get; set; } = new();
     public string? Suggestion { get; set; }
     public Dictionary<string, double>? DimensionScores { get; set; }
+
+    /// <summary>Điểm từng tiêu chí rubric HR (kèm trọng số). Null = chấm tổng thể.</summary>
+    public List<CriterionScoreDto>? CriterionScores { get; set; }
     public string EvaluationStatus { get; set; } = string.Empty;
 
     /// <summary>True = Free chưa mở chi tiết — FE blur + upsell.</summary>

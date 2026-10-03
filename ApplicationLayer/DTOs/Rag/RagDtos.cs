@@ -354,6 +354,18 @@ public class EvaluateAnswerRequest
     public string? ScoringMode { get; set; }
     /// <summary>Vietnamese | English — ngôn ngữ strengths/improvements/suggestion.</summary>
     public string? Language { get; set; }
+    /// <summary>
+    /// Rubric HR đã gán code C1, C2... Có giá trị → RAG chấm từng tiêu chí; rỗng → chấm tổng thể như cũ (Coach luôn rỗng).
+    /// </summary>
+    public List<RubricCriterionInputDto> RubricCriteria { get; set; } = new();
+}
+
+public class RubricCriterionInputDto
+{
+    public string Code { get; set; } = string.Empty;
+    public string Label { get; set; } = string.Empty;
+    public int Weight { get; set; }
+    public Dictionary<string, string> Anchors { get; set; } = new();
 }
 
 public class EvaluateAnswerResult
@@ -364,6 +376,8 @@ public class EvaluateAnswerResult
     public List<string> Improvements { get; set; } = new();
     public string? Suggestion { get; set; }
     public Dictionary<string, double>? DimensionScores { get; set; }
+    /// <summary>Điểm từng tiêu chí theo code (C1, C2...) — chỉ có khi chấm theo rubric.</summary>
+    public Dictionary<string, double>? CriterionScores { get; set; }
     public double? ProcessingTimeMs { get; set; }
     public string? Error { get; set; }
     public string? Detail { get; set; }

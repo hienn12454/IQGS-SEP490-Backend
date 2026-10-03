@@ -317,6 +317,21 @@ public class CoachWrapUpDto
     public List<CoachWrapUpSkillDto> Strengths { get; set; } = new();
     public List<CoachWrapUpWeakTopicDto> WeakTopics { get; set; } = new();
     public List<CoachWrapUpNextSkillDto> NextSkills { get; set; } = new();
+    /// <summary>SCRUM-514: số câu đánh giá lại đạt ngưỡng drill (điểm &gt; ngưỡng, không phải đúng/sai nhị phân).</summary>
+    public int AnswerPassedCount { get; set; }
+    public int AnswerTotalCount { get; set; }
+    public List<CoachWrapUpAnswerDto> Answers { get; set; } = new();
+}
+
+/// <summary>SCRUM-514: một câu bài đánh giá lại trên tổng kết.</summary>
+public class CoachWrapUpAnswerDto
+{
+    public string Skill { get; set; } = string.Empty;
+    /// <summary>Cắt ~120 ký tự — đủ nhận câu, không dump full đề.</summary>
+    public string QuestionPreview { get; set; } = string.Empty;
+    public double? Score { get; set; }
+    /// <summary>true khi Score &gt; DrillPassScoreExclusiveMin.</summary>
+    public bool Passed { get; set; }
 }
 
 public class CoachWrapUpSkillDeltaDto

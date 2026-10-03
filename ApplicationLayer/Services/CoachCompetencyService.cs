@@ -894,12 +894,68 @@ public class CoachCompetencyService : ICoachCompetencyService
             }
         }
 
+        // SCRUM-514: chỉ load câu đánh giá lại khi mọi lộ trình Accepted đã xong — tránh query thừa lúc progress.
+        var wrapUpReady = accepted.Count > 0
+            && accepted.All(r =>
+                string.Equals(r.Status, CandidateRoadmapStatus.Completed, StringComparison.OrdinalIgnoreCase));
+        var answerInputs = wrapUpReady
+            ? await LoadReassessmentAnswerInputsAsync(candidateUserId, accepted, ct)
+            : null;
+
         return CoachWrapUpBuilder.Build(
             planItems,
             accepted,
             passMin,
             snapshot,
-            attemptScoresByItemId);
+            attemptScoresByItemId,
+            answerInputs);
+    }
+
+    /// <summary>
+    /// SCRUM-514: đọc session cổng đánh giá lại → câu + điểm AI.
+    /// Skill ưu tiên từ câu hỏi; fallback skill của roadmap nếu câu không gắn skill.
+    /// </summary>
+    private async Task<List<CoachWrapUpAnswerInput>> LoadReassessmentAnswerInputsAsync(
+        Guid candidateUserId,
+        IReadOnlyList<CandidateRoadmap> accepted,
+        CancellationToken ct)
+    {
+        var gates = accepted
+            .SelectMany(r => r.Items.Select(i => (Roadmap: r, Item: i)))
+            .Where(x => x.Item.IsReassessmentGate && x.Item.DrillSessionId is Guid)
+            .GroupBy(x => x.Item.DrillSessionId!.Value)
+            .Select(g => g.First())
+            .ToList();
+
+        var result = new List<CoachWrapUpAnswerInput>();
+        foreach (var (roadmap, item) in gates)
+        {
+            ct.ThrowIfCancellationRequested();
+            var session = await _practiceSessions.GetByIdAsync(item.DrillSessionId!.Value);
+            if (session is null || session.CandidateUserId != candidateUserId)
+                continue;
+
+            var questions = await _marketplace.GetQuestionsSnapshotAsync(session.QuestionSetId);
+            var answers = await _answers.GetEntitiesBySessionIdAsync(session.Id);
+            var feedbacks = await _feedbacks.GetBySessionIdAsync(session.Id);
+            var fbByAnswer = feedbacks.ToDictionary(f => f.CandidateAnswerId);
+            var qById = questions.ToDictionary(q => q.Id);
+
+            foreach (var ans in answers)
+            {
+                qById.TryGetValue(ans.QuestionSetQuestionId, out var q);
+                fbByAnswer.TryGetValue(ans.Id, out var fb);
+                var scored = fb?.EvaluationStatus == AiFeedbackEvaluationStatus.Succeeded;
+                var skill = string.IsNullOrWhiteSpace(q?.Skill) ? roadmap.Skill : q!.Skill!;
+                result.Add(new CoachWrapUpAnswerInput(
+                    skill,
+                    q?.Question ?? string.Empty,
+                    scored ? fb!.Score : null,
+                    q?.Order ?? 0));
+            }
+        }
+
+        return result;
     }
 
     private sealed record ScreeningContext(

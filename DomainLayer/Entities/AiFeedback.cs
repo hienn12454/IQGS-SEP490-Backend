@@ -9,6 +9,10 @@ public class AiFeedback : BaseEntity
     public string ImprovementsJson { get; set; } = "[]";
     public string? Suggestion { get; set; }
     public string? DimensionScoresJson { get; set; }
+    /// <summary>
+    /// Điểm từng tiêu chí rubric HR [{code,label,weight,score}]. Null = câu này chấm tổng thể (không có rubric hợp lệ / Coach / dữ liệu cũ).
+    /// </summary>
+    public string? CriteriaScoresJson { get; set; }
     public string EvaluationStatus { get; set; } = Constants.AiFeedbackEvaluationStatus.Failed;
     public string? ErrorMessage { get; set; }
 

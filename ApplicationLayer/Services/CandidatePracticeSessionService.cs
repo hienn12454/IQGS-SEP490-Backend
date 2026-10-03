@@ -442,7 +442,14 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
             var rubricDoc = RubricNormalizer.NormalizeFromJson(rubric.EvaluationCriteriaJson);
             if (RubricNormalizer.IsPublishReady(rubricDoc) || rubricDoc.Criteria.Count > 0)
                 criteria = RubricNormalizer.FlattenForEvaluate(rubricDoc);
-            var ragResult = await _ragService.EvaluateAnswerAsync(new EvaluateAnswerRequest
+            // Coach giữ 3 chiều như cũ. Practice/hiring có rubric HR hợp lệ → AI chấm từng tiêu chí,
+            // Backend nhân trọng số. Rubric không hợp lệ → rubricCriteria rỗng → chấm tổng thể như trước.
+            var isCoach = string.Equals(scoringMode, "coach", StringComparison.OrdinalIgnoreCase);
+            var rubricCriteria = isCoach
+                ? new List<RubricCriterionInputDto>()
+                : RubricCriterionScoring.BuildRagCriteria(rubricDoc);
+
+            var ragResult = await EvaluateWithRubricRetryAsync(new EvaluateAnswerRequest
             {
                 Question = rubric.Question,
                 EvaluationCriteria = criteria,
@@ -451,8 +458,9 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
                 Skill = rubric.Skill,
                 QuestionType = rubric.QuestionType,
                 ScoringMode = scoringMode,
-                Language = outputLanguage
-            });
+                Language = outputLanguage,
+                RubricCriteria = rubricCriteria
+            }, rubricCriteria);
 
             if (!ragResult.Success)
             {
@@ -465,8 +473,26 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
             var improvements = ragResult.Improvements ?? [];
             var roundedDimensionScores = RoundDimensionScores(ragResult.DimensionScores);
 
+            // Chấm theo rubric: thiếu tiêu chí sau khi đã retry → Failed, không đoán điểm.
+            string? criteriaScoresJson = null;
+            double? weightedScore = null;
+            if (rubricCriteria.Count > 0)
+            {
+                if (!RubricCriterionScoring.HasAllScores(ragResult, rubricCriteria))
+                {
+                    var err = "AI không chấm đủ các tiêu chí rubric.";
+                    await UpsertFeedbackAsync(answer.Id, AiFeedbackEvaluationStatus.Failed, null, [], [], null, null, err);
+                    return (AiFeedbackEvaluationStatus.Failed, null, [], [], null, null, err);
+                }
+
+                var storedScores = RubricCriterionScoring.BuildStoredScores(rubricCriteria, ragResult.CriterionScores!);
+                weightedScore = RubricCriterionScoring.ComputeWeightedScore(storedScores);
+                criteriaScoresJson = RubricCriterionScoring.Serialize(storedScores);
+            }
+
             // Coach: overall score UI = trung bình dimensions nếu LLM không trả score
-            double? rawScore = ragResult.Score;
+            // Có rubric thì điểm câu do Backend tính từ điểm tiêu chí, không lấy score tổng của AI.
+            double? rawScore = weightedScore ?? ragResult.Score;
             if (rawScore is null
                 && string.Equals(scoringMode, "coach", StringComparison.OrdinalIgnoreCase)
                 && roundedDimensionScores is { Count: > 0 })
@@ -491,7 +517,8 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
                 improvements,
                 ragResult.Suggestion,
                 roundedDimensionScores,
-                null);
+                null,
+                criteriaScoresJson);
 
             return (
                 AiFeedbackEvaluationStatus.Succeeded,
@@ -511,6 +538,21 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
         }
     }
 
+    /// <summary>
+    /// Gọi RAG; nếu chấm theo rubric mà AI trả thiếu/sai tiêu chí thì thử lại đúng 1 lần
+    /// (LLM thỉnh thoảng bỏ sót một code). Hết lượt vẫn thiếu thì để caller đánh dấu Failed.
+    /// </summary>
+    private async Task<EvaluateAnswerResult> EvaluateWithRubricRetryAsync(
+        EvaluateAnswerRequest request,
+        IReadOnlyList<RubricCriterionInputDto> rubricCriteria)
+    {
+        var result = await _ragService.EvaluateAnswerAsync(request);
+        if (rubricCriteria.Count == 0 || RubricCriterionScoring.HasAllScores(result, rubricCriteria))
+            return result;
+
+        return await _ragService.EvaluateAnswerAsync(request);
+    }
+
     private async Task UpsertFeedbackAsync(
         Guid candidateAnswerId,
         string status,
@@ -519,7 +561,8 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
         List<string> improvements,
         string? suggestion,
         Dictionary<string, double>? dimensionScores,
-        string? errorMessage)
+        string? errorMessage,
+        string? criteriaScoresJson = null)
     {
         var existing = await _feedbackRepository.GetByCandidateAnswerIdAsync(candidateAnswerId);
         var strengthsJson = JsonSerializer.Serialize(strengths, JsonOptions);
@@ -538,6 +581,7 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
                 ImprovementsJson = improvementsJson,
                 Suggestion = suggestion,
                 DimensionScoresJson = dimensionJson,
+                CriteriaScoresJson = criteriaScoresJson,
                 EvaluationStatus = status,
                 ErrorMessage = errorMessage
             });
@@ -549,6 +593,7 @@ public class CandidatePracticeSessionService : ICandidatePracticeSessionService
         existing.ImprovementsJson = improvementsJson;
         existing.Suggestion = suggestion;
         existing.DimensionScoresJson = dimensionJson;
+        existing.CriteriaScoresJson = criteriaScoresJson;
         existing.EvaluationStatus = status;
         existing.ErrorMessage = errorMessage;
         await _feedbackRepository.UpdateAsync(existing);

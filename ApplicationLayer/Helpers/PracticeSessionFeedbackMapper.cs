@@ -86,6 +86,7 @@ public static class PracticeSessionFeedbackMapper
                 Improvements = DeserializeStringList(feedback?.ImprovementsJson),
                 Suggestion = feedback?.Suggestion,
                 DimensionScores = DeserializeDimensionScores(feedback?.DimensionScoresJson),
+                CriterionScores = DeserializeCriterionScores(feedback?.CriteriaScoresJson),
                 EvaluationStatus = feedback?.EvaluationStatus ?? AiFeedbackEvaluationStatus.Pending,
                 IsLocked = false,
                 IsTeaser = isTeaser
@@ -191,6 +192,18 @@ public static class PracticeSessionFeedbackMapper
         {
             return [];
         }
+    }
+
+    public static List<CriterionScoreDto>? DeserializeCriterionScores(string? json)
+    {
+        var stored = RubricCriterionScoring.Deserialize(json);
+        return stored?.Select(s => new CriterionScoreDto
+        {
+            Code = s.Code,
+            Label = s.Label,
+            Weight = s.Weight,
+            Score = s.Score
+        }).ToList();
     }
 
     public static Dictionary<string, double>? DeserializeDimensionScores(string? json)

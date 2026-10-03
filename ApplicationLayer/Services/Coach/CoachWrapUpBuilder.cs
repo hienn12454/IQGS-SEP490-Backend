@@ -7,22 +7,30 @@ namespace ApplicationLayer.Services.Coach;
 
 /// <summary>
 /// SCRUM-507: dựng màn tổng kết Coach từ baseline/drill/gap — deterministic, không LLM.
+/// SCRUM-514: thêm tóm tắt câu đánh giá lại (Đạt/Chưa đạt theo ngưỡng drill).
 /// </summary>
 public static class CoachWrapUpBuilder
 {
     public const int MaxStrengths = 6;
     public const int MaxWeakTopics = 5;
     public const int MaxNextSkills = 8;
+    public const int MaxAnswers = 40;
+    public const int QuestionPreviewLength = 120;
     public const double ImproveMinDelta = 1.0;
 
+    /// <param name="planItems">Skill plan của candidate (baseline / current / target).</param>
     /// <param name="acceptedRoadmaps">Chỉ lộ trình đã Accept (AcceptedAt != null).</param>
+    /// <param name="drillPassExclusiveMin">Ngưỡng pass drill (điểm phải lớn hơn giá trị này).</param>
+    /// <param name="latest">Snapshot báo cáo gần nhất cho headline readiness.</param>
     /// <param name="drillAttemptScoresByItemId">Điểm mọi lần nộp drill theo roadmap item (không gồm cổng).</param>
+    /// <param name="reassessmentAnswers">Câu đã chấm của cổng đánh giá lại — null khi wrap-up chưa mở.</param>
     public static CoachWrapUpDto Build(
         IReadOnlyList<CandidateSkillPlanItem> planItems,
         IReadOnlyList<CandidateRoadmap> acceptedRoadmaps,
         double drillPassExclusiveMin,
         CoachWrapUpSnapshot? latest = null,
-        IReadOnlyDictionary<Guid, IReadOnlyList<double>>? drillAttemptScoresByItemId = null)
+        IReadOnlyDictionary<Guid, IReadOnlyList<double>>? drillAttemptScoresByItemId = null,
+        IReadOnlyList<CoachWrapUpAnswerInput>? reassessmentAnswers = null)
     {
         var accepted = acceptedRoadmaps ?? Array.Empty<CandidateRoadmap>();
         var completed = accepted.Count(r =>
@@ -62,8 +70,50 @@ public static class CoachWrapUpBuilder
         dto.Strengths = BuildStrengths(practicedItems);
         dto.WeakTopics = BuildWeakTopics(accepted, passMin, drillAttemptScoresByItemId);
         dto.NextSkills = BuildNextSkills(items, accepted);
+        ApplyAnswers(dto, reassessmentAnswers, passMin);
 
         return dto;
+    }
+
+    /// <summary>
+    /// SCRUM-514: Đạt = điểm &gt; ngưỡng drill. Điểm null (chưa chấm xong) tính là chưa đạt.
+    /// Count khớp list trả về (cắt trần MaxAnswers) để UI hiện X/Y đúng với danh sách.
+    /// </summary>
+    private static void ApplyAnswers(
+        CoachWrapUpDto dto,
+        IReadOnlyList<CoachWrapUpAnswerInput>? answers,
+        double passMin)
+    {
+        if (answers is null || answers.Count == 0)
+            return;
+
+        var mapped = answers
+            .OrderBy(a => a.Order)
+            .ThenBy(a => a.Skill, StringComparer.OrdinalIgnoreCase)
+            .Take(MaxAnswers)
+            .Select(a =>
+            {
+                var score = a.Score is double s ? Math.Round(s, 2) : (double?)null;
+                return new CoachWrapUpAnswerDto
+                {
+                    Skill = a.Skill,
+                    QuestionPreview = TruncatePreview(a.QuestionText),
+                    Score = score,
+                    Passed = CoachDrillPassPolicy.IsPassing(score, passMin)
+                };
+            })
+            .ToList();
+
+        dto.Answers = mapped;
+        dto.AnswerTotalCount = mapped.Count;
+        dto.AnswerPassedCount = mapped.Count(a => a.Passed);
+    }
+
+    private static string TruncatePreview(string? text)
+    {
+        var trimmed = (text ?? string.Empty).Trim().Replace('\n', ' ').Replace('\r', ' ');
+        if (trimmed.Length <= QuestionPreviewLength) return trimmed;
+        return trimmed[..QuestionPreviewLength].TrimEnd() + "…";
     }
 
     /// <summary>Skill đã Accept lộ trình (user chủ động chọn luyện, kể cả chỉ 1 topic).</summary>
@@ -232,6 +282,9 @@ public static class CoachWrapUpBuilder
         return null;
     }
 }
+
+/// <summary>SCRUM-514: một câu đánh giá lại đã hydrate (skill + text + điểm) trước khi cắt preview.</summary>
+public sealed record CoachWrapUpAnswerInput(string Skill, string QuestionText, double? Score, int Order = 0);
 
 /// <summary>Snapshot báo cáo gần nhất để gắn headline lên wrap-up.</summary>
 public sealed record CoachWrapUpSnapshot(

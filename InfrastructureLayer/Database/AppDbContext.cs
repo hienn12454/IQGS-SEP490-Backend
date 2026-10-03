@@ -788,6 +788,7 @@ public class AppDbContext : DbContext
             entity.Property(f => f.StrengthsJson).IsRequired().HasColumnType("jsonb");
             entity.Property(f => f.ImprovementsJson).IsRequired().HasColumnType("jsonb");
             entity.Property(f => f.DimensionScoresJson).HasColumnType("jsonb");
+            entity.Property(f => f.CriteriaScoresJson).HasColumnType("jsonb");
             entity.Property(f => f.EvaluationStatus).IsRequired().HasMaxLength(20);
             entity.Property(f => f.Suggestion).HasColumnType("text");
             entity.Property(f => f.ErrorMessage).HasColumnType("text");
