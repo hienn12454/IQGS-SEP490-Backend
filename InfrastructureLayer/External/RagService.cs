@@ -377,6 +377,116 @@ public class RagService : IRagService
         return result;
     }
 
+    // Khoảng chờ giữa 2 lần hỏi trạng thái job. 3s đủ mượt mà không spam RAG qua tunnel.
+    private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(3);
+
+    // Cho phép mạng chập chờn vài lần liên tiếp (tunnel/Cloudflare 502, 524...) trước khi bỏ cuộc,
+    // vì job vẫn đang chạy nền ở RAG — một lần poll lỗi không có nghĩa là job hỏng.
+    private const int MaxConsecutivePollFailures = 5;
+
+    public async Task<GenerateQuestionsFromPlanResult> GenerateCandidateQuestionsFromPlanPolledAsync(
+        GenerateQuestionsFromPlanRequest request, CancellationToken ct = default)
+    {
+        var jobId = Guid.NewGuid();
+        var body = new
+        {
+            jobId,
+            request.OwnerId,
+            request.JobDescription,
+            request.ApprovedPlan,
+            request.HrNote,
+            request.Language,
+            request.Audience,
+            request.CvContext,
+            request.CandidateNote,
+            request.DocumentIds
+        };
+
+        // Bước 1: gửi job, RAG trả 202 trong vài trăm ms.
+        await PostAsyncAcceptedAsync("/internal/rag/candidate/generate-questions-from-plan/async", body, ct);
+
+        // Bước 2: poll tới khi xong. Tổng thời gian chờ do CancellationToken của caller quyết định (5 phút).
+        var statusPath = $"/internal/rag/candidate/generate-questions-from-plan/jobs/{jobId}";
+        var consecutiveFailures = 0;
+
+        while (true)
+        {
+            ct.ThrowIfCancellationRequested();
+            await Task.Delay(PollInterval, ct);
+
+            var poll = await TryPollJobAsync(statusPath, ct);
+            if (poll.TransientError is not null)
+            {
+                consecutiveFailures++;
+                if (consecutiveFailures >= MaxConsecutivePollFailures)
+                    throw new ServerFailureException(
+                        $"Không lấy được trạng thái job sinh đề từ RAG sau {MaxConsecutivePollFailures} lần thử: {poll.TransientError}");
+                continue;
+            }
+
+            consecutiveFailures = 0;
+            if (poll.Status == "PROCESSING")
+                continue;
+
+            var result = poll.Result;
+            if (poll.Status != "COMPLETED" || result is null || !result.Success)
+                throw new ServerFailureException(result?.Error ?? "RAG candidate generate-questions-from-plan thất bại.");
+
+            return result;
+        }
+    }
+
+    private sealed record PollOutcome(string? Status, GenerateQuestionsFromPlanResult? Result, string? TransientError);
+
+    private async Task<PollOutcome> TryPollJobAsync(string statusPath, CancellationToken ct)
+    {
+        // Mỗi lần poll giới hạn như request dispatch (30s) để một lần treo không ăn hết thời gian chờ chung.
+        using var pollCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        pollCts.CancelAfter(TimeSpan.FromSeconds(_settings.DispatchTimeoutSeconds));
+
+        try
+        {
+            using var response = await _httpClient.GetAsync(statusPath, pollCts.Token);
+
+            // 404 = RAG không còn biết job này (restart/hết hạn) → không thể chờ tiếp, báo lỗi để user thử lại.
+            if (response.StatusCode == HttpStatusCode.NotFound)
+                throw new ServerFailureException("RAG không còn job sinh đề này (có thể RAG vừa khởi động lại). Vui lòng thử lại.");
+
+            // 5xx (kể cả 502/524 của Cloudflare) coi là lỗi tạm, poll lại.
+            if ((int)response.StatusCode >= 500)
+                return new PollOutcome(null, null, $"HTTP {(int)response.StatusCode}");
+
+            if (!response.IsSuccessStatusCode)
+                throw await BuildRagExceptionAsync(response, pollCts.Token);
+
+            var payload = await response.Content.ReadFromJsonAsync<RagJobStatusPayload>(JsonOptions, pollCts.Token);
+            if (payload is null)
+                return new PollOutcome(null, null, "response rỗng");
+
+            return new PollOutcome(payload.Status, payload.Result, null);
+        }
+        catch (HttpRequestException ex)
+        {
+            return new PollOutcome(null, null, ex.Message);
+        }
+        catch (JsonException ex)
+        {
+            // Body không phải JSON (vd. trang HTML của Cloudflare) → lỗi tạm.
+            return new PollOutcome(null, null, ex.Message);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            // Chỉ lần poll này quá 30s; tổng thời gian chờ vẫn còn → thử lại.
+            return new PollOutcome(null, null, "poll timeout");
+        }
+    }
+
+    private sealed class RagJobStatusPayload
+    {
+        public string? Status { get; set; }
+        public GenerateQuestionsFromPlanResult? Result { get; set; }
+    }
+
     public Task<RagAsyncAcceptedResult> EnqueueGenerateQuestionsFromPlanAsync(
         Guid jobId, GenerateQuestionsFromPlanRequest request, CancellationToken ct = default)
     {

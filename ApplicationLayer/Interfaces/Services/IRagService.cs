@@ -24,6 +24,11 @@ public interface IRagService
     Task<GenerateQuestionsFromPlanResult> GenerateQuestionsFromPlanAsync(GenerateQuestionsFromPlanRequest request, CancellationToken ct = default);
     Task<GeneratePlanResult> GenerateCandidatePlanAsync(GeneratePlanRequest request, CancellationToken ct = default);
     Task<GenerateQuestionsFromPlanResult> GenerateCandidateQuestionsFromPlanAsync(GenerateQuestionsFromPlanRequest request, CancellationToken ct = default);
+    /// <summary>
+    /// Sinh đề Candidate/Coach theo kiểu gửi job + poll kết quả (RAG trả 202 ngay). Dùng thay cho
+    /// <see cref="GenerateCandidateQuestionsFromPlanAsync"/> khi đề dài, tránh Cloudflare cắt request &gt; ~100s.
+    /// </summary>
+    Task<GenerateQuestionsFromPlanResult> GenerateCandidateQuestionsFromPlanPolledAsync(GenerateQuestionsFromPlanRequest request, CancellationToken ct = default);
     Task<RagAsyncAcceptedResult> EnqueueGenerateQuestionsFromPlanAsync(Guid jobId, GenerateQuestionsFromPlanRequest request, CancellationToken ct = default);
     Task<QuestionAssistResult> AskQuestionAssistAsync(QuestionAssistRequest request, CancellationToken ct = default);
     Task<EvaluateAnswerResult> EvaluateAnswerAsync(EvaluateAnswerRequest request, CancellationToken ct = default);

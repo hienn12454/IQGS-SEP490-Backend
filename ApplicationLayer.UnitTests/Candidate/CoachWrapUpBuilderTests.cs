@@ -48,9 +48,10 @@ public sealed class CoachWrapUpBuilderTests
         Assert.Equal("Java", dto.Improved[0].Skill);
         Assert.Equal(30, dto.Improved[0].Delta);
         Assert.Contains(dto.Strengths, s => s.Skill == "Java");
-        // Redis đạt target nhưng không Accept lộ trình → không đưa vào «Làm rất tốt».
+        // Redis / SQL thuộc hồ sơ nhưng không Accept lộ trình → không vào tổng kết.
         Assert.DoesNotContain(dto.Strengths, s => s.Skill == "Redis");
-        Assert.Contains(dto.NextSkills, n => n.Skill == "SQL" && n.Reason == "gap");
+        Assert.DoesNotContain(dto.NextSkills, n => n.Skill == "SQL");
+        Assert.DoesNotContain(dto.NextSkills, n => n.Skill == "Redis");
     }
 
     [Fact]

@@ -185,6 +185,7 @@ public class CandidatePersonalSetService : ICandidatePersonalSetService
     /// câu đo nhanh rồi sinh song song: đề dài hơn nhưng thời gian chờ gần như cũ, mỗi lần gọi vẫn nằm trong
     /// timeout. Đề không có câu đo nhanh (drill, đánh giá lại, sàng lọc) giữ nguyên 1 lần gọi như trước.
     /// </summary>
+    // Dùng bản gửi-job-rồi-poll vì request đồng bộ > ~100s sẽ bị Cloudflare Tunnel cắt (524 → "Lỗi RAG không xác định").
     private async Task<(List<RagGeneratedQuestionDto> Questions, string? KbSource)> GenerateCoachQuestionsAsync(
         CandidatePersonalSetJob job,
         object syntheticPlan,
@@ -196,7 +197,7 @@ public class CandidatePersonalSetService : ICandidatePersonalSetService
         var parts = CoachPlanSplitter.SplitQuickCheck(planJson);
         if (parts.Count == 0)
         {
-            var single = await _rag.GenerateCandidateQuestionsFromPlanAsync(
+            var single = await _rag.GenerateCandidateQuestionsFromPlanPolledAsync(
                 BuildCoachRequest(job, syntheticPlan, coachNote, coachDocs), ct);
             if (!single.Success || single.Questions.Count == 0)
                 throw new ServerFailureException(single.Error ?? "RAG không sinh được câu hỏi.");
@@ -208,7 +209,7 @@ public class CandidatePersonalSetService : ICandidatePersonalSetService
         {
             var partNote = CvCoachPromptBuilder.BlueprintNote(part.Skills, part.TotalQuestions, job.OutputLanguage)
                            + " " + StudioOutputLanguage.RagInstruction(job.OutputLanguage);
-            return _rag.GenerateCandidateQuestionsFromPlanAsync(
+            return _rag.GenerateCandidateQuestionsFromPlanPolledAsync(
                 BuildCoachRequest(job, part.Plan, partNote, coachDocs), ct);
         }).ToList();
         var results = await Task.WhenAll(calls);

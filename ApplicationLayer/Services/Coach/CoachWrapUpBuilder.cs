@@ -69,7 +69,8 @@ public static class CoachWrapUpBuilder
         dto.Improved = BuildImproved(practicedItems);
         dto.Strengths = BuildStrengths(practicedItems);
         dto.WeakTopics = BuildWeakTopics(accepted, passMin, drillAttemptScoresByItemId);
-        dto.NextSkills = BuildNextSkills(items, accepted);
+        // Tổng kết chỉ kể skill trên lộ trình candidate đã chọn, không kéo skill còn lại của hồ sơ vai trò.
+        dto.NextSkills = BuildNextSkills(practicedItems, accepted);
         ApplyAnswers(dto, reassessmentAnswers, passMin);
 
         return dto;
