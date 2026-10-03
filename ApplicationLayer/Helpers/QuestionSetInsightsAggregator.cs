@@ -64,7 +64,7 @@ public static class QuestionSetInsightsAggregator
                 EvaluatedAnswerCount = evaluatedCount
             },
             Questions = questionItems,
-            Leaderboard = BuildLeaderboard(scopedList),
+            Leaderboard = BuildLeaderboard(scopedList, scopedAnswers, passThreshold),
             RecentAttempts = scopedList
                 .OrderByDescending(s => s.CompletedAt ?? DateTime.MinValue)
                 .ThenByDescending(s => s.SessionId)
@@ -119,8 +119,15 @@ public static class QuestionSetInsightsAggregator
         };
     }
 
-    private static List<LeaderboardItemDto> BuildLeaderboard(List<QuestionSetInsightSessionRow> scoped)
+    private static List<LeaderboardItemDto> BuildLeaderboard(
+        List<QuestionSetInsightSessionRow> scoped,
+        List<QuestionSetInsightAnswerRow> answers,
+        double passThreshold)
     {
+        var answersBySession = answers
+            .GroupBy(a => a.SessionId)
+            .ToDictionary(g => g.Key, g => g.ToList());
+
         return scoped
             .GroupBy(s => s.CandidateUserId)
             .Select(g =>
@@ -133,18 +140,24 @@ public static class QuestionSetInsightsAggregator
                 var latest = g
                     .OrderByDescending(s => s.CompletedAt ?? DateTime.MinValue)
                     .First();
+                var bestAnswers = best != null && answersBySession.TryGetValue(best.SessionId, out var list)
+                    ? list
+                    : new List<QuestionSetInsightAnswerRow>();
                 return new
                 {
                     CandidateUserId = g.Key,
                     CandidateName = (best ?? latest).CandidateName,
                     Best = best?.OverallScore,
+                    PassCount = bestAnswers.Count(a => a.Score >= passThreshold),
+                    EvaluatedCount = bestAnswers.Count,
                     AttemptCount = g.Count(),
                     LatestCompletedAt = g.Max(s => s.CompletedAt),
                     IsOfficialTest = (best ?? latest).IsOfficialTest
                 };
             })
             .Where(x => x.Best.HasValue)
-            .OrderByDescending(x => x.Best)
+            .OrderByDescending(x => x.PassCount)
+            .ThenByDescending(x => x.Best)
             .ThenByDescending(x => x.LatestCompletedAt ?? DateTime.MinValue)
             .Take(LeaderboardLimit)
             .Select((x, i) => new LeaderboardItemDto
@@ -153,6 +166,8 @@ public static class QuestionSetInsightsAggregator
                 CandidateUserId = x.CandidateUserId,
                 CandidateName = x.CandidateName,
                 BestOverallScore = Math.Round(x.Best!.Value, 1),
+                PassCount = x.PassCount,
+                EvaluatedCount = x.EvaluatedCount,
                 AttemptCount = x.AttemptCount,
                 LatestCompletedAt = x.LatestCompletedAt,
                 IsOfficialTest = x.IsOfficialTest

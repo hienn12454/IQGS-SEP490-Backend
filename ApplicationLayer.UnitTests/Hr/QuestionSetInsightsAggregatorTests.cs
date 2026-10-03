@@ -58,6 +58,8 @@ public class QuestionSetInsightsAggregatorTests
 
         Assert.Equal(CandA, dto.Leaderboard[0].CandidateUserId);
         Assert.Equal(96, dto.Leaderboard[0].BestOverallScore);
+        Assert.Equal(1, dto.Leaderboard[0].PassCount);
+        Assert.Equal(2, dto.Leaderboard[0].EvaluatedCount);
         Assert.Equal(2, dto.Leaderboard[0].AttemptCount);
         Assert.False(dto.Leaderboard[0].IsOfficialTest);
         Assert.Equal(2, dto.Leaderboard[1].Rank);
@@ -91,6 +93,8 @@ public class QuestionSetInsightsAggregatorTests
         Assert.Equal(1, dto.Summary.CompletedCount);
         Assert.Equal(1, dto.Summary.EvaluatedAnswerCount);
         Assert.Equal(80, dto.Leaderboard[0].BestOverallScore);
+        Assert.Equal(1, dto.Leaderboard[0].PassCount);
+        Assert.Equal(1, dto.Leaderboard[0].EvaluatedCount);
         Assert.Equal(1, dto.Leaderboard[0].AttemptCount);
         Assert.True(dto.Leaderboard[0].IsOfficialTest);
         Assert.Null(dto.Questions.Single(q => q.QuestionId == QEasy).QualityFlag);
@@ -121,6 +125,40 @@ public class QuestionSetInsightsAggregatorTests
         });
         Assert.Empty(dto.Leaderboard);
         Assert.Empty(dto.RecentAttempts);
+    }
+
+    [Fact]
+    public void Build_Leaderboard_RanksByPassCountBeforeScore()
+    {
+        var manyPasses = Guid.NewGuid();
+        var highScore = Guid.NewGuid();
+        var candMany = Guid.Parse("55555555-5555-5555-5555-555555555555");
+        var candHigh = Guid.Parse("66666666-6666-6666-6666-666666666666");
+
+        var dto = QuestionSetInsightsAggregator.Build(
+            SetId,
+            isHiringAssessment: false,
+            passThreshold: 70,
+            includePractice: false,
+            Questions(),
+            new[]
+            {
+                Session(manyPasses, candMany, "Nhieu", 72, official: false, at: new DateTime(2026, 10, 1)),
+                Session(highScore, candHigh, "Cao", 99, official: false, at: new DateTime(2026, 10, 2))
+            },
+            new[]
+            {
+                Answer(manyPasses, QEasy, 80),
+                Answer(manyPasses, QHard, 75),
+                Answer(highScore, QEasy, 99),
+                Answer(highScore, QHard, 10)
+            });
+
+        Assert.Equal(candMany, dto.Leaderboard[0].CandidateUserId);
+        Assert.Equal(2, dto.Leaderboard[0].PassCount);
+        Assert.Equal(2, dto.Leaderboard[1].Rank);
+        Assert.Equal(candHigh, dto.Leaderboard[1].CandidateUserId);
+        Assert.Equal(1, dto.Leaderboard[1].PassCount);
     }
 
     private static List<QuestionInsightQuestionInput> Questions() => new()

@@ -586,6 +586,10 @@ public class LeaderboardItemDto
     public Guid CandidateUserId { get; set; }
     public string CandidateName { get; set; } = string.Empty;
     public double BestOverallScore { get; set; }
+    /// <summary>Số câu đạt trên phiên điểm cao nhất. Đạt = Score &gt;= ngưỡng bộ.</summary>
+    public int PassCount { get; set; }
+    /// <summary>Số câu đã chấm Succeeded trên phiên điểm cao nhất.</summary>
+    public int EvaluatedCount { get; set; }
     public int AttemptCount { get; set; }
     public DateTime? LatestCompletedAt { get; set; }
     public bool IsOfficialTest { get; set; }
