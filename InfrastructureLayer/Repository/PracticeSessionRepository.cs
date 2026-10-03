@@ -260,6 +260,64 @@ public class PracticeSessionRepository : IPracticeSessionRepository
         return await projected.ToListAsync();
     }
 
+    /// <summary>SCRUM-513: COMPLETED + consent; điểm câu chỉ lấy feedback Succeeded có Score.</summary>
+    public async Task<QuestionSetInsightSource> ListInsightSourcesAsync(Guid questionSetId)
+    {
+        var sessions = await _context.PracticeSessions
+            .AsNoTracking()
+            .Where(s =>
+                s.QuestionSetId == questionSetId
+                && s.IsActive
+                && s.Status == PracticeSessionStatus.Completed)
+            .Join(_context.Users.AsNoTracking(),
+                s => s.CandidateUserId, u => u.Id,
+                (s, u) => new { s, u })
+            .Join(_context.CandidateProfiles.AsNoTracking(),
+                x => x.s.CandidateUserId, p => p.UserId,
+                (x, p) => new { x.s, x.u, p })
+            .Where(x => x.p.AllowRecruiterRecommendation)
+            .Select(x => new QuestionSetInsightSessionRow
+            {
+                SessionId = x.s.Id,
+                CandidateUserId = x.s.CandidateUserId,
+                CandidateName = x.u.FullName,
+                OverallScore = x.s.OverallScore,
+                CompletedAt = x.s.CompletedAt,
+                IsOfficialTest = x.s.IsOfficialTest
+            })
+            .ToListAsync();
+
+        if (sessions.Count == 0)
+        {
+            return new QuestionSetInsightSource();
+        }
+
+        var sessionIds = sessions.Select(s => s.SessionId).ToList();
+        var answers = await _context.CandidateAnswers
+            .AsNoTracking()
+            .Where(a => a.IsActive && sessionIds.Contains(a.PracticeSessionId))
+            .Join(_context.AiFeedbacks.AsNoTracking(),
+                a => a.Id, f => f.CandidateAnswerId,
+                (a, f) => new { a, f })
+            .Where(x =>
+                x.f.IsActive
+                && x.f.Score != null
+                && x.f.EvaluationStatus == AiFeedbackEvaluationStatus.Succeeded)
+            .Select(x => new QuestionSetInsightAnswerRow
+            {
+                SessionId = x.a.PracticeSessionId,
+                QuestionId = x.a.QuestionSetQuestionId,
+                Score = x.f.Score!.Value
+            })
+            .ToListAsync();
+
+        return new QuestionSetInsightSource
+        {
+            Sessions = sessions,
+            Answers = answers
+        };
+    }
+
     public Task<bool> HasAnySessionOnHrOwnedSetsAsync(Guid candidateUserId, Guid hrOwnerId)
         => _context.PracticeSessions
             .AsNoTracking()

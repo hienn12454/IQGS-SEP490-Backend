@@ -516,3 +516,99 @@ public class QuestionSetQuestionResponseDto
     /// <summary>SCRUM-439: false = không đưa lên marketplace (vẫn giữ trong draft để tick lại).</summary>
     public bool IsActive { get; set; } = true;
 }
+
+/// <summary>SCRUM-513: phiên COMPLETED đã consent — nguồn cho insights (repository).</summary>
+public class QuestionSetInsightSessionRow
+{
+    public Guid SessionId { get; set; }
+    public Guid CandidateUserId { get; set; }
+    public string CandidateName { get; set; } = string.Empty;
+    public double? OverallScore { get; set; }
+    public DateTime? CompletedAt { get; set; }
+    public bool IsOfficialTest { get; set; }
+}
+
+/// <summary>SCRUM-513: câu đã chấm Succeeded trên phiên COMPLETED.</summary>
+public class QuestionSetInsightAnswerRow
+{
+    public Guid SessionId { get; set; }
+    public Guid QuestionId { get; set; }
+    public double Score { get; set; }
+}
+
+public class QuestionSetInsightSource
+{
+    public IReadOnlyList<QuestionSetInsightSessionRow> Sessions { get; set; } =
+        Array.Empty<QuestionSetInsightSessionRow>();
+
+    public IReadOnlyList<QuestionSetInsightAnswerRow> Answers { get; set; } =
+        Array.Empty<QuestionSetInsightAnswerRow>();
+}
+
+/// <summary>Câu live đưa vào aggregator — không expose ra API.</summary>
+public class QuestionInsightQuestionInput
+{
+    public Guid Id { get; set; }
+    public int Order { get; set; }
+    public string QuestionText { get; set; } = string.Empty;
+    public string? Skill { get; set; }
+    public string Difficulty { get; set; } = string.Empty;
+}
+
+public class QuestionSetInsightsSummaryDto
+{
+    public int CompletedCount { get; set; }
+    public double? AverageScore { get; set; }
+    public double PassRateOverall { get; set; }
+    public int EvaluatedAnswerCount { get; set; }
+}
+
+public class QuestionInsightItemDto
+{
+    public Guid QuestionId { get; set; }
+    public int Order { get; set; }
+    public string QuestionText { get; set; } = string.Empty;
+    public string? Skill { get; set; }
+    public string Difficulty { get; set; } = string.Empty;
+    public int EvaluatedCount { get; set; }
+    public double? AverageScore { get; set; }
+    public int PassCount { get; set; }
+    /// <summary>Tỷ lệ đạt, thang 0–1. Đạt = Score &gt;= passThreshold.</summary>
+    public double PassRate { get; set; }
+    public double FailRate { get; set; }
+    /// <summary>tooEasy | tooHard | null — chỉ khi evaluatedCount &gt;= 3.</summary>
+    public string? QualityFlag { get; set; }
+}
+
+public class LeaderboardItemDto
+{
+    public int Rank { get; set; }
+    public Guid CandidateUserId { get; set; }
+    public string CandidateName { get; set; } = string.Empty;
+    public double BestOverallScore { get; set; }
+    public int AttemptCount { get; set; }
+    public DateTime? LatestCompletedAt { get; set; }
+    public bool IsOfficialTest { get; set; }
+}
+
+public class RecentAttemptItemDto
+{
+    public Guid SessionId { get; set; }
+    public Guid CandidateUserId { get; set; }
+    public string CandidateName { get; set; } = string.Empty;
+    public double? OverallScore { get; set; }
+    public DateTime? CompletedAt { get; set; }
+    public bool IsOfficialTest { get; set; }
+}
+
+/// <summary>SCRUM-513: thống kê chất lượng bộ câu hỏi cho HR.</summary>
+public class QuestionSetInsightsDto
+{
+    public Guid QuestionSetId { get; set; }
+    public bool IsHiringAssessment { get; set; }
+    public double PassThreshold { get; set; }
+    public QuestionSetInsightsSummaryDto Summary { get; set; } = new();
+    public List<QuestionInsightItemDto> Questions { get; set; } = new();
+    public List<LeaderboardItemDto> Leaderboard { get; set; } = new();
+    public List<RecentAttemptItemDto> RecentAttempts { get; set; } = new();
+}

@@ -42,6 +42,12 @@ public interface IPracticeSessionRepository
     /// <summary>SCRUM-326: candidate đã practice 1 bộ câu hỏi (mọi status), sắp giảm dần theo StartedAt — dùng cho HR xem engagement.</summary>
     Task<IReadOnlyList<QuestionSetPractitionerRow>> ListPractitionersByQuestionSetAsync(Guid questionSetId);
 
+    /// <summary>
+    /// SCRUM-513: phiên COMPLETED (đã consent) + câu đã chấm Succeeded trên bộ.
+    /// Lọc official/practice nằm ở aggregator, không ở query này.
+    /// </summary>
+    Task<QuestionSetInsightSource> ListInsightSourcesAsync(Guid questionSetId);
+
     /// <summary>SCRUM-398: candidate đã từng có session trên bất kỳ set nào của HR (mọi status, IsActive).</summary>
     Task<bool> HasAnySessionOnHrOwnedSetsAsync(Guid candidateUserId, Guid hrOwnerId);
 

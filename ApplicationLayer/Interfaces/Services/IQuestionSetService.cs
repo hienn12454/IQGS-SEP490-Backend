@@ -49,6 +49,10 @@ public interface IQuestionSetService
     /// <summary>SCRUM-471: includePractice=true trên bộ Tuyển trả thêm phiên luyện (không chỉ official).</summary>
     Task<IReadOnlyList<QuestionSetPractitionerDto>> GetPractitionersAsync(
         Guid questionSetId, Guid ownerId, bool includePractice = false);
+
+    /// <summary>SCRUM-513: thống kê đúng/sai theo câu, leaderboard, phiên gần đây.</summary>
+    Task<QuestionSetInsightsDto> GetInsightsAsync(
+        Guid questionSetId, Guid ownerId, bool includePractice = false);
     /// <summary>SCRUM-391: xuất Excel bộ câu hỏi (gate export).</summary>
     Task<QuestionExportFileDto> ExportExcelAsync(Guid questionSetId, Guid ownerId);
     /// <summary>SCRUM-391: soft-delete bộ câu hỏi (unpublish nếu đang PUBLISHED).</summary>

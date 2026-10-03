@@ -174,6 +174,17 @@ public class HrQuestionSetsController : ControllerBase
         return SuccessResp.Ok(result);
     }
 
+    /// <summary>
+    /// SCRUM-513: thống kê bộ câu hỏi — câu đạt/trượt, leaderboard, phiên gần đây.
+    /// Bộ Tuyển mặc định chỉ official; includePractice=true gộp thêm luyện.
+    /// </summary>
+    [HttpGet("{id:guid}/insights")]
+    public async Task<IActionResult> GetInsights(Guid id, [FromQuery] bool includePractice = false)
+    {
+        var result = await _service.GetInsightsAsync(id, GetCurrentUserId(), includePractice);
+        return SuccessResp.Ok(result);
+    }
+
     /// <summary>Mời ứng viên từ practitioners — tạo recommendation nếu chưa có, không yêu cầu điểm ≥ 70.</summary>
     [HttpPost("{id:guid}/practitioners/{candidateUserId:guid}/invite")]
     public async Task<IActionResult> InvitePractitioner(Guid id, Guid candidateUserId, [FromBody] InviteCandidateRequestDto? dto)

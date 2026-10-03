@@ -761,6 +761,35 @@ public class QuestionSetService : IQuestionSetService
         }).ToList();
     }
 
+    /// <summary>SCRUM-513: insights runtime — không lưu stats. Ngưỡng đạt = RecommendationMinScore của bộ.</summary>
+    public async Task<QuestionSetInsightsDto> GetInsightsAsync(
+        Guid questionSetId, Guid ownerId, bool includePractice = false)
+    {
+        var questionSet = await EnsureOwnedQuestionSetAsync(questionSetId, ownerId);
+        var source = await _practiceSessionRepository.ListInsightSourcesAsync(questionSetId);
+
+        var questions = questionSet.Questions
+            .Where(q => q.IsActive)
+            .Select(q => new QuestionInsightQuestionInput
+            {
+                Id = q.Id,
+                Order = q.Order,
+                QuestionText = q.Question,
+                Skill = q.Skill,
+                Difficulty = q.Difficulty
+            })
+            .ToList();
+
+        return QuestionSetInsightsAggregator.Build(
+            questionSet.Id,
+            questionSet.IsHiringAssessment,
+            questionSet.RecommendationMinScore,
+            includePractice,
+            questions,
+            source.Sessions,
+            source.Answers);
+    }
+
     public async Task<QuestionSetActionResponseDto> UnpublishAsync(Guid questionSetId, Guid ownerId)
     {
         var questionSet = await EnsureOwnedQuestionSetAsync(questionSetId, ownerId);
