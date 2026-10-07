@@ -5,14 +5,39 @@
 **AI-Powered Interview Question Generation System Using RAG and LLM**
 *Nền tảng hai phía cho Nhà tuyển dụng (HR) và Ứng viên (Candidate)*
 
+<!-- ===== Nền tảng & framework ===== -->
 ![.NET](https://img.shields.io/badge/.NET-8.0-512BD4?logo=dotnet&logoColor=white)
-![ASP.NET Core](https://img.shields.io/badge/ASP.NET%20Core-Web%20API-512BD4)
-![EF Core](https://img.shields.io/badge/EF%20Core-8.0-6DB33F)
-![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16%20%2B%20pgvector-4169E1?logo=postgresql&logoColor=white)
+![C#](https://img.shields.io/badge/C%23-12-239120?logo=csharp&logoColor=white)
+![ASP.NET Core](https://img.shields.io/badge/ASP.NET%20Core-Web%20API-512BD4?logo=dotnet&logoColor=white)
+![Clean Architecture](https://img.shields.io/badge/Architecture-Clean%204%20Layers-444)
+![Swagger](https://img.shields.io/badge/API%20Docs-Swagger%20%2F%20OpenAPI-85EA2D?logo=swagger&logoColor=black)
+<!-- ===== Dữ liệu ===== -->
+![EF Core](https://img.shields.io/badge/ORM-EF%20Core%208%20%2B%20Npgsql-6DB33F)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)
+![pgvector](https://img.shields.io/badge/Vector%20DB-pgvector-336791)
+![Azure Blob](https://img.shields.io/badge/Storage-Azure%20Blob-0078D4?logo=microsoftazure&logoColor=white)
+<!-- ===== AI ===== -->
+![RAG](https://img.shields.io/badge/AI-RAG%20Pipeline-FF6F00)
+![LLM](https://img.shields.io/badge/AI-LLM-8A2BE2)
+![FastAPI](https://img.shields.io/badge/RAG%20Service-FastAPI-009688?logo=fastapi&logoColor=white)
+<!-- ===== Xử lý nền & realtime ===== -->
 ![Hangfire](https://img.shields.io/badge/Jobs-Hangfire-orange)
 ![SignalR](https://img.shields.io/badge/Realtime-SignalR-blue)
+![SSE](https://img.shields.io/badge/Streaming-Server--Sent%20Events-lightgrey)
+<!-- ===== Bảo mật & tích hợp ===== -->
+![JWT](https://img.shields.io/badge/Auth-JWT%20Bearer-000000?logo=jsonwebtokens&logoColor=white)
+![OAuth](https://img.shields.io/badge/OAuth-Google%20%7C%20GitHub-4285F4?logo=google&logoColor=white)
+![SePay](https://img.shields.io/badge/Payment-SePay%20%2F%20VietQR-00A650)
+![MailKit](https://img.shields.io/badge/Email-MailKit%20SMTP-EA4335?logo=gmail&logoColor=white)
+<!-- ===== Chất lượng, log, test ===== -->
+![FluentValidation](https://img.shields.io/badge/Validation-FluentValidation-orange)
+![Serilog](https://img.shields.io/badge/Logging-Serilog-blueviolet)
+![Tests](https://img.shields.io/badge/tests-xUnit%20%2B%20Moq%20%2B%20Testcontainers-5C2D91)
+<!-- ===== Hạ tầng / triển khai ===== -->
+![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)
+![GitHub Actions](https://img.shields.io/badge/CI%2FCD-GitHub%20Actions-2088FF?logo=githubactions&logoColor=white)
 ![Azure](https://img.shields.io/badge/Deploy-Azure%20App%20Service-0078D4?logo=microsoftazure&logoColor=white)
-![Tests](https://img.shields.io/badge/tests-xUnit%20%2B%20Moq-5C2D91)
+![Cloudflare](https://img.shields.io/badge/Cloudflare-Pages%20%2B%20Tunnel-F38020?logo=cloudflare&logoColor=white)
 
 *Đồ án tốt nghiệp SEP490 — FPT University*
 
@@ -148,6 +173,33 @@ flowchart LR
 | API docs | Swashbuckle (Swagger UI + XML comments) |
 | Test | xUnit, Moq, Microsoft.AspNetCore.Mvc.Testing, Testcontainers.PostgreSql |
 | CI/CD | GitHub Actions → Azure Web App |
+
+### Vì sao chọn các công nghệ này
+
+| Công nghệ | Vai trò trong hệ thống | Lý do chọn / đánh đổi |
+|-----------|------------------------|------------------------|
+| **ASP.NET Core 8** | Web API chính, middleware, DI | LTS, hiệu năng cao, DI & pipeline có sẵn; hợp với Clean Architecture |
+| **Clean Architecture** | Tách Domain / Application / Infrastructure / WebAPI | Dễ test, đổi hạ tầng (RAG, Blob, SePay) mà không đụng nghiệp vụ; đổi lại nhiều boilerplate |
+| **EF Core + Npgsql** | ORM, migration, Fluent API | Code-first, version hóa schema qua migration; đánh đổi: truy vấn phức tạp cần tối ưu thủ công |
+| **PostgreSQL + pgvector** | DB nghiệp vụ + lưu vector embedding (768 chiều) | Một DB duy nhất cho dữ liệu & vector, không cần vector DB riêng; đổi lại khó scale vector rất lớn |
+| **Hangfire (PostgreSQL storage)** | Job nền: ingest tài liệu, sinh đề Coach, watchdog | Retry + dashboard sẵn, dùng chung Postgres, không cần Redis/queue riêng |
+| **SignalR** | Đẩy `PaymentPaid` realtime sau webhook SePay | Tích hợp native ASP.NET, fallback tự động WebSocket/SSE/long-polling |
+| **Server-Sent Events** | Stream câu trả lời Chat AI trong Studio | Đơn giản hơn WebSocket cho luồng 1 chiều server → client |
+| **JWT + Refresh token** | Xác thực stateless, xoay vòng token | Dễ scale ngang; logout xử lý bằng cách xóa refresh token |
+| **Google / GitHub OAuth** | Đăng nhập nhanh | Giảm ma sát đăng ký cho ứng viên |
+| **BCrypt** | Băm mật khẩu | Có salt + cost factor, chống brute-force |
+| **FluentValidation** | Validate request DTO | Tách rule khỏi controller, dễ unit test |
+| **Serilog** | Log có cấu trúc (Console + file theo ngày) | Dễ truy vết lỗi khi deploy |
+| **Azure Blob Storage + SAS URL** | Lưu file gốc (KB, JD, CV, ảnh) | Chia sẻ cho RAG bằng URL tạm thời, không lộ connection string |
+| **RAG Service (FastAPI)** | Parse, embed, retrieve, gọi LLM, chấm điểm | Tách riêng stack Python (hệ sinh thái AI) khỏi .NET; giao tiếp HTTP + `X-Internal-Api-Key` |
+| **SePay / VietQR** | Thanh toán nâng cấp Premium | Phù hợp thị trường VN, webhook ký HMAC, idempotent |
+| **MailKit** | Gửi OTP, quên mật khẩu, offer phỏng vấn | Client SMTP hiện đại, hỗ trợ async/TLS |
+| **PdfPig / OpenXml / ClosedXML** | Đọc PDF, DOCX; export Excel | Thư viện thuần .NET, không cần cài phần mềm ngoài |
+| **Swagger (Swashbuckle)** | Tài liệu & thử API | Sinh từ XML summary, có nút Authorize JWT |
+| **xUnit + Moq + Testcontainers** | Unit & integration test | Integration test chạy trên PostgreSQL thật trong container |
+| **Docker Compose** | Dựng PostgreSQL local | Môi trường dev đồng nhất |
+| **GitHub Actions → Azure App Service** | Build, test, migrate, deploy khi push `main` | Tự động hóa, giảm lỗi triển khai thủ công |
+| **Cloudflare Pages + Tunnel** | Host Frontend, public RAG service | Miễn phí, HTTPS sẵn; lưu ý timeout ~100s nên cần cơ chế async + polling |
 
 ---
 
